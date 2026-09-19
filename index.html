@@ -99,13 +99,21 @@
   .btn:active{transform:translateY(2px);}
   #end-stats{font-size:14px;color:var(--green);margin-top:8px;line-height:2;}
 
-  /* ---------- Dotykové ovládanie ---------- */
+  /* ---------- Dotykové ovládanie: vľavo šípky, vpravo pedále ---------- */
   #touch{position:fixed;inset:auto 0 0 0;z-index:55;display:none;
-    justify-content:space-between;padding:0 12px 70px;pointer-events:none;}
+    justify-content:space-between;align-items:flex-end;
+    padding:0 14px 78px;pointer-events:none;touch-action:none;}
   #touch.on{display:flex;}
-  .tbtn{pointer-events:auto;width:64px;height:64px;border:2px solid var(--amber);
-    background:rgba(10,8,2,.7);color:var(--amber);font-size:22px;font-family:inherit;}
+  .tbtn{pointer-events:auto;touch-action:none;-webkit-touch-callout:none;cursor:pointer;
+    width:76px;height:76px;border:2px solid var(--amber);
+    background:rgba(10,8,2,.7);color:var(--amber);font-size:26px;font-family:inherit;}
   .tbtn:active{background:var(--amber);color:#000;}
+  .pedal{width:72px;}
+  #t-brake{height:104px;}
+  #t-gas{height:128px;border-width:3px;}
+  .tcluster{display:flex;gap:12px;align-items:flex-end;}
+  .tcol{display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .tlab{font-size:10px;color:var(--amber);pointer-events:none;}
   @media (max-width:760px){ #hint{display:none;} #meters{width:170px;} #minimap{width:110px;height:110px;} }
 </style>
 <script type="importmap">
@@ -152,13 +160,13 @@
 </div>
 
 <div id="touch">
-  <div style="display:flex;gap:10px;">
+  <div class="tcluster">
     <button class="tbtn" id="t-left">◀</button>
     <button class="tbtn" id="t-right">▶</button>
   </div>
-  <div style="display:flex;gap:10px;">
-    <button class="tbtn" id="t-brake">▼</button>
-    <button class="tbtn" id="t-gas">▲</button>
+  <div class="tcluster">
+    <div class="tcol"><button class="tbtn pedal" id="t-brake">▼</button><span class="tlab">BRZDA</span></div>
+    <div class="tcol"><button class="tbtn pedal" id="t-gas">▲</button><span class="tlab">PLYN</span></div>
   </div>
 </div>
 
@@ -175,6 +183,7 @@
     <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
     A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
     M — mapa &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
+    <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
     <br>
     <button class="btn" id="btn-start">ŠTARTOVAŤ ÚTEK</button>
   </div>
@@ -1709,7 +1718,7 @@ function wireUI(){
     showToast("Kolona sa pohla! Teda... skoro.", 3.0);
     beep(440, 0.12, 0);
     musicStart();
-    if(("ontouchstart" in window)){ $("touch").classList.add("on"); }
+    if(("ontouchstart" in window) || navigator.maxTouchPoints > 0){ $("touch").classList.add("on"); }
   });
   $("btn-retry").addEventListener("click", function(){
     elEnd.classList.add("hidden");
@@ -1730,6 +1739,8 @@ function wireUI(){
     if(e.target === elBig) toggleMap(false);
   });
   elSnd.addEventListener("click", function(){ toggleSound(); });
+  // dlhý podrž na mobile nesmie vyvolať kontextové menu / zoom
+  $("touch").addEventListener("contextmenu", function(e){ e.preventDefault(); });
 }
 
 try{
