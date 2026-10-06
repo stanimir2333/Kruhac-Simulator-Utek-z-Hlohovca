@@ -22,90 +22,151 @@ export function createDashboard() {
 
   function face(ctx) {
     ctx.clearRect(0, 0, W, W);
-    const g = ctx.createRadialGradient(C, C, 10, C, C, R + 8);
-    g.addColorStop(0, '#14161a'); g.addColorStop(1, '#08090b');
+    // hlboká čierna plocha ako na Octavii II
+    const g = ctx.createRadialGradient(C, C, 8, C, C, R + 8);
+    g.addColorStop(0, '#101214'); g.addColorStop(0.75, '#060708'); g.addColorStop(1, '#000000');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(C, C, R + 6, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = '#2c2f36';
+    // strieborná obruba + tenký vnútorný krúžok stupnice
+    ctx.lineWidth = 3; ctx.strokeStyle = '#d5d8dc';
+    ctx.beginPath(); ctx.arc(C, C, R + 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = '#23262c';
     ctx.beginPath(); ctx.arc(C, C, R + 6, 0, Math.PI * 2); ctx.stroke();
   }
-  function ticks(ctx, count, majorEvery, fmt, redFrom) {
-    for (let i = 0; i <= count; i++) {
-      const a = ang(i / count), major = i % majorEvery === 0;
-      const r1 = R - (major ? 12 : 7), r2 = R - 1;
-      ctx.lineWidth = major ? 2.5 : 1;
-      ctx.strokeStyle = (redFrom !== undefined && i / count >= redFrom) ? '#e0342b' : '#c8ccd2';
+  // oktávkový tick-prstenec: biele dieliky, čísla biele, v červenom pásme dieliky červené
+  function ticksTacho(ctx) {
+    const max = 70, redFrom = 60;
+    for (let i = 0; i <= max; i++) {
+      const f = i / max, a = ang(f), major = i % 5 === 0;
+      const isRed = i >= redFrom;
+      const r1 = R - (major ? 13 : 7), r2 = R - 1;
+      ctx.lineWidth = major ? 2.4 : 1;
+      ctx.strokeStyle = isRed ? '#e0342b' : '#e8eaee';
       ctx.beginPath();
       ctx.moveTo(C + Math.cos(a) * r1, C + Math.sin(a) * r1);
       ctx.lineTo(C + Math.cos(a) * r2, C + Math.sin(a) * r2);
       ctx.stroke();
-      if (major && fmt) {
-        ctx.fillStyle = '#e8eaee'; ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(fmt(i), C + Math.cos(a) * (R - 22), C + Math.sin(a) * (R - 22));
+      if (major) {
+        ctx.fillStyle = '#f0f1f3'; ctx.font = 'bold 9px Arial, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(i), C + Math.cos(a) * (R - 23), C + Math.sin(a) * (R - 23));
       }
     }
-    if (redFrom !== undefined) { // červená zóna
-      ctx.lineWidth = 4; ctx.strokeStyle = '#e0342b';
-      ctx.beginPath(); ctx.arc(C, C, R - 4, ang(redFrom), ang(1)); ctx.stroke();
+    // hrubý červený oblúk 60–70 na vonkajšom okraji ako na fotke
+    ctx.lineWidth = 4.5; ctx.strokeStyle = '#e0342b'; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.arc(C, C, R - 4, ang(redFrom / max), ang(1)); ctx.stroke();
+  }
+  function ticksSpeedo(ctx) {
+    // 0–260 po 5 km/h = 52 dielikov, popísané každých 20 ako na Octavii
+    const minor = 52;
+    for (let i = 0; i <= minor; i++) {
+      const kmh = i * 5, f = i / minor, a = ang(f), major = i % 4 === 0;
+      const r1 = R - (major ? 13 : 7), r2 = R - 1;
+      ctx.lineWidth = major ? 2.4 : 1;
+      ctx.strokeStyle = '#e8eaee';
+      ctx.beginPath();
+      ctx.moveTo(C + Math.cos(a) * r1, C + Math.sin(a) * r1);
+      ctx.lineTo(C + Math.cos(a) * r2, C + Math.sin(a) * r2);
+      ctx.stroke();
+      if (major) {
+        ctx.fillStyle = '#f0f1f3'; ctx.font = 'bold 9px Arial, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(kmh), C + Math.cos(a) * (R - 23), C + Math.sin(a) * (R - 23));
+      }
     }
   }
-  function needle(ctx, frac, color = '#f2f3f5') {
+  function needle(ctx, frac, color = '#f4f5f6') {
     const a = ang(frac);
-    ctx.lineWidth = 3; ctx.strokeStyle = color; ctx.lineCap = 'round';
+    ctx.save();
+    ctx.lineCap = 'butt';
+    // tieň ihly
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.65)';
+    ctx.beginPath();
+    ctx.moveTo(C - Math.cos(a) * 10, C - Math.sin(a) * 10 + 1);
+    ctx.lineTo(C + Math.cos(a) * (R - 15), C + Math.sin(a) * (R - 15) + 1);
+    ctx.stroke();
+    // biela ihla ako na fotke
+    ctx.lineWidth = 2.8; ctx.strokeStyle = color; ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(C - Math.cos(a) * 10, C - Math.sin(a) * 10);
-    ctx.lineTo(C + Math.cos(a) * (R - 16), C + Math.sin(a) * (R - 16));
+    ctx.lineTo(C + Math.cos(a) * (R - 15), C + Math.sin(a) * (R - 15));
     ctx.stroke();
-    ctx.fillStyle = '#2c2f36';
-    ctx.beginPath(); ctx.arc(C, C, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#c8ccd2';
-    ctx.beginPath(); ctx.arc(C, C, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // stred: tmavý + strieborný krúžok
+    ctx.fillStyle = '#101214';
+    ctx.beginPath(); ctx.arc(C, C, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#c8ccd2';
+    ctx.beginPath(); ctx.arc(C, C, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#e8eaee';
+    ctx.beginPath(); ctx.arc(C, C, 2.5, 0, Math.PI * 2); ctx.fill();
   }
-  // --- kontrolky ---
-  function lampBase(ctx, x, y, w, h, on, color) {
-    ctx.fillStyle = on ? color : '#241f0e';
-    ctx.strokeStyle = on ? '#fff2b0' : '#4a3f16';
-    ctx.lineWidth = 1;
+  // --- kontrolky ako na Octavii: bez krabičiek, len svietiaci symbol na čiernej ---
+  // CHECK ENGINE trigger ponechaný: self-test alebo teplota >= 0.9
+  function glow(ctx, on, color) {
+    if (on) { ctx.shadowColor = color; ctx.shadowBlur = 7; }
+    else ctx.shadowBlur = 0;
+  }
+  function lampEPC(ctx, x, y, on) {
+    ctx.save();
+    glow(ctx, on, '#ffb000');
+    ctx.fillStyle = on ? '#ffb000' : '#3a2f10';
+    ctx.font = 'bold 11px Arial, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('EPC', x, y);
+    ctx.restore();
+  }
+  function lampEngine(ctx, x, y, on) { // CHECK ENGINE: motor z fotky, oranžový
+    ctx.save();
+    glow(ctx, on, '#ffb000');
+    ctx.strokeStyle = on ? '#ffb000' : '#3a2f10'; ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // blok motora
+    ctx.strokeRect(x - 7, y - 2.5, 12, 7);
+    // hlava valcov
+    ctx.strokeRect(x - 4, y - 5.5, 6, 3);
+    // sacie výstupky hore
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x - w / 2, y - h / 2, w, h, 2); else ctx.rect(x - w / 2, y - h / 2, w, h);
-    ctx.fill(); ctx.stroke();
+    ctx.moveTo(x - 2, y - 5.5); ctx.lineTo(x - 2, y - 7.5);
+    ctx.moveTo(x + 1, y - 5.5); ctx.lineTo(x + 1, y - 7.5);
+    ctx.stroke();
+    // výfuk vpravo dole
+    ctx.beginPath(); ctx.moveTo(x + 5, y + 4.5); ctx.lineTo(x + 8, y + 1.5); ctx.stroke();
+    // ventilátor / remenica vľavo
+    ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x - 9, y); ctx.stroke();
+    ctx.restore();
   }
-  function lampText(ctx, x, y, txt, on, color = '#ffb000') {
-    lampBase(ctx, x, y, 26, 13, on, on ? color : '#241f0e');
-    ctx.fillStyle = on ? '#1a1200' : '#6b5a20';
-    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(txt, x, y + 0.5);
-  }
-  function lampEngine(ctx, x, y, on) { // CHECK ENGINE: blok motora
-    lampBase(ctx, x, y, 24, 15, on, on ? '#ffb000' : '#241f0e');
-    ctx.strokeStyle = on ? '#1a1200' : '#6b5a20'; ctx.lineWidth = 1.2;
-    ctx.strokeRect(x - 7, y - 3, 12, 7);       // blok
-    ctx.strokeRect(x - 4, y - 6, 6, 3);        // hlava
-    ctx.beginPath(); ctx.moveTo(x + 5, y + 4); ctx.lineTo(x + 8, y + 1); ctx.stroke(); // výfuk
-  }
-  function lampBattery(ctx, x, y, on) {
-    lampBase(ctx, x, y, 24, 15, on, on ? '#ff2b2b' : '#2a0e0e');
-    ctx.strokeStyle = on ? '#fff' : '#7a3030'; ctx.lineWidth = 1.2;
+  function lampBattery(ctx, x, y, on) { // červená, ako vpravo dole na fotke
+    ctx.save();
+    glow(ctx, on, '#ff2b2b');
+    ctx.strokeStyle = on ? '#ff2b2b' : '#4a1515'; ctx.lineWidth = 1.4;
     ctx.strokeRect(x - 6, y - 3, 12, 7);
     ctx.beginPath();
     ctx.moveTo(x - 4, y - 6); ctx.lineTo(x - 4, y - 3);
     ctx.moveTo(x + 4, y - 6); ctx.lineTo(x + 4, y - 3);
-    ctx.moveTo(x - 1, y + 1); ctx.lineTo(x + 3, y + 1); // −
-    ctx.moveTo(x - 5, y); ctx.lineTo(x - 5, y + 2); ctx.moveTo(x - 6, y + 1); ctx.lineTo(x - 4, y + 1); // +
+    ctx.moveTo(x - 1, y + 1); ctx.lineTo(x + 3, y + 1);
+    ctx.moveTo(x - 5, y); ctx.lineTo(x - 5, y + 2);
+    ctx.moveTo(x - 6, y + 1); ctx.lineTo(x - 4, y + 1);
     ctx.stroke();
+    ctx.restore();
   }
-  function lampOil(ctx, x, y, on) {
-    lampBase(ctx, x, y, 24, 15, on, on ? '#ff2b2b' : '#2a0e0e');
-    ctx.strokeStyle = on ? '#fff' : '#7a3030'; ctx.lineWidth = 1.2;
-    ctx.strokeRect(x - 6, y - 1, 10, 5);       // kanva
-    ctx.beginPath(); ctx.moveTo(x + 4, y - 1); ctx.lineTo(x + 7, y - 5); ctx.stroke(); // hubica
+  function lampOil(ctx, x, y, on) { // červená olejnička
+    ctx.save();
+    glow(ctx, on, '#ff2b2b');
+    ctx.strokeStyle = on ? '#ff2b2b' : '#4a1515'; ctx.lineWidth = 1.4;
+    ctx.strokeRect(x - 6, y - 1, 10, 5);
+    ctx.beginPath(); ctx.moveTo(x + 4, y - 1); ctx.lineTo(x + 7, y - 5); ctx.stroke();
+    ctx.beginPath(); // kvapka
+    ctx.moveTo(x - 1, y + 1); ctx.lineTo(x, y + 3); ctx.lineTo(x + 1, y + 1);
+    ctx.stroke();
+    ctx.restore();
   }
-  function lampFuel(ctx, x, y, on) {
-    lampBase(ctx, x, y, 24, 15, on, on ? '#ffb000' : '#241f0e');
-    ctx.strokeStyle = on ? '#1a1200' : '#6b5a20'; ctx.lineWidth = 1.2;
-    ctx.strokeRect(x - 5, y - 4, 7, 10);       // stojan
-    ctx.strokeRect(x - 3.5, y - 2, 4, 3);      // displej
-    ctx.beginPath(); ctx.moveTo(x + 2, y - 3); ctx.quadraticCurveTo(x + 7, y - 1, x + 6, y + 4); ctx.stroke(); // hadica
+  function lampFuel(ctx, x, y, on) { // oranžový stojan
+    ctx.save();
+    glow(ctx, on, '#ffb000');
+    ctx.strokeStyle = on ? '#ffb000' : '#3a2f10'; ctx.lineWidth = 1.4;
+    ctx.strokeRect(x - 5, y - 4, 7, 10);
+    ctx.strokeRect(x - 3.5, y - 2, 4, 3);
+    ctx.beginPath(); ctx.moveTo(x + 2, y - 3); ctx.quadraticCurveTo(x + 7, y - 1, x + 6, y + 4); ctx.stroke();
+    ctx.restore();
   }
   // --- mini budíky MFA ---
   function miniGauge(ctx, cx, cy, r, frac, labels, redSide) {
@@ -149,26 +210,30 @@ export function createDashboard() {
       const fuelBlink = fuel < 0.05 && !test ? (now / 300 | 0) % 2 === 0 : true;
       const oil = test || (player.oilT || 0) > 0;
       const batt = test || fuel <= 0;
-      // otáčkomer 0–70 (×100) — čísla po 5 ako na Octavii
+      // otáčkomer 0–70 (×100) — čísla po 5 ako na Octavii II z fotky
       if (tctx) {
         face(tctx);
-        ticks(tctx, 70, 5, (i) => String(i), 60 / 70);
-        needle(tctx, dRpm / 8000);
-        tctx.fillStyle = '#8b9097'; tctx.font = '8px monospace'; tctx.textAlign = 'center';
-        tctx.fillText('1/min × 100', C, C + 34);
-        lampText(tctx, C - 18, C + 48, 'EPC', epc);
-        lampEngine(tctx, C + 18, C + 48, check);
+        ticksTacho(tctx);
+        tctx.save(); tctx.shadowBlur = 0; // popis bez glow
+        tctx.fillStyle = '#9aa0a8'; tctx.font = '8px Arial, monospace'; tctx.textAlign = 'center';
+        tctx.fillText('1/min × 100', C, C + 33);
+        tctx.restore();
+        needle(tctx, dRpm / 7000);
+        lampEPC(tctx, C - 19, C + 49, epc);
+        lampEngine(tctx, C + 19, C + 49, check); // CHECK ENGINE ponechaný
       }
-      // rýchlostník 0–260
+      // rýchlostník 0–260 — popisy po 20 ako na fotke
       if (sctx) {
         face(sctx);
-        ticks(sctx, 26, 2, (i) => String(i * 10), 22 / 26);
+        ticksSpeedo(sctx);
+        sctx.save(); sctx.shadowBlur = 0;
+        sctx.fillStyle = '#9aa0a8'; sctx.font = '8px Arial, monospace'; sctx.textAlign = 'center';
+        sctx.fillText('km/h', C, C + 33);
+        sctx.restore();
         needle(sctx, dKmh / 260);
-        sctx.fillStyle = '#8b9097'; sctx.font = '8px monospace'; sctx.textAlign = 'center';
-        sctx.fillText('km/h', C, C + 34);
-        lampBattery(sctx, C - 30, C + 48, batt);
-        lampOil(sctx, C, C + 48, oil);
-        lampFuel(sctx, C + 30, C + 48, fuelLow && fuelBlink);
+        lampBattery(sctx, C - 30, C + 49, batt);
+        lampOil(sctx, C, C + 49, oil);
+        lampFuel(sctx, C + 30, C + 49, fuelLow && fuelBlink);
       }
       // MFA stred: priehľadné pozadie (leží CEZ ciferníky), len displej + mini budíky
       if (mctx) {
