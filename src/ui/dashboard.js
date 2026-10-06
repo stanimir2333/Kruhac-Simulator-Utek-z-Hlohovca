@@ -40,7 +40,7 @@ export function createDashboard() {
       ctx.lineTo(C + Math.cos(a) * r2, C + Math.sin(a) * r2);
       ctx.stroke();
       if (major && fmt) {
-        ctx.fillStyle = '#e8eaee'; ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#e8eaee'; ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(fmt(i), C + Math.cos(a) * (R - 22), C + Math.sin(a) * (R - 22));
       }
     }
@@ -149,10 +149,10 @@ export function createDashboard() {
       const fuelBlink = fuel < 0.05 && !test ? (now / 300 | 0) % 2 === 0 : true;
       const oil = test || (player.oilT || 0) > 0;
       const batt = test || fuel <= 0;
-      // otáčkomer 0–70 (×100)
+      // otáčkomer 0–70 (×100) — čísla po 5 ako na Octavii
       if (tctx) {
         face(tctx);
-        ticks(tctx, 70, 10, (i) => String(i), 60 / 70);
+        ticks(tctx, 70, 5, (i) => String(i), 60 / 70);
         needle(tctx, dRpm / 8000);
         tctx.fillStyle = '#8b9097'; tctx.font = '8px monospace'; tctx.textAlign = 'center';
         tctx.fillText('1/min × 100', C, C + 34);
@@ -170,27 +170,32 @@ export function createDashboard() {
         lampOil(sctx, C, C + 48, oil);
         lampFuel(sctx, C + 30, C + 48, fuelLow && fuelBlink);
       }
-      // MFA stred
+      // MFA stred: priehľadné pozadie (leží CEZ ciferníky), len displej + mini budíky
       if (mctx) {
-        face(mctx);
-        miniGauge(mctx, 38, 34, 20, fuel, ['E', 'F'], -1);
+        mctx.clearRect(0, 0, W, W);
+        miniGauge(mctx, 38, 30, 20, fuel, ['E', 'F'], -1);
         const coolant = 70 + (player.temp || 0) * 65;
-        miniGauge(mctx, 112, 34, 20, (coolant - 50) / 80, ['C', 'H'], 1);
+        miniGauge(mctx, 112, 30, 20, (coolant - 50) / 80, ['C', 'H'], 1);
+        // displej
+        mctx.fillStyle = '#050607';
+        mctx.strokeStyle = '#3a3e46'; mctx.lineWidth = 1.5;
+        mctx.beginPath();
+        if (mctx.roundRect) mctx.roundRect(14, 56, 122, 88, 5); else mctx.rect(14, 56, 122, 88);
+        mctx.fill(); mctx.stroke();
         mctx.strokeStyle = '#2c2f36'; mctx.lineWidth = 1;
-        mctx.beginPath(); mctx.moveTo(14, 52); mctx.lineTo(136, 52); mctx.stroke();
         const d = new Date();
         mctx.fillStyle = '#ffb000'; mctx.font = 'bold 15px monospace'; mctx.textAlign = 'center';
-        mctx.fillText(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, C, 70);
-        mctx.beginPath(); mctx.moveTo(14, 78); mctx.lineTo(136, 78); mctx.stroke();
-        carIcon(mctx, C, 100, 0.85);
+        mctx.fillText(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, C, 74);
+        mctx.beginPath(); mctx.moveTo(22, 82); mctx.lineTo(128, 82); mctx.stroke();
+        carIcon(mctx, C, 102, 0.8);
         const odoKm = ((player.odo || 0) + odo0) / 1000;
         const tripKm = (player.trip || 0) / 1000;
         mctx.font = '8px monospace'; mctx.fillStyle = '#8b9097';
-        mctx.textAlign = 'left'; mctx.fillText('km', 16, 128);
-        mctx.textAlign = 'right'; mctx.fillText('trip', 134, 128);
+        mctx.textAlign = 'left'; mctx.fillText('km', 22, 126);
+        mctx.textAlign = 'right'; mctx.fillText('trip', 128, 126);
         mctx.fillStyle = '#ffb000'; mctx.font = 'bold 11px monospace';
-        mctx.textAlign = 'left'; mctx.fillText(odoKm.toFixed(1), 16, 140);
-        mctx.textAlign = 'right'; mctx.fillText(tripKm.toFixed(1), 134, 140);
+        mctx.textAlign = 'left'; mctx.fillText(odoKm.toFixed(1), 22, 138);
+        mctx.textAlign = 'right'; mctx.fillText(tripKm.toFixed(1), 128, 138);
         if (now - lastSave > 10000) {
           lastSave = now;
           try { localStorage.setItem(ODO_KEY, String((player.odo || 0) + odo0)); } catch { /* ignore */ }
