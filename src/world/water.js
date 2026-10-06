@@ -302,3 +302,25 @@ export function riverbankSlowdown(x, z) {
   if (d2 < 260 * 260) return 0.8;  // rozbahnený pás
   return 1.0;
 }
+
+// STAGE-2 addition (nie verbatim): prepínač kvality vody pre nastavenia.
+// 0 = lacný standard materiál, 1 = shader + normály 128, 2 = shader + normály 256.
+let _cheapWaterMat = null;
+export function setWaterQuality(q) {
+  if (!WAT.mat || !WAT.meshes.length) return;
+  if (q <= 0) {
+    if (!_cheapWaterMat) {
+      _cheapWaterMat = new THREE.MeshStandardMaterial({ color: 0x2a4a5a, roughness: 0.35, metalness: 0.4 });
+    }
+    for (const m of WAT.meshes) m.material = _cheapWaterMat;
+    return;
+  }
+  const size = q === 1 ? 128 : 256;
+  const cur = WAT.nrmTex?.image?.width || 0;
+  if (cur !== size) {
+    try { WAT.nrmTex?.dispose?.(); } catch {}
+    WAT.nrmTex = buildWaterNormals(size);
+    WAT.mat.uniforms.tNormal.value = WAT.nrmTex;
+  }
+  for (const m of WAT.meshes) m.material = WAT.mat;
+}

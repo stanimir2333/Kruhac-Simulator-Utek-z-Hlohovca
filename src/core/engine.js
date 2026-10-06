@@ -30,6 +30,7 @@ export function createEngine(container) {
   addEventListener('resize', onResize);
 
   let raf = 0, last = performance.now(), fpsCap = 60, acc = 0;
+  let renderOverride = null; // bloom composer (src/fx/bloom.js) sa sem zapojí
   const listeners = { tick: [], render: [] };
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
@@ -41,13 +42,16 @@ export function createEngine(container) {
     dt = acc; acc = 0;
     for (const fn of listeners.tick) fn(dt, now / 1000);
     for (const fn of listeners.render) fn(dt);
-    renderer.render(scene, camera);
+    if (renderOverride) renderOverride();
+    else renderer.render(scene, camera);
   };
 
   return {
     renderer, scene, camera, sun,
     onTick(fn) { listeners.tick.push(fn); },
     onRender(fn) { listeners.render.push(fn); },
+    setRenderOverride(fn) { renderOverride = fn; },
+    onResizeExtra(fn) { addEventListener('resize', fn); },
     setFpsCap(v) { fpsCap = v; },
     setViewDist(m) { scene.fog.far = m * 4; camera.far = m * 6; camera.updateProjectionMatrix(); },
     start() { last = performance.now(); raf = requestAnimationFrame(loop); },

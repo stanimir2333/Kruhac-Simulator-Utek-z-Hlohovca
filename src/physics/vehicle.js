@@ -6,7 +6,7 @@ export function createVehicle(opts = {}) {
   return {
     x: opts.x ?? 0, y: opts.y ?? 0, z: opts.z ?? 0, h: 0,
     vx: 0, vz: 0, speed: 0, gear: 1, rpm: 900,
-    steer: 0, temp: 0.2, stress: 0,
+    steer: 0, yawRate: 0, temp: 0.2, stress: 0,
     vmax: 250 / 3.6, // m/s
   };
 }
@@ -35,10 +35,25 @@ export function updateVehicle(v, input, dt, terrainY) {
   const kmh = Math.abs(v.speed) * 3.6;
   v.gear = kmh < 30 ? 1 : kmh < 60 ? 2 : kmh < 95 ? 3 : kmh < 135 ? 4 : kmh < 185 ? 5 : 6;
   v.rpm = 900 + (kmh % 42) / 42 * 7100;
-  // riadenie (rýchlostne tlmené) + drift pre police-heat (triggers)
+  // riadenie (verbatim cit z monolitu): nedotáčavosť s rýchlosťou + cap nad 150 km/h,
+  // nech auto pri 200+ nie je myklavé; yawRate sa vyhladzuje
   v.steer += (steer - v.steer) * Math.min(1, 8 * dt);
   const grip = hand ? 0.35 : 1;
-  v.h += v.steer * Math.min(1, Math.abs(v.speed) / 12) * 2.4 * dt * grip;
+  const aspd = Math.abs(v.speed);
+  const under = 1 / (1 + (aspd / 22) * (aspd / 22));
+  let yawT = 0;
+  if (steer !== 0 && aspd > 0.3) {
+    const dir = v.speed >= 0 ? 1 : -1;
+    yawT = steer * 1.55 * dir * Math.min(1, aspd / 5 + 0.25) * under;
+    if (aspd > 41.7) { // speed-sensitive cap: nad 150 km/h max ~0.35 rad/s
+      const cap = 0.35 + (1.55 * under - 0.35) * Math.max(0, 1 - (aspd - 41.7) / 28);
+      const lim = cap > 0 ? cap : 0.12;
+      if (yawT > lim) yawT = lim; else if (yawT < -lim) yawT = -lim;
+    }
+    if (hand) yawT *= 1.35;
+  }
+  v.yawRate += (yawT - v.yawRate) * Math.min(1, dt * 6);
+  v.h += v.yawRate * dt * grip;
   v.x += Math.sin(v.h) * v.speed * dt;
   v.z += Math.cos(v.h) * v.speed * dt;
   v.y = terrainY;

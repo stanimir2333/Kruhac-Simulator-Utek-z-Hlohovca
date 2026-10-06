@@ -27,7 +27,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # Po migrácii je index.html už slim shell — zdroj monolitu hľadaj v legacy zálohe.
 def _pick_source():
     import subprocess
-    for c in [ROOT / "index.monolith.legacy.html", ROOT / "index.html"]:
+    for c in [ROOT / "index.monolith.legacy.html", ROOT / "index.html",
+              Path("/home/stanislav/index.monolith.legacy.html")]:
         if c.exists() and c.stat().st_size > 1_000_000:
             return c
     tmp = Path("/tmp/legacy.html")

@@ -28,6 +28,15 @@ import { createTraffic, placeTraffic, updateTraffic, nearestRoute } from './ai/t
 import { createPoliceSystem, HeatEvent } from './ai/police.js';
 import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
+import { createBloom } from './fx/bloom.js';
+import { setWaterQuality } from './world/water.js';
+import { wireSettingsUI } from './ui/settings.js';
+import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest } from './game/drift.js';
+import {
+  buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
+  updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
+} from './game/missions.js';
+import { enableTiles } from './ui/minimap.js';
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
@@ -71,9 +80,18 @@ async function boot() {
   const input = createInput();
   const hud = createHUD(state);
   const dash = createDashboard();
-  const minimap = createMinimap(state);
   const sfx = createSfx();
   wireMenus(state, engine, hud);
+  // bloom composer + nastavenia (ešte pred svetom — pixelRatio ovplyvňuje build textúr)
+  const bloom = createBloom(renderer, scene, camera);
+  engine.setRenderOverride(() => bloom.render());
+  engine.onResizeExtra(() => bloom.resize());
+  const settingsCtx = {
+    renderer, scene, camera, sun, engine,
+    bloom: { setMode: (m) => bloom.setMode(m) },
+    water: { setQuality: (q) => setWaterQuality(q) },
+  };
+  wireSettingsUI(settingsCtx, (m) => hud.toast(m));
 
   // 1) MAPA (async fetch s progresom)
   pre.step(0.08, 'sťahujem mapu Hlohovca…');
@@ -99,6 +117,12 @@ async function boot() {
   await step(0.75, 'koľaje + zeleň…'); buildRails(); buildGreens(); buildCemetery();
   await step(0.80, 'budovy…');        await photoPreload(); buildBuildings();
   await step(0.86, 'stromy + lampy…'); buildLampsTrees(); buildVegInstanced(); snapVegetationToTerrain();
+  await step(0.88, 'efekty + misie…');
+  buildParticles(scene);
+  buildCheckpoints();
+  missionReset();
+  loadDriftBest();
+  enableTiles();
   await step(0.90, 'obloha…');        buildSkyDome(scene, renderer);
 
   // 3) AUTÁ
@@ -130,6 +154,7 @@ async function boot() {
   });
   police.syncRoadblocksWithMap(osm);
   state.police = police;
+  const minimap = createMinimap(state, { traffic, police });
   const policeMeshes = [];
   for (let i = 0; i < 6; i++) {
     const m = buildPoliceMesh(i < 1 ? 'mestska' : i < 3 ? 'statna' : 'pmj');
@@ -165,6 +190,7 @@ async function boot() {
     }
     if (e.code === 'KeyQ') radio.prev();
     if (e.code === 'KeyE') radio.next();
+    if (e.code === 'KeyT' && state.started) toggleTurbo((m) => hud.toast(m));
     if (e.code === 'KeyX') {
       const m = !state.muted; state.muted = m; sfx.setMuted(m);
       const b = document.getElementById('snd-btn');
@@ -197,7 +223,9 @@ async function boot() {
       return;
     }
 
-    // — hráč —
+    // — hráč (turbo dvíha limiter na 300 km/h) —
+    car.vmax = turboActive() ? VMAX_TURBO : 250 / 3.6;
+    updateTurbo(dt, (m) => hud.toast(m));
     const gy = driveY(car.x, car.z, playerS, 0);
     const tel = updateVehicle(car, input, dt, gy);
     const cars = [...traffic.cars, ...police.units];
@@ -205,11 +233,16 @@ async function boot() {
     car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
     if (impact > 0.15) {
       sfx.crash(Math.min(1, impact / 6));
+      if (impact > 1.2) emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
       if (cool('hit', 2)) {
         police.report(impact > 8 ? HeatEvent.MAYHEM : HeatEvent.COLLISION_MINOR, t);
         mark('hit');
       }
     }
+    // — drift + častice —
+    updateDrift(dt, car, input);
+    if (tel.drifting) emitDriftSmoke(car);
+    updateParticles(dt);
     Object.assign(state.player, {
       x: car.x, y: car.y, z: car.z, h: car.h, speed: car.speed,
       temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
@@ -266,8 +299,14 @@ async function boot() {
       }
     }
 
-    // — doprava + polícia —
+    // — doprava + polícia + misie —
     updateTraffic(traffic, dt, state.player, playerS, S.routeLen);
+    updateMissions(dt, {
+      car, playerS, routeLen: S.routeLen,
+      toast: (m) => hud.toast(m),
+      onWin: (m) => hud.toast(m || 'MISIA SPLNENÁ ✔'),
+      onFail: (m) => hud.toast(m || 'Misia zlyhala'),
+    });
     occAcc += dt;
     if (occAcc > 0.3) { // lacná oklúzia: budova medzi hráčom a najbližšou hliadkou?
       occAcc = 0;
@@ -329,6 +368,9 @@ async function boot() {
       hudAcc = 0;
       hud.update(dt, t, playerS, S.routeLen, osm);
       dash.update(state.player);
+      updateDriftHUD();
+      updateMissionHUD(car);
+      updateBoostHUD();
     }
     minimap.update();
     fpsAcc += dt; fpsN++;

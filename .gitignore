@@ -26,3 +26,4 @@ Thumbs.db
 # Logy
 *.log
 !tools/*.log.md
+__pycache__/
