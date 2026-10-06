@@ -1,0 +1,28 @@
+# ── Kruháč Simulator: generované / ťažké súbory ──────────────────────────
+# Monolitická záloha (32 MB) — po migrácii netreba verzovať, stačí git história.
+index.monolith.legacy.html
+
+# Extrahované audio (23 MB binárne) — regeneruj lokálne: `npm run extract`
+# Manifest (1 kB, mená staníc) verzujeme, zvuk nie.
+public/audio/station-*.mp3
+public/audio/station-*.wav
+public/audio/station-*.ogg
+public/audio/station-*.bin
+
+# Alternatíva: ak chceš audio verzovať cez Git LFS, zakomentuj vyššie a odkomentuj:
+# (vyžaduje `git lfs install` + `git lfs track "public/audio/*"`)
+# public/audio/*
+
+# Vite výstup
+dist/
+dist-ssr/
+*.local
+
+# Node / OS
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Logy
+*.log
+!tools/*.log.md

@@ -1,0 +1,58 @@
+[
+  {
+    "id": 0,
+    "name": "RÁDIO HLOHOVEC",
+    "file": "audio/station-00.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 5101823
+  },
+  {
+    "id": 1,
+    "name": "RÁDIO TECHNO",
+    "file": "audio/station-01.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 5237823
+  },
+  {
+    "id": 2,
+    "name": "RÁDIO PHONK",
+    "file": "audio/station-02.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 4537531
+  },
+  {
+    "id": 3,
+    "name": "RÁDIO POPU",
+    "file": "audio/station-03.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 597687
+  },
+  {
+    "id": 4,
+    "name": "RÁDIO 'YOU WERE NEVER MEANT TO HEAR THIS'",
+    "file": "audio/station-04.wav",
+    "mime": "audio/wav",
+    "bytes": 3255506
+  },
+  {
+    "id": 5,
+    "name": "RÁDIO HAVA NAGILA",
+    "file": "audio/station-05.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 674172
+  },
+  {
+    "id": 6,
+    "name": "RÁDIO UBUNTU",
+    "file": "audio/station-06.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 2565569
+  },
+  {
+    "id": 7,
+    "name": "RÁDIO RATNOVCE",
+    "file": "audio/station-07.mp3",
+    "mime": "audio/mpeg",
+    "bytes": 1712052
+  }
+]

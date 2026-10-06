@@ -1,0 +1,227 @@
+
+  :root{
+    --amber:#ffb000;
+    --amber-dim:#8a5f00;
+    --red:#ff2b2b;
+    --green:#39ff6a;
+    --panel:rgba(10,8,2,.82);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0b0906;
+    font-family:"Courier New",Courier,monospace;color:var(--amber);
+    -webkit-user-select:none;user-select:none;}
+  #game{position:fixed;inset:0;}
+  #game canvas{display:block;width:100%;height:100%;}
+
+  #grain{position:fixed;inset:0;pointer-events:none;z-index:41;opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:50;display:none;}
+  #hud.on{display:block;}
+  .panel{background:var(--panel);border:2px solid var(--amber);
+    box-shadow:0 0 12px rgba(255,176,0,.35),inset 0 0 18px rgba(255,176,0,.08);
+    text-shadow:0 0 6px rgba(255,176,0,.8);}
+  #topbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    display:flex;gap:14px;align-items:center;padding:8px 16px;font-size:14px;
+    white-space:nowrap;}
+  #topbar b{font-size:18px;}
+  #snd-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
+  /* ---------- Rádio widget ---------- */
+  #radio-wrap{position:absolute;top:64px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px 14px;font-size:13px;}
+  #radio-name{color:var(--green);font-weight:bold;text-align:center;white-space:nowrap;}
+  #radio-btns{display:flex;gap:16px;}
+  .rbtn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 14px;font-size:15px;}
+  #meters{position:absolute;top:10px;left:10px;width:230px;padding:10px 12px;}
+  #meters .row{margin:6px 0;}
+  #meters label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
+  .bar{height:14px;border:1px solid var(--amber);background:#1a1204;position:relative;overflow:hidden;}
+  .bar>i{position:absolute;inset:0;width:0%;transition:width .18s linear;}
+  #bar-temp>i{background:linear-gradient(90deg,#ffb000,#ff5a00,#ff2b2b);}
+  #bar-stress>i{background:linear-gradient(90deg,#39ff6a,#ffb000,#ff2b2b);}
+  #bar-temp.hot>i,#bar-stress.hot>i{animation:blink .4s infinite steps(2);}
+  @keyframes blink{50%{filter:brightness(1.8);}}
+  #progress{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+    width:min(560px,86vw);padding:8px 12px;font-size:12px;}
+  #progress .bar{height:12px;margin-top:5px;}
+  #bar-route>i{background:linear-gradient(90deg,#ffb000,#39ff6a);}
+  #hud-street{color:var(--green);}
+  /* ---------- Združené budíky: rýchlostník + otáčkomer (canvas, bez layout thrash) ---------- */
+  #gauges{position:absolute;right:10px;bottom:110px;display:flex;gap:10px;
+    padding:8px 12px;align-items:flex-start;}
+  #gauges canvas{display:block;width:132px;height:132px;}
+  .gauge{display:flex;flex-direction:column;align-items:center;}
+  .grow{font-size:19px;font-weight:bold;margin-top:2px;white-space:nowrap;}
+  .grow small{font-size:10px;font-weight:normal;color:#ffd97a;margin-left:4px;}
+  #g-gear{display:inline-block;min-width:1.2ch;text-align:center;color:var(--green);
+    border:1px solid var(--green);padding:0 5px;margin-right:6px;font-size:17px;}
+  #g-rpm-num{display:inline-block;min-width:4ch;text-align:right;}
+  #g-spd-num{display:inline-block;min-width:3ch;text-align:right;}
+  /* #hint je 3 riadky (pridal sa riadok cheatov) - zdvihnutý nad #progress
+     (bottom:12, sirka 560px od stredu), inak by sa panely prekrivali. */
+  #hint{position:absolute;bottom:66px;left:10px;max-width:min(320px,42vw);
+    padding:8px 10px;font-size:11px;line-height:1.7;}
+  #fps{position:absolute;bottom:12px;right:10px;padding:6px 10px;font-size:11px;}
+  #ver{position:absolute;bottom:44px;right:10px;padding:2px 8px;font-size:10px;opacity:.8;}
+  #set-btn{position:fixed;bottom:76px;right:10px;z-index:55;padding:6px 10px;font-size:11px;
+    pointer-events:auto;cursor:pointer;}
+  .srow{margin:14px 0;text-align:left;}
+  .srow label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;color:#ffd97a;}
+  .srow label span{color:var(--green);}
+  .srow input[type=range]{width:100%;pointer-events:auto;accent-color:var(--amber);}
+  #noclip{position:fixed;bottom:108px;right:10px;z-index:55;padding:6px 10px;font-size:11px;
+    display:none;color:var(--green);border-color:var(--green);pointer-events:none;}
+  #noclip.on{display:block;}
+  /* ---------- Minimapa (vždy viditeľná, aj v menu) ---------- */
+  #minimap-wrap{position:fixed;top:10px;right:10px;z-index:55;padding:6px;text-align:center;
+    pointer-events:auto;cursor:pointer;font-size:11px;}
+  #minimap{display:block;width:170px;height:170px;background:#0b0906;}
+  #minimap-wrap div{margin-top:4px;}
+  /* Kredit MUSÍ byť širší maximálne ako canvas (170 px), inak roztiahne panel
+     a mapa v ňom bude plávať v prázdnom čiernom poli. */
+  .mapcred{font-size:9px;line-height:1.3;color:rgba(255,176,0,.40);margin-top:2px !important;
+    letter-spacing:.1px;pointer-events:none;}
+  #mapcred{width:170px;max-width:170px;overflow:hidden;white-space:nowrap;
+    text-overflow:ellipsis;text-align:center;}
+  #bigmap .mapcred{width:auto;max-width:none;color:rgba(255,176,0,.55);}
+  /* ---------- Full-size mapa ---------- */
+  #bigmap{z-index:70;}
+  #bigmap .card{max-width:min(92vw,760px);}
+  #bigmap-canvas{display:block;width:100%;background:#0b0906;border:1px solid var(--amber-dim);}
+  #bigmap-legend{font-size:12px;color:#ffd97a;line-height:1.9;margin-top:10px;text-align:left;
+    display:inline-block;}
+  #toast{position:absolute;top:76px;left:50%;transform:translateX(-50%);
+    padding:10px 22px;font-size:16px;font-weight:bold;text-align:center;
+    max-width:88vw;opacity:0;transition:opacity .3s;white-space:pre-wrap;}
+  #toast.show{opacity:1;}
+  /* ---------- CHEAT KÓDY: arkádový toast (mizne bez JS, čisto CSS animácia) ----------
+     Mimo #hud (position:fixed) = funguje aj v pauze mapy.
+     top:136px = nad dvojriadkovým #toast (top:76 + ~52 px), nech sa neprekrívajú. */
+  #cheat-toast{position:fixed;top:136px;left:50%;z-index:58;pointer-events:none;
+    padding:9px 26px;font-size:17px;font-weight:bold;letter-spacing:3px;white-space:nowrap;
+    color:#7a2a00;background:linear-gradient(180deg,#fff3c4 0%,#ffb000 52%,#ff6a00 100%);
+    border:2px solid #fff8dd;
+    box-shadow:0 0 10px #ffb000,0 0 30px rgba(255,140,0,.7),inset 0 0 20px rgba(255,255,255,.5);
+    text-shadow:0 1px 0 rgba(255,255,255,.5);opacity:0;
+    transform:translateX(-50%) scale(.55);}
+  #cheat-toast b{color:#3a1200;letter-spacing:4px;}
+  #cheat-toast.run{animation:cheatPop 2.6s cubic-bezier(.2,1.5,.4,1) forwards;}
+  @keyframes cheatPop{
+    0%{opacity:0;transform:translateX(-50%) scale(.5);}
+    7%{opacity:1;transform:translateX(-50%) scale(1.14);}
+    13%{transform:translateX(-50%) scale(1);}
+    70%{opacity:1;transform:translateX(-50%) scale(1);}
+    100%{opacity:0;transform:translateX(-50%) scale(.9) translateY(-16px);}
+  }
+  /* ---------- Drift + misie: HUD bloky pod budíkmi a metrami ---------- */
+  #mission{position:absolute;top:198px;left:10px;width:230px;padding:8px 10px;
+    font-size:11px;display:none;}
+  #mission.on{display:block;}
+  #mission .mname{color:var(--green);font-weight:bold;font-size:12px;letter-spacing:1px;}
+  #mission .mstat{color:#ffd97a;margin:3px 0;}
+  #mission .bar{height:11px;}
+  #mission #bar-mission>i{background:linear-gradient(90deg,#39ff6a,#ffb000);}
+  #mission #bar-mission.hot>i{animation:blink .4s infinite steps(2);}
+  #mission .mres{display:none;margin-top:6px;font-size:16px;font-weight:bold;
+    letter-spacing:3px;text-align:center;}
+  #mission .mres.pass{display:block;color:var(--green);animation:blink .5s infinite steps(2);}
+  #mission .mres.fail{display:block;color:var(--red);}
+  #drift{position:absolute;top:238px;right:10px;width:184px;padding:8px 10px;
+    font-size:11px;display:none;text-align:right;}
+  #drift.on{display:block;}
+  #drift .drow{display:flex;justify-content:space-between;gap:6px;}
+  #drift .dscore{font-size:21px;font-weight:bold;color:var(--green);line-height:1.1;}
+  #drift .dcombo{font-size:15px;font-weight:bold;color:#ffd97a;}
+  #drift .dcombo.hot{color:#ff5a00;}
+  #drift .dbest{color:#ffd97a;font-size:10px;}
+  #boost-badge{display:none;color:var(--green);}
+  #boost-badge.on{display:inline;}
+  #dmg{position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;
+    background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.55) 100%);}
+  #vign-red{position:fixed;inset:0;pointer-events:none;z-index:48;opacity:0;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(255,30,0,.35) 100%);}
+
+  /* ---------- Overlay obrazovky ---------- */
+  .overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    background:rgba(5,3,0,.78);padding:16px;}
+  .overlay.hidden{display:none;}
+  .card{max-width:640px;width:100%;padding:26px 28px;text-align:center;}
+  .card h1{font-size:clamp(22px,4.5vw,40px);letter-spacing:2px;margin-bottom:6px;
+    text-shadow:2px 2px 0 #5a3000,0 0 18px rgba(255,176,0,.7);}
+  .card h2{font-size:15px;color:#ffd97a;margin-bottom:14px;font-weight:normal;}
+  .card p{font-size:13px;line-height:1.75;margin:10px 0;color:#ffd97a;}
+  .card .keys{display:inline-block;text-align:left;font-size:12px;line-height:2;
+    border:1px dashed var(--amber-dim);padding:8px 16px;margin:10px 0;}
+  .btn{pointer-events:auto;cursor:pointer;display:inline-block;margin-top:16px;
+    font-family:inherit;font-size:18px;font-weight:bold;letter-spacing:2px;
+    color:#0b0906;background:var(--amber);border:none;padding:14px 34px;
+    box-shadow:0 0 22px rgba(255,176,0,.6);}
+  .btn:active{transform:translateY(2px);}
+  #end-stats{font-size:14px;color:var(--green);margin-top:8px;line-height:2;}
+  /* ---------- Dotykové ovládanie: vľavo šípky, vpravo pedále ---------- */
+  #touch{position:fixed;inset:auto 0 0 0;z-index:55;display:none;
+    justify-content:space-between;align-items:flex-end;
+    padding:0 14px 78px;pointer-events:none;touch-action:none;}
+  #touch.on{display:flex;}
+  .tbtn{pointer-events:auto;touch-action:none;-webkit-touch-callout:none;cursor:pointer;
+    width:76px;height:76px;border:2px solid var(--amber);
+    background:rgba(10,8,2,.7);color:var(--amber);font-size:26px;font-family:inherit;}
+  .tbtn:active{background:var(--amber);color:#000;}
+  .pedal{width:72px;}
+  #t-brake{height:104px;}
+  #t-gas{height:128px;border-width:3px;}
+  #t-hand{height:88px;width:64px;font-size:13px;}
+  .tcluster{display:flex;gap:12px;align-items:flex-end;}
+  .tcol{display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .tlab{font-size:10px;color:var(--amber);pointer-events:none;}
+  /* ---------- Dotyk: nastavenia nesmú ležať na pedáloch ----------
+     #touch padá do 78px od spodku a #set-btn bol na 76px -> ležal priamo na
+     plynovej/brzdnej štuple. Body.touch ho presúva doľava hore (vpravo hore je
+     minimap) a #meters posunie nižšie, nech sa nič neprekrýva. */
+  body.touch #set-btn{top:10px;bottom:auto;left:10px;right:auto;}
+  body.touch #meters{top:42px;}
+  body.touch #noclip{top:10px;bottom:auto;left:auto;right:10px;}
+  body.touch #hint{display:none;}
+  body.touch #mission{top:214px;width:180px;}
+  body.touch #drift{top:150px;width:150px;}
+  body.touch #cheat-toast{top:120px;font-size:13px;letter-spacing:2px;padding:7px 16px;}
+  /* ---------- Ray tracing ovládanie ---------- */
+  #settings .card{max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    pointer-events:auto;}
+  #set-rt-toggle{width:100%;pointer-events:auto;cursor:pointer;font-family:inherit;
+    font-size:14px;letter-spacing:1px;padding:10px;background:rgba(10,8,2,.7);
+    border:2px solid var(--amber);color:var(--amber);}
+  #set-rt-toggle.on{background:var(--amber);color:#0b0906;font-weight:bold;}
+  .segs{display:flex;gap:6px;}
+  .segs button{flex:1;pointer-events:auto;cursor:pointer;font-family:inherit;font-size:11px;
+    padding:8px 2px;background:rgba(10,8,2,.7);border:2px solid var(--amber);color:var(--amber);}
+  .segs button.on{background:var(--amber);color:#0b0906;font-weight:bold;}
+  #settings.rt-off .rt-only{opacity:.3;pointer-events:none;}
+  #rt-diag{position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:57;
+    padding:6px 10px;font-size:10px;line-height:1.55;white-space:pre;text-align:left;
+    pointer-events:none;}
+  @media (max-width:760px){ #hint{display:none;} #meters{width:170px;} #minimap{width:110px;height:110px;}
+    #gauges{bottom:150px;right:6px;gap:6px;padding:6px 8px;} #gauges canvas{width:96px;height:96px;}
+    #mission{width:180px;} #drift{width:150px;} #cheat-toast{font-size:13px;letter-spacing:2px;padding:7px 16px;}
+    .grow{font-size:15px;} }
+
+/* ---------- PRELOADER (async boot, nikdy nefreezeuje UI) ---------- */
+#preloader{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  background:#0b0906;transition:opacity .4s;}
+#preloader.done{opacity:0;pointer-events:none;}
+#preloader .card{max-width:520px;width:92vw;padding:28px;text-align:center;}
+#pre-bar{height:14px;border:1px solid var(--amber);background:#1a1204;margin-top:14px;overflow:hidden;}
+#pre-bar>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ffb000,#39ff6a);transition:width .15s;}
+#pre-log{font-size:11px;color:#ffd97a;margin-top:10px;min-height:2.6em;line-height:1.6;white-space:pre-wrap;}
+#pre-tip{font-size:11px;opacity:.7;margin-top:8px;}
+
+/* ---------- POLICE HEAT (GTA hviezdičky 1–5) ---------- */
+#wanted{position:absolute;top:10px;right:190px;padding:6px 12px;font-size:18px;letter-spacing:2px;
+  display:none;}
+#wanted.on{display:block;}
+#wanted .star{color:#3a2c00;}
+#wanted .star.lit{color:var(--amber);text-shadow:0 0 8px rgba(255,176,0,.9);}
+#wanted.heat5 .star.lit{color:var(--red);text-shadow:0 0 10px rgba(255,43,43,.9);animation:blink .4s infinite steps(2);}
+#wanted .evade{font-size:10px;display:block;letter-spacing:1px;color:var(--green);margin-top:2px;}
+#wanted.hiding .evade{animation:blink .5s infinite steps(2);}

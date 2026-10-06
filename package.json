@@ -1,0 +1,25 @@
+{
+  "name": "kruhac-simulator-utek-z-hlohovca",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Kruháč Simulator: Útek z Hlohovca — Three.js GTA-style browser game (modular Vite architecture)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:portable": "vite build --mode portable",
+    "preview": "vite preview",
+    "extract": "python3 tools/extract-monolith.py",
+    "extract:check": "python3 tools/extract-monolith.py --round 1",
+    "prebuild": "npm run extract:check --silent || echo '[prebuild] monolit už rozdelený, pokračujem'"
+  },
+  "dependencies": {
+    "three": "0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "vite-plugin-singlefile": "^2.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
