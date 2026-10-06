@@ -66,6 +66,19 @@ export function createSfx() {
         o.start(t0 + dt); o.stop(t0 + dt + 0.25);
       }
     },
+    // Víťazná zvučka (verbatim melódia z monolitu: 523 → 659 → 784).
+    win() {
+      if (!ensure()) return;
+      const t0 = ctx.currentTime;
+      [[523, 0, 0.15], [659, 0.15, 0.15], [784, 0.3, 0.3]].forEach(([f, dt, dur]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.12, t0 + dt);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dt + dur);
+        o.connect(g); g.connect(master);
+        o.start(t0 + dt); o.stop(t0 + dt + dur + 0.02);
+      });
+    },
     // Rádio (<audio>) cez ten istý master → rovnaká hlasitosť, mute aj balance.
     // Volaj raz po vytvorení sfx; pri zlyhaní hrá element priamo (bez grafu).
     attachRadio(el) {

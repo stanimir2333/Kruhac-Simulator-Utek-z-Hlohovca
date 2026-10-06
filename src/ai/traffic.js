@@ -2,7 +2,7 @@
 // Umiestnenie cez portované routePose/driveY; nearestRoute = verbatim logika.
 import { S } from '../world/shared.js';
 import { routePose } from '../world/roads.js';
-import { driveY, LANE_OFF } from '../world/height.js';
+import { driveY, LANE_OFF, getTerrainHeight } from '../world/height.js';
 
 const _nrp = { x: 0, z: 0, h: 0, d: 0 };
 
@@ -57,10 +57,54 @@ export function placeTraffic(t, playerS, routeLen) {
     c.speed = c.vmax * (0.3 + Math.random() * 0.4); // kolóna sa plíži, nie stojí
     stepCar(c, 0.016, routeLen);
   });
+  // Zaparkované autá na vedľajších cestách blízko štartu (verbatim logika
+  // ambientPlace z monolitu; suspenzia sa preskakuje — stoja).
+  routePose(playerS, _v, _h, 0);
+  const sx = _v.x, sz = _v.z;
+  let parked = 0;
+  for (let ri = 0; ri < S.townRoads.length && parked < 10; ri++) {
+    const R = S.townRoads[ri];
+    if (!R || !R.pts || !R.n) continue;
+    const mx = (R.pts[0] + R.pts[R.n * 2 - 2]) / 2, mz = (R.pts[1] + R.pts[R.n * 2 - 1]) / 2;
+    const dx = mx - sx, dz = mz - sz;
+    if (dx * dx + dz * dz > 250000) continue; // len do 500 m od štartu
+    const c = {
+      parked: true, road: ri, t: R.len * (0.25 + 0.5 * Math.random()), seg: 0,
+      dir: Math.random() < 0.5 ? 1 : -1, speed: 0, vmax: 0,
+      x: 0, y: 0, z: 0, h: 0, d2: 1e9,
+    };
+    ambientPlace(c, ri, c.t);
+    t.cars.push(c);
+    parked++;
+  }
   t.placed = true;
 }
 
+// Umiestnenie na vedľajšej ceste (verbatim monolit, bez updateSuspension).
+export function ambientPlace(c, ri, t) {
+  const R = S.townRoads[ri];
+  if (!R) return;
+  if (t < 0) t = 0; else if (t > R.len) t = R.len;
+  let s = c.seg || 0;
+  if (s < 0) s = 0; else if (s > R.n - 2) s = R.n - 2;
+  while (s < R.n - 2 && t > R.cum[s + 1]) s++;
+  while (s > 0 && t < R.cum[s]) s--;
+  c.seg = s;
+  const x0 = R.pts[s * 2], z0 = R.pts[s * 2 + 1];
+  const x1 = R.pts[s * 2 + 2], z1 = R.pts[s * 2 + 3];
+  let dx = x1 - x0, dz = z1 - z0;
+  const L = Math.sqrt(dx * dx + dz * dz) || 1; dx /= L; dz /= L;
+  const f = (t - R.cum[s]) / L;
+  const h = Math.atan2(dx * c.dir, dz * c.dir);
+  c.x = x0 + dx * f + (-Math.cos(h)) * LANE_OFF;
+  c.z = z0 + dz * f + (Math.sin(h)) * LANE_OFF;
+  c.h = h;
+  c.t = t;
+  c.y = getTerrainHeight(c.x, c.z);
+}
+
 function stepCar(c, dt, routeLen) {
+  if (c.parked) return; // zaparkované: stojí, len sa meria d2 a kreslí
   c.speed += ((c.dir > 0 ? c.vmax : c.vmax * 0.9) - c.speed) * Math.min(1, 1.2 * dt);
   c.s += c.dir * c.speed * dt;
   if (c.s >= routeLen) c.s -= routeLen;

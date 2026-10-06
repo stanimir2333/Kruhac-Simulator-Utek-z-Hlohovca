@@ -34,16 +34,15 @@ import { settings, shadowTierR, setShadowDiag } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { setWaterQuality } from './world/water.js';
 import { wireSettingsUI } from './ui/settings.js';
-import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest } from './game/drift.js';
+import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift } from './game/drift.js';
 import {
   buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
   updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
 } from './game/missions.js';
-import { enableTiles } from './ui/minimap.js';
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
-import { createMinimap } from './ui/minimap.js';
+import { createMinimap, enableTiles } from './ui/minimap.js';
 import { wireMenus } from './ui/menus.js';
 // Štýly ťahá <link> v index.html (Vite ich zbalí; natívny ESM by import CSS odmietol).
 
@@ -214,6 +213,9 @@ async function boot() {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0 });
       playerS = 8;
+      police.heat = 0; // čistý štít (heat si preberie update loop)
+      resetDrift();
+      missionReset();
       hud.toast('Reštart na štarte kolóny.');
     }
     if (e.code === 'F3') {
@@ -223,6 +225,16 @@ async function boot() {
     }
   });
   document.getElementById('btn-start')?.addEventListener('click', () => radio.play(0), { once: true });
+  // skrytý tab = pauza (motor stíchne, svet nespadne do chaosu)
+  document.addEventListener('visibilitychange', () => {
+    if (!state.started) return;
+    if (document.hidden && !state.paused) {
+      state.paused = true;
+      hud.toast('PAUZA — vráť sa do tabu.');
+    } else if (!document.hidden && state.paused) {
+      state.paused = false;
+    }
+  });
 
   // 5) SLUČKA
   await step(0.97, 'hotovo ✔');
@@ -318,6 +330,7 @@ async function boot() {
       // ciel misie: koniec trasy
       if (playerS > S.routeLen - 25 && !state.finished) {
         state.finished = true; state.started = false;
+        sfx.win();
         document.getElementById('end-title').textContent = 'UŠIEL SI!';
         document.getElementById('end-sub').textContent = 'Hlohovec ostal v spätnom zrkadle.';
         document.getElementById('ov-end')?.classList.remove('hidden');
