@@ -182,11 +182,12 @@ async function boot() {
     }
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
-      Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0 });
+      Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });
       playerS = 8;
       resetDrift();
       missionReset();
-      hud.toast('Reštart na štarte kolóny.');
+      dash.selfTest();
+      hud.toast('Reštart na štarte kolóny. Nádrž dotankovaná.');
     }
     if (e.code === 'F3') {
       e.preventDefault();
@@ -242,7 +243,10 @@ async function boot() {
     car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
     if (impact > 0.15) {
       sfx.crash(Math.min(1, impact / 6));
-      if (impact > 1.2) emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
+      if (impact > 1.2) {
+        emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
+        car.oilT = 2.5; // olejka bliká po tvrdej rane
+      }
     }
     // — drift + častice —
     updateDrift(dt, car, input);
@@ -251,6 +255,7 @@ async function boot() {
     Object.assign(state.player, {
       x: car.x, y: car.y, z: car.z, h: car.h, speed: car.speed,
       temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
+      fuel: car.fuel, trip: car.trip, odo: car.odo, oilT: car.oilT,
     });
 
     // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —

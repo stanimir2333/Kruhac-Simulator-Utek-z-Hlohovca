@@ -80,6 +80,7 @@ export function fixCar(car, toast) {
   car.speed = 0;
   car.temp = 0.2;
   car.stress = 0;
+  car.fuel = 1;
   toast?.('OPRAVENÉ · motor beží · kolesá na teréne');
 }
 export function toggleNoclip(force, api) {

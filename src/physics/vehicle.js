@@ -7,6 +7,7 @@ export function createVehicle(opts = {}) {
     x: opts.x ?? 0, y: opts.y ?? 0, z: opts.z ?? 0, h: 0,
     vx: 0, vz: 0, speed: 0, gear: 1, rpm: 900,
     steer: 0, yawRate: 0, temp: 0.2, stress: 0,
+    fuel: 1, trip: 0, odo: 0, oilT: 0, // palivo 0–1, trip/odo v metroch, olejka-timer
     vmax: 250 / 3.6, // m/s
   };
 }
@@ -29,12 +30,20 @@ export function updateVehicle(v, input, dt, terrainY) {
   const vg = GEAR_VMAX[g];
   const drive = th * GEAR_ACC[g] * Math.max(0, 1 - Math.max(0, v.speed) / vg);
   const accel = drive - br * 16 - v.speed * 0.004;
-  v.speed = Math.max(-12, Math.min(v.vmax, v.speed + accel * dt));
+  // prázdna nádrž = núdzový režim do 50 km/h (palivo dotankuje R / FIXCAR)
+  const vmaxEff = v.fuel <= 0 ? 50 / 3.6 : v.vmax;
+  v.speed = Math.max(-12, Math.min(vmaxEff, v.speed + accel * dt));
   if (hand) v.speed *= 1 - Math.min(1, 3 * dt);
   // radenie 1–6
   const kmh = Math.abs(v.speed) * 3.6;
   v.gear = kmh < 30 ? 1 : kmh < 60 ? 2 : kmh < 95 ? 3 : kmh < 135 ? 4 : kmh < 185 ? 5 : 6;
   v.rpm = 900 + (kmh % 42) / 42 * 7100;
+  // palivo + počítadlá: plná nádrž ≈ 30 min zmiešanej jazdy
+  v.fuel = Math.max(0, v.fuel - (0.0002 + th * 0.0009) * dt);
+  const dist = Math.abs(v.speed) * dt;
+  v.trip += dist;
+  v.odo += dist;
+  v.oilT = Math.max(0, (v.oilT || 0) - dt);
   // riadenie (verbatim cit z monolitu): nedotáčavosť s rýchlosťou + cap nad 150 km/h,
   // nech auto pri 200+ nie je myklavé; yawRate sa vyhladzuje
   v.steer += (steer - v.steer) * Math.min(1, 8 * dt);
