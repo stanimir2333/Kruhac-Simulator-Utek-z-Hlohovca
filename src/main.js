@@ -18,7 +18,7 @@ import {
   buildRoads, buildRoundabouts, buildRails, buildGreens, buildCemetery,
   buildRoute, routePose,
 } from './world/roads.js';
-import { buildRiver, initWater, updateWater, waterResize } from './world/water.js';
+import { buildRiver, initWater, updateWater, waterResize, setWaterQuality } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
 import { buildSkyDome } from './world/sky.js';
@@ -32,7 +32,6 @@ import { createBloom } from './fx/bloom.js';
 import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
-import { setWaterQuality } from './world/water.js';
 import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift } from './game/drift.js';
 import {
@@ -121,7 +120,6 @@ async function boot() {
   loadDriftBest();
   enableTiles();
   await step(0.90, 'obloha…');        const skyDome = buildSkyDome(scene, renderer);
-  await step(0.91, 'odraz Váhu…');      initWater(renderer, scene, camera, skyDome, settings.water);
   engine.onResizeExtra(() => waterResize());
 
   // 3) AUTÁ
@@ -143,6 +141,12 @@ async function boot() {
 
   state.police = null;
   const minimap = createMinimap(state, { traffic });
+
+  // Odraz Váhu až PO autách (mirror vrstva musí vidieť aj meshe áut, ako v monolitu).
+  // + zosynchronizuj materiál s uloženou kvalitou (boot inak nechá shader aj pri VYP).
+  await step(0.93, 'odraz Váhu…');
+  initWater(renderer, scene, camera, skyDome, settings.water);
+  setWaterQuality(settings.water);
 
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
