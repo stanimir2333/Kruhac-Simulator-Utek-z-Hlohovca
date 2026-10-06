@@ -308,6 +308,7 @@ export function riverbankSlowdown(x, z) {
 let _cheapWaterMat = null;
 export function setWaterQuality(q) {
   if (!WAT.mat || !WAT.meshes.length) return;
+  WAT.level = q <= 0 ? 0 : q === 1 ? 1 : 2; // gating odrazu v updateWater
   if (q <= 0) {
     if (!_cheapWaterMat) {
       _cheapWaterMat = new THREE.MeshStandardMaterial({ color: 0x2a4a5a, roughness: 0.35, metalness: 0.4 });
@@ -318,9 +319,121 @@ export function setWaterQuality(q) {
   const size = q === 1 ? 128 : 256;
   const cur = WAT.nrmTex?.image?.width || 0;
   if (cur !== size) {
-    try { WAT.nrmTex?.dispose?.(); } catch {}
+    try { WAT.nrmTex?.dispose?.(); } catch { /* už uvoľnená */ }
     WAT.nrmTex = buildWaterNormals(size);
     WAT.mat.uniforms.tNormal.value = WAT.nrmTex;
   }
   for (const m of WAT.meshes) m.material = WAT.mat;
+}
+
+// --- Plánový odraz hladiny (adaptovaný port z monolitu 7332–7450) ---
+// camera/renderer/scene/skyDome sa nečítajú z globálov ale injektujú cez initWater.
+const REFL_LAYER = 6;    // obloha + terén + budovy + most (pre odraz vody)
+const WAT_REACH_BY_LEVEL = [0, 170, 260];  // m: kedy sa ešte kreslí plánový odraz
+let _wctx = { renderer: null, scene: null, camera: null, skyDome: null, viewDist: 220 };
+
+function waterInitReflection() {
+  const { scene, camera } = _wctx;
+  const hi = (WAT.level >= 2) && !S.IS_MOBILE;
+  const rw = hi ? 512 : (S.IS_MOBILE ? 128 : 256), rh = Math.round(rw * 0.5625);
+  WAT.every = hi ? 2 : (S.IS_MOBILE ? 4 : 3);
+  WAT.reflRT = new THREE.WebGLRenderTarget(rw, rh, {
+    type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    depthBuffer: true, generateMipmaps: false,
+  });
+  WAT.reflRT.texture.wrapS = WAT.reflRT.texture.wrapT = THREE.ClampToEdgeWrapping;
+  WAT.mat.uniforms.tRefl.value = WAT.reflRT.texture;
+  WAT.reflCam = new THREE.PerspectiveCamera(68, camera.aspect, 0.5, 900);
+  // svetlá MUSIA vidieť aj odrazovú vrstvu, inak by bol odraz čierny
+  const REFL_MATS = new Set(
+    [S.MAT.ground, S.MAT.houseWall, S.MAT.panelWall, S.MAT.histWall,
+     S.MAT.indWall, S.MAT.pitchedRoof, S.MAT.flatRoof, S.MAT.bridge,
+     S.MAT.rail, S.MAT.sidewalk].filter(Boolean));
+  scene.traverse(function (o) {
+    if (o.isLight) { o.layers.enable(REFL_LAYER); return; }
+    if (!(o.isMesh || o.isInstancedMesh)) return;
+    if (o === _wctx.skyDome || REFL_MATS.has(o.material)) o.layers.enable(REFL_LAYER);
+  });
+  waterResize();
+}
+
+export function waterResize() {
+  if (!WAT.reflCam) return;
+  WAT.reflCam.aspect = _wctx.camera.aspect;
+  WAT.reflCam.far = Math.min(900, Math.max(320, _wctx.viewDist * 2));
+  WAT.reflCam.updateProjectionMatrix();
+}
+
+function renderWaterReflection() {
+  const { renderer, scene, camera, skyDome } = _wctx;
+  const rc = WAT.reflCam;
+  const h = WAT.planeY;
+  const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+  if (rc.fov !== camera.fov) { rc.fov = camera.fov; rc.updateProjectionMatrix(); }
+  rc.position.set(cx, 2 * h - cy, cz);
+  S._v1.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  WAT._tgt.set(cx + S._v1.x, 2 * h - cy - S._v1.y, cz + S._v1.z);
+  rc.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  rc.up.y = -rc.up.y;
+  rc.lookAt(WAT._tgt);
+  rc.updateMatrixWorld(true);
+  WAT.texMat.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+  WAT.texMat.multiply(rc.projectionMatrix);
+  WAT.texMat.multiply(rc.matrixWorldInverse);
+  WAT.mat.uniforms.uTexMat.value.copy(WAT.texMat);
+  // Odraz sa kreslí LEN vrstvou REFL_LAYER (inak feedback-loop + ťah celej scény).
+  const mask = rc.layers.mask;
+  rc.layers.set(REFL_LAYER);
+  if (skyDome) skyDome.position.copy(rc.position);
+  const prev = renderer.getRenderTarget();
+  try {
+    renderer.setRenderTarget(WAT.reflRT);
+    renderer.render(scene, rc);
+  } finally {
+    renderer.setRenderTarget(prev);
+    if (skyDome) skyDome.position.copy(camera.position);
+    rc.layers.mask = mask;
+  }
+}
+
+// TICK VODY: čas vĺn, uReflMix fade, throttlovaný odraz. Volá main loop PRED render.
+export function updateWater(dt, viewDist) {
+  if (!WAT.mat || !WAT.mat.uniforms) return;
+  if (typeof viewDist === 'number') _wctx.viewDist = viewDist;
+  const camera = _wctx.camera;
+  const u = WAT.mat.uniforms;
+  WAT.time += dt;
+  u.uTime.value = WAT.time;
+  if (camera) u.uCamPos.value.copy(camera.position);
+  if (_wctx.scene?.fog) u.uFogDensity.value = _wctx.scene.fog.density;
+  const bb = WAT.bb;
+  const dx = Math.max(bb.x0 - camera.position.x, 0, camera.position.x - bb.x1);
+  const dz = Math.max(bb.z0 - camera.position.z, 0, camera.position.z - bb.z1);
+  WAT.dist = Math.sqrt(dx * dx + dz * dz);
+  WAT.live = (WAT.dist < WAT_REACH_BY_LEVEL[WAT.level]);
+  const want = (WAT.live && WAT.level > 0) ? 1 : 0;
+  const mix = u.uReflMix.value;
+  u.uReflMix.value = mix + (want - mix) * Math.min(1, dt * 2.5);
+  if (!WAT.live || WAT.level < 1 || !WAT.reflRT) return;
+  WAT.tick++;
+  const mx = camera.position.x - WAT.lastX, mz = camera.position.z - WAT.lastZ;
+  if (WAT.tick < WAT.every && (mx * mx + mz * mz) <= 9) return;
+  WAT.tick = 0;
+  WAT.lastX = camera.position.x; WAT.lastZ = camera.position.z;
+  WAT.planeY = nearestWaterY(camera.position.x, camera.position.z);
+  renderWaterReflection();
+}
+
+export function initWater(renderer, scene, camera, skyDome, level = 2) {
+  _wctx = { renderer, scene, camera, skyDome, viewDist: _wctx.viewDist };
+  if (typeof level === 'number') WAT.level = level;
+  if (!WAT.mat) return;
+  try {
+    waterInitReflection();
+  } catch (e) {
+    console.warn('[VODA] odraz vypnutý:', e);
+    WAT.level = 0;
+    try { WAT.mat.uniforms.uReflMix.value = 0; } catch { /* bez shaderu niet čo stíšiť */ }
+  }
+  WAT.ready = true;
 }

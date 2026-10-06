@@ -280,7 +280,7 @@ export function syncSettingsUI(ctx) {
   const tg = $('set-rt-toggle');
   if (tg) {
     tg.classList.toggle('on', settings.rt);
-    tg.textContent = settings.rt ? 'RTX ZAPNUTÉ [F3]' : 'ZAPNÚŤ RTX';
+    tg.textContent = settings.rt ? 'TIENE ZAPNUTÉ' : 'ZAPNÚŤ TIENE';
   }
   const rtV = $('set-rt-v');
   if (rtV) rtV.textContent = settings.rt ? 'ZAP.' : 'VYP.';

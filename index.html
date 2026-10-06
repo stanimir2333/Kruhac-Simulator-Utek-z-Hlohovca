@@ -79,7 +79,7 @@
     <div id="hud-street">CESTA 513 → VON Z MESTA</div>
     <div class="bar" id="bar-route"><i></i></div>
   </div>
-  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · F2 debug · F3 RTX · ESC nastavenia<br>CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · FIXCAR · TURBO</div>
+  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · T turbo · F3 bloom · ESC nastavenia<br>CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · FIXCAR · TURBO</div>
   <div id="fps" class="panel">60 FPS</div>
   <div id="ver" class="panel">B25 · LM</div>
 </div>
@@ -119,17 +119,17 @@
       </div></div>
     <div class="srow"><label><span>ZVUK · VYVÁŽENIE</span><span id="set-bal-v">STRED</span></label>
       <input id="set-bal" type="range" min="-50" max="50" step="1" value="0"></div>
-    <div class="srow"><label><span>RAY TRACING</span><span id="set-rt-v">VYP.</span></label>
-      <button id="set-rt-toggle">ZAPNÚŤ RTX</button></div>
-    <div class="srow rt-only"><label><span>ÚROVEŇ</span><span id="set-rtq-v">STANDARD</span></label>
+    <div class="srow"><label><span>DYNAMICKÉ TIENE + SLNKO</span><span id="set-rt-v">VYP.</span></label>
+      <button id="set-rt-toggle">ZAPNÚŤ TIENE</button></div>
+    <div class="srow rt-only"><label><span>TIENE · MAPA</span><span id="set-rtq-v">STANDARD</span></label>
       <div class="segs" id="set-rtq">
         <button data-q="0">LITE</button><button data-q="1">STD</button><button data-q="2">ULTRA</button>
       </div></div>
-    <div class="srow rt-only"><label><span>TIENE RT</span><span id="set-rtsh-v">100%</span></label>
+    <div class="srow rt-only"><label><span>TIENE · DOSAH</span><span id="set-rtsh-v">100%</span></label>
       <input id="set-rtsh" type="range" min="0" max="1.5" step="0.05" value="1"></div>
-    <div class="srow rt-only"><label><span>SVETLO RT</span><span id="set-rtli-v">100%</span></label>
+    <div class="srow rt-only"><label><span>SLNKO · SILA</span><span id="set-rtli-v">100%</span></label>
       <input id="set-rtli" type="range" min="0" max="2" step="0.05" value="1"></div>
-    <div class="srow rt-only"><label><span>KVALITA RT</span><span id="set-rtql-v">100%</span></label>
+    <div class="srow rt-only"><label><span>RENDER · ŠKÁLA</span><span id="set-rtql-v">100%</span></label>
       <input id="set-rtql" type="range" min="0.3" max="1" step="0.05" value="1"></div>
     <p style="font-size:11px;line-height:1.6;">TIENE = sila kontaktných tieňov (shadow mapa ostáva).<br>
       SVETLO = odrazené svetlo. KVALITA = rozlíšenie + kroky lúčov.<br>

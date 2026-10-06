@@ -11,21 +11,21 @@ import { S } from './world/shared.js';
 import { buildTextures, buildShared } from './world/textures.js';
 import {
   buildWaterSamples, buildElevModel, buildRoadProfiles, buildRoundHeights,
-  buildRouteSub, getTerrainHeight, driveY, LANE_OFF,
+  buildRouteSub, driveY, LANE_OFF,
 } from './world/height.js';
-import { computeBounds, buildGround, gridQuery } from './world/ground.js';
+import { computeBounds, buildGround } from './world/ground.js';
 import {
   buildRoads, buildRoundabouts, buildRails, buildGreens, buildCemetery,
   buildRoute, routePose,
 } from './world/roads.js';
-import { buildRiver } from './world/water.js';
+import { buildRiver, initWater, updateWater, waterResize } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
 import { buildSkyDome } from './world/sky.js';
-import { buildPlayerMesh, buildTrafficMesh, buildPoliceMesh, syncMesh, flashBars } from './world/cars.js';
+import { buildPlayerMesh, buildTrafficMesh, syncMesh } from './world/cars.js';
 import { createVehicle, updateVehicle, collideWorld } from './physics/vehicle.js';
 import { createTraffic, placeTraffic, updateTraffic, nearestRoute } from './ai/traffic.js';
-import { createPoliceSystem, HeatEvent } from './ai/police.js';
+// Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
 import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
 import { createBloom } from './fx/bloom.js';
@@ -50,12 +50,6 @@ const pre = createPreloader();
 const state = createState();
 const _v3 = new THREE.Vector3();
 const _hWrap = { v: 0 };
-
-function wrapAngle(a) {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a < -Math.PI) a += Math.PI * 2;
-  return a;
-}
 
 async function boot() {
   pre.step(0.04, 'inicializujem renderer…');
@@ -126,7 +120,9 @@ async function boot() {
   missionReset();
   loadDriftBest();
   enableTiles();
-  await step(0.90, 'obloha…');        buildSkyDome(scene, renderer);
+  await step(0.90, 'obloha…');        const skyDome = buildSkyDome(scene, renderer);
+  await step(0.91, 'odraz Váhu…');      initWater(renderer, scene, camera, skyDome, settings.water);
+  engine.onResizeExtra(() => waterResize());
 
   // 3) AUTÁ
   await step(0.92, 'autá…');
@@ -139,7 +135,7 @@ async function boot() {
   const playerMesh = buildPlayerMesh(state.player.color);
   scene.add(playerMesh.group);
 
-  const traffic = createTraffic(16);
+  const traffic = createTraffic(26);
   placeTraffic(traffic, playerS, S.routeLen);
   const trafficMeshes = traffic.cars.map(() => {
     const m = buildTrafficMesh();
@@ -147,32 +143,8 @@ async function boot() {
     return m;
   });
 
-  const police = createPoliceSystem(state, {
-    onBusted: (lvl) => {
-      state.started = false;
-      document.getElementById('end-title').textContent = `CHYTENÝ · ★${lvl}`;
-      document.getElementById('end-sub').textContent = 'Mestská polícia Hlohovec ďakuje za spoluprácu.';
-      document.getElementById('ov-end')?.classList.remove('hidden');
-    },
-  });
-  police.syncRoadblocksWithMap(osm);
-  state.police = police;
-  const minimap = createMinimap(state, { traffic, police });
-  const policeMeshes = [];
-  for (let i = 0; i < 6; i++) {
-    const m = buildPoliceMesh(i < 1 ? 'mestska' : i < 3 ? 'statna' : 'pmj');
-    m.group.visible = false;
-    scene.add(m.group);
-    policeMeshes.push(m);
-  }
-  // Prestriek garáž (OC VÁH): viditeľný marker
-  const spray = police.sprayShops[0];
-  const sprayMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(spray.r, spray.r, 6, 20, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0x39ff6a, transparent: true, opacity: 0.18, side: THREE.DoubleSide }),
-  );
-  sprayMesh.position.set(spray.x, getTerrainHeight(spray.x, spray.z) + 3, spray.z);
-  scene.add(sprayMesh);
+  state.police = null;
+  const minimap = createMinimap(state, { traffic });
 
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
@@ -184,9 +156,6 @@ async function boot() {
   addEventListener('keydown', unlock, { once: true });
 
   // klávesové skratky mimo input.js + cheat-kódy (GTA štýl: písanie hocikde)
-  const cd = {}; // cooldowny heat-eventov
-  const cool = (k, s) => (cd[k] ?? -99) + s <= state.time;
-  const mark = (k) => { cd[k] = state.time; };
   const cheatApi = {
     car, toast: (m) => hud.toast(m),
     playing: () => state.started && !state.paused,
@@ -213,7 +182,6 @@ async function boot() {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0 });
       playerS = 8;
-      police.heat = 0; // čistý štít (heat si preberie update loop)
       resetDrift();
       missionReset();
       hud.toast('Reštart na štarte kolóny.');
@@ -239,7 +207,8 @@ async function boot() {
   // 5) SLUČKA
   await step(0.97, 'hotovo ✔');
   await nextFrame();
-  let hudAcc = 1, slowAcc = 0, occAcc = 0, fpsAcc = 0, fpsN = 0, prevHeat = 0;
+  let hudAcc = 1, slowAcc = 0, fpsAcc = 0, fpsN = 0;
+  let playerLat = 0; // priečna odchýlka od osi trasy (pre mostovku)
   const camPos = new THREE.Vector3(_v3.x - Math.sin(car.h) * 9, car.y + 3.5, _v3.z - Math.cos(car.h) * 9);
   camera.position.copy(camPos);
 
@@ -262,19 +231,16 @@ async function boot() {
     if (isNoclip()) {
       updateNoclip(dt, car, input);
     } else {
-      const gy = driveY(car.x, car.z, playerS, 0);
+      // Skutočná priečna odchýlka od trasy: mostovka platí len ±7 m od osi
+      // (s lat=0 by deckBlend dvíhal auto do nekonečna do strán).
+      const gy = driveY(car.x, car.z, playerS, playerLat);
       tel = updateVehicle(car, input, dt, gy);
-      const cars = [...traffic.cars, ...police.units];
-      impact = collideWorld(car, cars);
+      impact = collideWorld(car, traffic.cars);
     }
     car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
     if (impact > 0.15) {
       sfx.crash(Math.min(1, impact / 6));
       if (impact > 1.2) emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
-      if (cool('hit', 2) && police.level > 0) {
-        police.report(impact > 8 ? HeatEvent.MAYHEM : HeatEvent.COLLISION_MINOR, t);
-        mark('hit');
-      }
     }
     // — drift + častice —
     updateDrift(dt, car, input);
@@ -285,48 +251,14 @@ async function boot() {
       temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
     });
 
-    // — projekcia na trasu (10 Hz) + triggery —
+    // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —
     slowAcc += dt;
     if (slowAcc > 0.1) {
       slowAcc = 0;
       const nr = nearestRoute(car.x, car.z);
       playerS = nr.s;
-      const kmh = Math.abs(car.speed) * 3.6;
-      // speeding na Námestí sv. Michala (úsek z OSM streets)
-      for (const [a, b, name] of osm.streets || []) {
-        if (name.includes('Michala') && playerS >= a && playerS < b && kmh > 50 && cool('sq', 3)) {
-          police.report(HeatEvent.SPEEDING_SQUARE, t); mark('sq');
-          hud.toast('SPEEDING na Námestí sv. Michala! ★');
-        }
-      }
-      // protismer na moste (len ako eskalácia existujúcej naháňačky)
-      if (police.level > 0 && playerS > S.bridgeS0 && playerS < S.bridgeS1 && Math.abs(wrapAngle(car.h - nr.h)) > 1.8 && cool('ww', 4)) {
-        police.report(HeatEvent.WRONG_WAY_BRIDGE, t); mark('ww');
-        hud.toast('PROTISMER na moste ponad Váh! ★★');
-      }
-      // drift pred hliadkou
-      if (tel.drifting && police.level >= 1) {
-        let near = 1e9;
-        for (const u of police.units) near = Math.min(near, (u.x - car.x) ** 2 + (u.z - car.z) ** 2);
-        if (near < 3600 && cool('drift', 4)) { police.report(HeatEvent.DRIFT_TAUNT, t); mark('drift'); }
-      }
-      // prerazenie zátarasu
-      for (const blk of police.roadblocks) {
-        if ((blk.x - car.x) ** 2 + (blk.z - car.z) ** 2 < 64 && Math.abs(car.speed) > 10 && cool('smash', 4)) {
-          police.report(HeatEvent.SMASH_BLOCK, t); mark('smash');
-          hud.toast('PRERAZIL si zátaras! ★★★★');
-        }
-      }
-      // ram do policajta
-      if (impact > 1.2) {
-        for (const u of police.units) {
-          if ((u.x - car.x) ** 2 + (u.z - car.z) ** 2 < 36 && cool('ram', 3)) {
-            police.report(HeatEvent.RAM_POLICE, t); mark('ram');
-            hud.toast('NARAZIL si do hliadky! ★★');
-            break;
-          }
-        }
-      }
+      // lat = priemet do pravého smeru trasy (routePose: posun = (-cos h, +sin h) * L)
+      playerLat = -(car.x - nr.x) * Math.cos(nr.h) + (car.z - nr.z) * Math.sin(nr.h);
       // ciel misie: koniec trasy
       if (playerS > S.routeLen - 25 && !state.finished) {
         state.finished = true; state.started = false;
@@ -337,7 +269,7 @@ async function boot() {
       }
     }
 
-    // — doprava + polícia + misie —
+    // — doprava + misie —
     updateTraffic(traffic, dt, state.player, playerS, S.routeLen);
     updateMissions(dt, {
       car, playerS, routeLen: S.routeLen,
@@ -345,33 +277,6 @@ async function boot() {
       onWin: (m) => hud.toast(m || 'MISIA SPLNENÁ ✔'),
       onFail: (m) => hud.toast(m || 'Misia zlyhala'),
     });
-    occAcc += dt;
-    if (occAcc > 0.3) { // lacná oklúzia: budova medzi hráčom a najbližšou hliadkou?
-      occAcc = 0;
-      let occluded = false;
-      if (police.units.length) {
-        let bi = 0, bd = 1e18;
-        police.units.forEach((u, i) => {
-          const d = (u.x - car.x) ** 2 + (u.z - car.z) ** 2;
-          if (d < bd) { bd = d; bi = i; }
-        });
-        if (bd > 1600) {
-          const u = police.units[bi];
-          const mx = (u.x + car.x) / 2, mz = (u.z + car.z) / 2;
-          occluded = gridQuery(S.BGRID, mx, mz, 0) > 0;
-        }
-      }
-      police._occluded = occluded;
-    }
-    police.update(dt, t, {});
-    // eskalácia heatu = varovný PING + hláška (jediný spúšťač je speeding na Námestí)
-    if (police.level !== prevHeat) {
-      if (police.level > prevHeat && police.level > 0) {
-        sfx.ping();
-        hud.toast(`★${police.level} HLIADKA ZA TEBOU — ujdi z dohľadu alebo prejdi prestriekom!`);
-      }
-      prevHeat = police.level;
-    }
     sfx.engine((car.rpm - 900) / 7100, input.throttle());
 
     // — meshe —
@@ -384,15 +289,9 @@ async function boot() {
       if (m && c.d2 < 160000) { m.group.visible = true; syncMesh(m, c.x, c.y, c.z, c.h, c.speed, dt); }
       else if (m) m.group.visible = false;
     });
-    police.units.forEach((u, i) => {
-      const m = policeMeshes[i];
-      if (!m) return;
-      m.group.visible = true;
-      u.y = getTerrainHeight(u.x, u.z) + 0.15;
-      syncMesh(m, u.x, u.y, u.z, u.h, u.speed, dt);
-    });
-    for (let i = police.units.length; i < policeMeshes.length; i++) policeMeshes[i].group.visible = false;
-    if (police.units.length) flashBars(policeMeshes.slice(0, police.units.length), t);
+
+    // voda: vlny + fade odrazu + throttlovaný plánový odraz (pred renderom)
+    updateWater(dt, settings.dist);
 
     // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
     if (settings.rt) {
