@@ -345,10 +345,9 @@ function waterInitReflection() {
   WAT.mat.uniforms.tRefl.value = WAT.reflRT.texture;
   WAT.reflCam = new THREE.PerspectiveCamera(68, camera.aspect, 0.5, 900);
   // svetlá MUSIA vidieť aj odrazovú vrstvu, inak by bol odraz čierny
-  const REFL_MATS = new Set(
-    [S.MAT.ground, S.MAT.houseWall, S.MAT.panelWall, S.MAT.histWall,
-     S.MAT.indWall, S.MAT.pitchedRoof, S.MAT.flatRoof, S.MAT.bridge,
-     S.MAT.rail, S.MAT.sidewalk].filter(Boolean));
+  const REFL_MATS = new Set([S.MAT.ground, S.MAT.houseWall, S.MAT.panelWall, S.MAT.histWall,
+    S.MAT.indWall, S.MAT.pitchedRoof, S.MAT.flatRoof, S.MAT.bridge, S.MAT.rail, S.MAT.sidewalk,
+    S.MAT.lampOn, S.MAT.head]);
   scene.traverse(function (o) {
     if (o.isLight) { o.layers.enable(REFL_LAYER); return; }
     if (!(o.isMesh || o.isInstancedMesh)) return;

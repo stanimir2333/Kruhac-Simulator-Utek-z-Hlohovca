@@ -22,9 +22,9 @@ import { buildRiver, initWater, updateWater, waterResize } from './world/water.j
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
 import { buildSkyDome } from './world/sky.js';
-import { buildPlayerMesh, buildTrafficMesh, syncMesh } from './world/cars.js';
+import { buildPlayerMesh, syncMesh } from './world/cars.js';
 import { createVehicle, updateVehicle, collideWorld } from './physics/vehicle.js';
-import { createTraffic, placeTraffic, updateTraffic, nearestRoute } from './ai/traffic.js';
+import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshes, drawCars, setHorn, setMuted } from './ai/traffic.js';
 // Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
 import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
@@ -137,11 +137,9 @@ async function boot() {
 
   const traffic = createTraffic(26);
   placeTraffic(traffic, playerS, S.routeLen);
-  const trafficMeshes = traffic.cars.map(() => {
-    const m = buildTrafficMesh();
-    scene.add(m.group);
-    return m;
-  });
+  buildCarMeshes(); // instancie civilistov (farby z ALL_CARS, potrebuje buildShared)
+  setHorn(() => sfx.honk());
+  setMuted(state.muted);
 
   state.police = null;
   const minimap = createMinimap(state, { traffic });
@@ -174,7 +172,7 @@ async function boot() {
     if (e.code === 'KeyE' && !typing && !isNoclip()) radio.next();
     if (e.code === 'KeyT' && state.started && !typing) toggleTurbo((m) => hud.toast(m));
     if (e.code === 'KeyX' && !typing) {
-      const m = !state.muted; state.muted = m; sfx.setMuted(m);
+      const m = !state.muted; state.muted = m; sfx.setMuted(m); setMuted(m);
       const b = document.getElementById('snd-btn');
       if (b) b.textContent = m ? 'ZVUK: OFF [X]' : 'ZVUK: ON [X]';
     }
@@ -284,11 +282,7 @@ async function boot() {
       playerMesh.bodyMat.color.setHex(state.player.color);
     }
     syncMesh(playerMesh, car.x, car.y, car.z, car.h, car.speed, dt);
-    traffic.cars.forEach((c, i) => {
-      const m = trafficMeshes[i];
-      if (m && c.d2 < 160000) { m.group.visible = true; syncMesh(m, c.x, c.y, c.z, c.h, c.speed, dt); }
-      else if (m) m.group.visible = false;
-    });
+    drawCars(); // všetky AI autá naraz (instancie + brzdové svetlá)
 
     // voda: vlny + fade odrazu + throttlovaný plánový odraz (pred renderom)
     updateWater(dt, settings.dist);
