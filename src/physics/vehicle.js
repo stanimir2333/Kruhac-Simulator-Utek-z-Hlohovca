@@ -15,12 +15,20 @@ export function gearRatio(gear) {
   return [0, 3.4, 2.4, 1.8, 1.35, 1.05, 0.85][gear] ?? 1;
 }
 
+// Strop rýchlosti a záťah po kvaltoch (m/s, m/s²) — šestka dá plných 250 km/h.
+const GEAR_VMAX = [0, 15, 25, 38, 52, 63, 72];
+const GEAR_ACC = [0, 17, 13, 10, 8, 7, 7];
+
 /** Krok fyziky — volá sa z main loopu s pevným dt (clamp 0.1). Vracia telemetriu pre HUD/police. */
 export function updateVehicle(v, input, dt, terrainY) {
   const th = input.throttle(), br = input.brake(), steer = input.axis();
   const hand = input.handbrake();
-  // pozdĺžna dynamika (zjednodušený krútiak × prevod, odpor + limitér)
-  const accel = th * 9.5 * gearRatio(v.gear) * 0.55 - br * 14 - v.speed * 0.28;
+  // Ťah na kolesách s prevodovým stropom: každý kvalt má vlastné vmax,
+  // sila lineárne vädne k nemu (plný plyn na šestke = 250 km/h limiter).
+  const g = Math.max(1, Math.min(6, v.gear | 0));
+  const vg = GEAR_VMAX[g];
+  const drive = th * GEAR_ACC[g] * Math.max(0, 1 - Math.max(0, v.speed) / vg);
+  const accel = drive - br * 16 - v.speed * 0.004;
   v.speed = Math.max(-12, Math.min(v.vmax, v.speed + accel * dt));
   if (hand) v.speed *= 1 - Math.min(1, 3 * dt);
   // radenie 1–6
@@ -37,7 +45,7 @@ export function updateVehicle(v, input, dt, terrainY) {
   // drift skóre vstup: |steer| × speed pri ručnej
   const drifting = hand && Math.abs(v.speed) > 8 && Math.abs(v.steer) > 0.4;
   // teplota: státie varí, plynulá jazda chladí (z monolitu)
-  v.temp += ((Math.abs(v.speed) < 1 ? 0.03 : -0.012) + Math.abs(accel) * 0.0012) * dt;
+  v.temp += ((Math.abs(v.speed) < 1 ? 0.03 : -0.012) + Math.abs(accel) * 0.0006) * dt;
   v.temp = Math.max(0, Math.min(1, v.temp));
   return { kmh, drifting, accel };
 }

@@ -27,10 +27,11 @@ export function createInput() {
 
   return {
     keys, touch,
+    // Konvencia z monolitu (steerInput = left − right): vľavo = +1, heading rastie doľava.
     axis() {
-      const l = (keys.KeyA || keys.ArrowLeft || touch.left) ? -1 : 0;
+      const l = (keys.KeyA || keys.ArrowLeft || touch.left) ? 1 : 0;
       const r = (keys.KeyD || keys.ArrowRight || touch.right) ? 1 : 0;
-      return l + r;
+      return l - r;
     },
     throttle() {
       if (keys.KeyW || keys.ArrowUp || touch.gas) return 1;
