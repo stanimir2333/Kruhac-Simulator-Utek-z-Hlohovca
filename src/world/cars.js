@@ -6,6 +6,22 @@ const bodyGeo = new THREE.BoxGeometry(1.8, 0.62, 4.1);
 const cabinGeo = new THREE.BoxGeometry(1.55, 0.55, 2.0);
 const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.26, 10);
 const barGeo = new THREE.BoxGeometry(1.1, 0.16, 0.4);
+const headGeo = new THREE.BoxGeometry(0.34, 0.2, 0.1);
+const tailGeo = new THREE.BoxGeometry(0.3, 0.16, 0.1);
+// Emisívne svetlá: HDR jas (intensity > 1) → chytí ich prahový bloom. Predok = +z.
+const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffffff, emissiveIntensity: 3.2 });
+const tailMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff1a1a, emissiveIntensity: 1.8 });
+
+function lights(parent, y, frontZ) {
+  for (const sx of [-1, 1]) {
+    const h = new THREE.Mesh(headGeo, headMat);
+    h.position.set(sx * 0.55, y, frontZ);
+    parent.add(h);
+    const t = new THREE.Mesh(tailGeo, tailMat);
+    t.position.set(sx * 0.55, y + 0.04, -frontZ);
+    parent.add(t);
+  }
+}
 
 function std(color, rough = 0.55, metal = 0.3) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
@@ -35,6 +51,7 @@ export function buildPlayerMesh(color = 0xffb000) {
   cabin.position.set(0, 1.18, -0.25);
   cabin.castShadow = true;
   g.add(body, cabin);
+  lights(g, 0.62, 2.06);
   const wh = wheels(g);
   return { group: g, bodyMat, wheels: wh, spin: 0 };
 }
@@ -49,6 +66,7 @@ export function buildTrafficMesh(color) {
   const cabin = new THREE.Mesh(cabinGeo, std(0x1a2530, 0.25, 0.6));
   cabin.position.set(0, 1.18, -0.25);
   g.add(body, cabin);
+  lights(g, 0.62, 2.06);
   const wh = wheels(g);
   return { group: g, wheels: wh, spin: Math.random() * 6 };
 }
@@ -65,6 +83,7 @@ export function buildPoliceMesh(kind = 'mestska') {
   const bar = new THREE.Mesh(barGeo, barMat);
   bar.position.set(0, kind === 'pmj' ? 1.95 : 1.5, -0.25);
   g.add(body, cabin, bar);
+  lights(g, kind === 'pmj' ? 0.8 : 0.62, kind === 'pmj' ? 2.31 : 2.06);
   const wh = wheels(g);
   return { group: g, wheels: wh, barMat, spin: 0, phase: Math.random() * 2 };
 }

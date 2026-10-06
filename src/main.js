@@ -29,6 +29,9 @@ import { createPoliceSystem, HeatEvent } from './ai/police.js';
 import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
 import { createBloom } from './fx/bloom.js';
+import { updateSunShadow } from './fx/sunshadow.js';
+import { settings, shadowTierR, setShadowDiag } from './ui/settings.js';
+import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { setWaterQuality } from './world/water.js';
 import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest } from './game/drift.js';
@@ -90,6 +93,7 @@ async function boot() {
     renderer, scene, camera, sun, engine,
     bloom: { setMode: (m) => bloom.setMode(m) },
     water: { setQuality: (q) => setWaterQuality(q) },
+    audio: { setBalance: (v) => sfx.setBalance(v) },
   };
   wireSettingsUI(settingsCtx, (m) => hud.toast(m));
 
@@ -174,33 +178,48 @@ async function boot() {
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
   const radio = createRadio(document.getElementById('bgm'));
+  sfx.attachRadio(document.getElementById('bgm'));
   loadRadioManifest().then(({ list, base }) => radio.setList(list, base));
   const unlock = () => { sfx.unlock(); };
   addEventListener('pointerdown', unlock, { once: true });
   addEventListener('keydown', unlock, { once: true });
 
-  // klávesové skratky mimo input.js
+  // klávesové skratky mimo input.js + cheat-kódy (GTA štýl: písanie hocikde)
   const cd = {}; // cooldowny heat-eventov
   const cool = (k, s) => (cd[k] ?? -99) + s <= state.time;
   const mark = (k) => { cd[k] = state.time; };
+  const cheatApi = {
+    car, toast: (m) => hud.toast(m),
+    playing: () => state.started && !state.paused,
+    onWarp: () => { playerS = nearestRoute(car.x, car.z).s; },
+  };
   addEventListener('keydown', (e) => {
-    if (e.code === 'KeyH' && state.started) {
-      sfx.honk();
-      if (cool('honk', 4)) { police.report(HeatEvent.HONK, state.time); mark('honk'); }
+    // cheat buffer: písmená a–z (WASD šliapu ďalej, pohyb sa nikdy nefiltruje)
+    if (!e.repeat && e.key && e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+      cheatKey(e.key.toLowerCase(), cheatApi);
+    } else if (!e.repeat && cheatTyping()) {
+      cheatCancel(); // iná klávesa zruší písanie kódu
     }
-    if (e.code === 'KeyQ') radio.prev();
-    if (e.code === 'KeyE') radio.next();
-    if (e.code === 'KeyT' && state.started) toggleTurbo((m) => hud.toast(m));
-    if (e.code === 'KeyX') {
+    const typing = cheatLocked();
+    if (e.code === 'KeyH' && state.started && !typing) sfx.honk();
+    if (e.code === 'KeyQ' && !typing) radio.prev();
+    if (e.code === 'KeyE' && !typing && !isNoclip()) radio.next();
+    if (e.code === 'KeyT' && state.started && !typing) toggleTurbo((m) => hud.toast(m));
+    if (e.code === 'KeyX' && !typing) {
       const m = !state.muted; state.muted = m; sfx.setMuted(m);
       const b = document.getElementById('snd-btn');
       if (b) b.textContent = m ? 'ZVUK: OFF [X]' : 'ZVUK: ON [X]';
     }
-    if (e.code === 'KeyR' && state.started) {
+    if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0 });
       playerS = 8;
       hud.toast('Reštart na štarte kolóny.');
+    }
+    if (e.code === 'F3') {
+      e.preventDefault();
+      bloom.setMode((bloom.getMode() + 1) % 3);
+      hud.toast('Bloom: ' + ['VYP.', 'SLABÝ', 'JASNÝ'][bloom.getMode()]);
     }
   });
   document.getElementById('btn-start')?.addEventListener('click', () => radio.play(0), { once: true });
@@ -208,7 +227,7 @@ async function boot() {
   // 5) SLUČKA
   await step(0.97, 'hotovo ✔');
   await nextFrame();
-  let hudAcc = 1, slowAcc = 0, occAcc = 0, fpsAcc = 0, fpsN = 0;
+  let hudAcc = 1, slowAcc = 0, occAcc = 0, fpsAcc = 0, fpsN = 0, prevHeat = 0;
   const camPos = new THREE.Vector3(_v3.x - Math.sin(car.h) * 9, car.y + 3.5, _v3.z - Math.cos(car.h) * 9);
   camera.position.copy(camPos);
 
@@ -223,18 +242,24 @@ async function boot() {
       return;
     }
 
-    // — hráč (turbo dvíha limiter na 300 km/h) —
+    // — hráč (turbo dvíha limiter na 300 km/h; noclip lieta bez fyziky) —
     car.vmax = turboActive() ? VMAX_TURBO : 250 / 3.6;
     updateTurbo(dt, (m) => hud.toast(m));
-    const gy = driveY(car.x, car.z, playerS, 0);
-    const tel = updateVehicle(car, input, dt, gy);
-    const cars = [...traffic.cars, ...police.units];
-    const impact = collideWorld(car, cars);
+    let tel = { kmh: Math.abs(car.speed) * 3.6, drifting: false, accel: 0 };
+    let impact = 0;
+    if (isNoclip()) {
+      updateNoclip(dt, car, input);
+    } else {
+      const gy = driveY(car.x, car.z, playerS, 0);
+      tel = updateVehicle(car, input, dt, gy);
+      const cars = [...traffic.cars, ...police.units];
+      impact = collideWorld(car, cars);
+    }
     car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
     if (impact > 0.15) {
       sfx.crash(Math.min(1, impact / 6));
       if (impact > 1.2) emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
-      if (cool('hit', 2)) {
+      if (cool('hit', 2) && police.level > 0) {
         police.report(impact > 8 ? HeatEvent.MAYHEM : HeatEvent.COLLISION_MINOR, t);
         mark('hit');
       }
@@ -262,8 +287,8 @@ async function boot() {
           hud.toast('SPEEDING na Námestí sv. Michala! ★');
         }
       }
-      // protismer na moste
-      if (playerS > S.bridgeS0 && playerS < S.bridgeS1 && Math.abs(wrapAngle(car.h - nr.h)) > 1.8 && cool('ww', 4)) {
+      // protismer na moste (len ako eskalácia existujúcej naháňačky)
+      if (police.level > 0 && playerS > S.bridgeS0 && playerS < S.bridgeS1 && Math.abs(wrapAngle(car.h - nr.h)) > 1.8 && cool('ww', 4)) {
         police.report(HeatEvent.WRONG_WAY_BRIDGE, t); mark('ww');
         hud.toast('PROTISMER na moste ponad Váh! ★★');
       }
@@ -326,6 +351,14 @@ async function boot() {
       police._occluded = occluded;
     }
     police.update(dt, t, {});
+    // eskalácia heatu = varovný PING + hláška (jediný spúšťač je speeding na Námestí)
+    if (police.level !== prevHeat) {
+      if (police.level > prevHeat && police.level > 0) {
+        sfx.ping();
+        hud.toast(`★${police.level} HLIADKA ZA TEBOU — ujdi z dohľadu alebo prejdi prestriekom!`);
+      }
+      prevHeat = police.level;
+    }
     sfx.engine((car.rpm - 900) / 7100, input.throttle());
 
     // — meshe —
@@ -348,10 +381,11 @@ async function boot() {
     for (let i = police.units.length; i < policeMeshes.length; i++) policeMeshes[i].group.visible = false;
     if (police.units.length) flashBars(policeMeshes.slice(0, police.units.length), t);
 
-    // slnko vezie tieňový frustum s hráčom (ľahká verzia legacy updateSun)
-    sun.position.set(car.x + S.SUN_OFF.x, S.SUN_OFF.y, car.z + S.SUN_OFF.z);
-    sun.target.position.set(car.x, 0, car.z);
-    sun.target.updateMatrixWorld();
+    // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
+    if (settings.rt) {
+      const diag = updateSunShadow(sun, car.x, car.y, car.z, settings.dist, shadowTierR());
+      if (diag) setShadowDiag(diag.texel, diag.depth);
+    }
 
     // — kamera (naháňačka s vyhladením) —
     const fx = Math.sin(car.h), fz = Math.cos(car.h);

@@ -1,4 +1,5 @@
 // src/ui/menus.js — overlay obrazovky (štart / koniec / nastavenia / bigmap pauza).
+import { cheatLocked } from '../game/cheats.js';
 export function wireMenus(state, engine, hud) {
   const $ = (id) => document.getElementById(id);
   $('btn-start')?.addEventListener('click', () => {
@@ -11,7 +12,7 @@ export function wireMenus(state, engine, hud) {
   $('btn-set-close')?.addEventListener('click', () => $('settings')?.classList.add('hidden'));
   addEventListener('keydown', (e) => {
     if (e.code === 'Escape') $('settings')?.classList.toggle('hidden');
-    if (e.code === 'KeyM') $('bigmap')?.classList.toggle('hidden');
+    if (e.code === 'KeyM' && !cheatLocked()) $('bigmap')?.classList.toggle('hidden');
   });
   $('minimap-wrap')?.addEventListener('click', () => $('bigmap')?.classList.toggle('hidden'));
 }

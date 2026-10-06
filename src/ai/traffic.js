@@ -27,7 +27,7 @@ export function nearestRoute(x, z) {
 const _v = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
 const _h = { v: 0 };
 
-export function createTraffic(n = 16) {
+export function createTraffic(n = 26) {
   const cars = [];
   for (let i = 0; i < n; i++) {
     const oncoming = i >= Math.ceil(n * 0.6);
@@ -40,11 +40,21 @@ export function createTraffic(n = 16) {
   return { cars, placed: false };
 }
 
-/** Rozostav premávku okolo štartu hráča (raz po buildRoute). */
+/** Hustá kolóna od štartu: rovnaký smer tesne okolo hráča (−120…+450 m),
+ *  protismer oproti. Pocit rannej špičky hneď od prvej sekundy. */
 export function placeTraffic(t, playerS, routeLen) {
-  t.cars.forEach((c, i) => {
-    c.s = ((playerS + 40 + i * 55) % (routeLen - 20) + routeLen) % (routeLen - 20);
-    if (c.dir < 0) c.s = ((playerS - 40 - i * 40) % routeLen + routeLen) % routeLen;
+  let fwd = 0, back = 0;
+  t.cars.forEach((c) => {
+    if (c.dir > 0) {
+      // 2 vpredu v tesnom rozostupe, 1 za hráčom (kolóna za chrbtom)
+      if (fwd % 3 !== 2) { c.s = playerS + 25 + fwd * 22 + Math.random() * 8; fwd++; }
+      else { c.s = playerS - 30 - back * 26 - Math.random() * 8; back++; fwd++; }
+      c.s = ((c.s % (routeLen - 20)) + routeLen - 20) % (routeLen - 20);
+    } else {
+      c.s = ((playerS + 60 + back * 45 + Math.random() * 20) % routeLen + routeLen) % routeLen;
+      back++;
+    }
+    c.speed = c.vmax * (0.3 + Math.random() * 0.4); // kolóna sa plíži, nie stojí
     stepCar(c, 0.016, routeLen);
   });
   t.placed = true;

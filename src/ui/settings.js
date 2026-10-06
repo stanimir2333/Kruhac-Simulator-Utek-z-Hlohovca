@@ -16,11 +16,12 @@
 // RT engine sa NEPORTUJE (stage-3): RT podúrovne sa len uložia + toast.
 // Žiadne volania pri importe; žiadne game/player/input/bgm.
 import { S } from '../world/shared.js';
+import { setShadowRangeScale } from '../fx/sunshadow.js';
 
 // Vlastný store (predvolené hodnoty podľa zadania).
 export const settings = {
-  res: 1, fps: 60, dist: 220, bloom: 1, water: 2,
-  rt: false, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
+  res: 1, fps: 60, dist: 220, bloom: 1, water: 2, bal: 0,
+  rt: true, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
 };
 
 // ---------- KVALITA TIENÍ (LOKÁLNE, verbatim monolit @3790–3799) ----------
@@ -44,9 +45,14 @@ export let SHADOW_DEPTH = 500; // hĺbkový rozsah tieňového frustumu (diagnos
 // Mená segmentov (verbatim monolit).
 const BLOOM_NAME = ['VYP.', 'SLABÝ', 'JASNÝ'];
 const WAT_NAME = ['VYP.', 'NÍZKE', 'VYSOKÉ'];
-// Náhrada labelu za RT_LEVELS[RT.level].name (RT engine v stage-3).
+// Vyváženie: L30 … STRED … R20 (hodnota -1..+1).
+function balLabel(v) {
+  const p = Math.round(v * 50);
+  if (p === 0) return 'STRED';
+  return (p < 0 ? 'Ľ' : 'R') + Math.abs(p);
+}
+// Náhrada labelu za RT_LEVELS[RT.level].name.
 const RT_LEVEL_NAMES = ['LITE', 'STANDARD', 'ULTRA'];
-const RT_STAGE3_MSG = 'RT príde v stage-3.';
 
 // Rozpočet VRAM: pri prekročení ustúpi o JEDEN schod
 // (max 1× za 3 s, drag slideru nekaskáduje): najprv tiene.
@@ -74,7 +80,7 @@ const $ = (id) => document.getElementById(id);
 export function applyPR(ctx) {
   const c = ctx || _ctx;
   const dpr = typeof devicePixelRatio !== 'undefined' ? devicePixelRatio : 1;
-  let v = settings.res * dpr;
+  let v = settings.res * dpr * settings.rtQl; // KVALITA RT škáluje render
   if (v < 0.1) v = 0.1;
   else if (v > 2) v = 2; // strop 2x: 3x + RT ULTRA + 8K tieň = GB VRAM navyše na iGPU so zdieľanou RAM
   if (c?.renderer?.setPixelRatio) c.renderer.setPixelRatio(v);
@@ -149,10 +155,22 @@ export function applyShadowTier(ctx, t) {
     // (tieňový frustum cestuje s hráčom — engine-loop/main.js).
   }
   // Diagnostika bez frustumu: texel z min(dohľad, strop tieru), hĺbka len orientačná.
+  // Presné čísla po prvom prepočte prepíše main loop (setShadowDiag).
   const r = Math.max(60, Math.min(settings.dist, SHADOW_TIERS[shadowTier].r));
   SHADOW_TEXEL = (2 * r) / Math.max(1, use);
   SHADOW_DEPTH = 500;
   syncSettingsUI(c);
+}
+
+// Diagnostiku frustumu zapisuje main loop (src/fx/sunshadow.js) — priame
+// priradenie sem nesmie (importy by spravili cyklus), preto setter.
+export function setShadowDiag(texel, depth) {
+  SHADOW_TEXEL = texel;
+  SHADOW_DEPTH = depth;
+}
+// Strop orto-polomeru pre aktuálny tier (pre dynamický frustum v main loopu).
+export function shadowTierR() {
+  return SHADOW_TIERS[Math.max(0, Math.min(SHADOW_TIERS.length - 1, shadowTier))].r;
 }
 
 // <- legacy @9419 (rovnaký kľúč aj polia ako monolit)
@@ -165,6 +183,7 @@ export function saveSettings() {
       sh: shadowTier,
       bl: settings.bloom,
       wq: settings.water,
+      bal: settings.bal,
       rt: settings.rt ? 1 : 0,
       rtq: settings.rtQ,
       rtsh: settings.rtSh,
@@ -188,6 +207,7 @@ export function loadSettings() {
     }
     if (s.bl >= 0 && s.bl <= 2) settings.bloom = s.bl;
     if (s.wq >= 0 && s.wq <= 2) settings.water = s.wq;
+    if (typeof s.bal === 'number' && s.bal >= -1 && s.bal <= 1) settings.bal = s.bal;
     // Monolit: URL prepínače (?rt=/?rtq=/?rts=) mali prednosť pred uloženým
     // nastavením — VYNECHANÉ (neportuje sa; uložené RT sa vždy prevezme).
     if (s.rt === 1) settings.rt = true;
@@ -252,6 +272,10 @@ export function syncSettingsUI(ctx) {
   if (wsegs) {
     for (let i = 0; i < wsegs.length; i++) wsegs[i].classList.toggle('on', i === settings.water);
   }
+  // --- zvuk: vyváženie L/R (-1..+1, krok 0.02) ---
+  $('set-bal') && ($('set-bal').value = Math.round(settings.bal * 50));
+  const balV = $('set-bal-v');
+  if (balV) balV.textContent = balLabel(settings.bal);
   // --- ray tracing (engine v stage-3: len stav + labely, bez RT_SPLITPOROV.) ---
   const tg = $('set-rt-toggle');
   if (tg) {
@@ -290,6 +314,12 @@ export function applyAll(ctx) {
   applyShadowTier(c, settings.shq);
   try { c?.bloom?.setMode?.(settings.bloom); } catch (_e) { /* noop */ }
   try { c?.water?.setQuality?.(settings.water); } catch (_e) { /* noop */ }
+  try { c?.audio?.setBalance?.(settings.bal); } catch (_e) { /* noop */ }
+  try {
+    if (c?.renderer) c.renderer.shadowMap.enabled = settings.rt;
+    if (c?.sun) c.sun.intensity = 2.4 * settings.rtLi;
+    setShadowRangeScale(settings.rtSh);
+  } catch (_e) { /* noop */ }
   syncSettingsUI(c);
 }
 
@@ -347,6 +377,14 @@ export function wireSettingsUI(ctx, toast) {
   });
   $('set-dist')?.addEventListener('change', () => saveSettings());
 
+  $('set-bal')?.addEventListener('input', (e) => {
+    settings.bal = Math.max(-1, Math.min(1, parseInt(e.target.value, 10) / 50));
+    const v = $('set-bal-v');
+    if (v) v.textContent = balLabel(settings.bal);
+    try { c?.audio?.setBalance?.(settings.bal); } catch (_e) { /* noop */ }
+  });
+  $('set-bal')?.addEventListener('change', () => saveSettings());
+
   $('set-bloom')?.addEventListener('click', (e) => {
     const b = e.target.closest ? e.target.closest('button') : null;
     if (!b) return;
@@ -368,34 +406,51 @@ export function wireSettingsUI(ctx, toast) {
     saveSettings();
   });
 
-  // RT: engine sa neportuje — len ulož + toast o stage-3.
+  // RT = dynamické tiene + sunlight (neportovaný ray-tracer; panel riadi realtime svetlá).
+  // Master toggle: tiene ZAP (frustum cestuje s hráčom) / VYP (tieňová mapa off).
   $('set-rt-toggle')?.addEventListener('click', () => {
     settings.rt = !settings.rt;
+    try {
+      if (c?.renderer) {
+        c.renderer.shadowMap.enabled = settings.rt;
+        c.scene?.traverse?.((o) => { if (o.material) o.material.needsUpdate = true; });
+      }
+    } catch (_e) { /* noop */ }
     syncSettingsUI(c);
     saveSettings();
-    say(RT_STAGE3_MSG);
+    say(settings.rt ? 'Dynamické tiene ZAP.' : 'Tiene VYP.');
   });
   $('set-rtq')?.addEventListener('click', (e) => {
     const b = e.target.closest ? e.target.closest('button') : null;
     if (!b || b.disabled) return;
     settings.rtQ = parseInt(b.getAttribute('data-q'), 10);
-    syncSettingsUI(c);
+    // ÚROVEŇ = preset tieňovej mapy: LITE 2K / STD 4K / ULTRA 8K.
+    applyShadowTier(c, [1, 2, 3][Math.max(0, Math.min(2, settings.rtQ))]);
     saveSettings();
-    say(RT_STAGE3_MSG);
   });
   const rtRange = (id, labelId, key) => {
     $(id)?.addEventListener('input', (e) => {
       settings[key] = parseFloat(e.target.value);
       const v = $(labelId);
       if (v) v.textContent = Math.round(settings[key] * 100) + '%';
+      applyRTLive(c);
     });
     $(id)?.addEventListener('change', () => {
       syncSettingsUI(c);
       saveSettings();
-      say(RT_STAGE3_MSG);
+      applyRTLive(c);
     });
   };
   rtRange('set-rtsh', 'set-rtsh-v', 'rtSh');
   rtRange('set-rtli', 'set-rtli-v', 'rtLi');
   rtRange('set-rtql', 'set-rtql-v', 'rtQl');
+}
+
+// Živé RT hodnoty: TIENE = zoom frustumu, SVETLO = intenzita slnka,
+// KVALITA = škálovanie renderu (cez applyPR).
+export function applyRTLive(ctx) {
+  const c = ctx || _ctx;
+  try { setShadowRangeScale(settings.rtSh); } catch (_e) { /* noop */ }
+  try { if (c?.sun) c.sun.intensity = 2.4 * settings.rtLi; } catch (_e) { /* noop */ }
+  applyPR(c);
 }
