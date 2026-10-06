@@ -26,9 +26,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # Po migrácii je index.html už slim shell — zdroj monolitu hľadaj v legacy zálohe.
 def _pick_source():
+    import subprocess
     for c in [ROOT / "index.monolith.legacy.html", ROOT / "index.html"]:
         if c.exists() and c.stat().st_size > 1_000_000:
             return c
+    tmp = Path("/tmp/legacy.html")
+    if tmp.exists() and tmp.stat().st_size > 1_000_000:
+        return tmp
+    # posledná záchrana: monolit je commitnutý v git HEAD
+    try:
+        r = subprocess.run(["git", "show", "HEAD:index.html"], cwd=ROOT,
+                           capture_output=True, timeout=60)
+        if len(r.stdout) > 1_000_000:
+            tmp.write_bytes(r.stdout)
+            return tmp
+    except Exception:
+        pass
     return ROOT / "index.html"
 SRC = _pick_source()
 OUT_DATA = ROOT / "public" / "data" / "mapData.json"

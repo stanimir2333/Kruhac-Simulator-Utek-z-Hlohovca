@@ -1,5 +1,9 @@
 // src/ui/hud.js — throttled HUD (5 Hz, žiadny layout thrash; budíky majú vlastný canvas).
-import { streetAt } from '../world/roads.js';
+// Názov ulice z OSM streets rozsahov (civilná verzia legacy streetAt).
+function streetName(osm, s) {
+  for (const [a, b, name] of osm.streets || []) if (s >= a && s < b) return name;
+  return 'CESTA 513';
+}
 
 export function createHUD(state) {
   const el = (id) => document.getElementById(id);
@@ -25,7 +29,7 @@ export function createHUD(state) {
       if (ui.speed) ui.speed.textContent = kmh | 0;
       if (ui.dist) ui.dist.textContent = Math.max(0, routeLen - playerS) | 0;
       if (ui.time) { const s = t | 0; ui.time.textContent = `${(s / 60) | 0}:${String(s % 60).padStart(2, '0')}`; }
-      if (ui.street && osm) ui.street.textContent = streetAt(osm, playerS) + ' → VON Z MESTA';
+      if (ui.street && osm) ui.street.textContent = streetName(osm, playerS) + ' → VON Z MESTA';
       if (ui.route) ui.route.style.width = `${(100 * playerS / routeLen).toFixed(1)}%`;
       const tmp = Math.round(p.temp * 100), str = Math.round(p.stress * 100);
       if (ui.valTemp) ui.valTemp.textContent = tmp + '%';

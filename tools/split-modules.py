@@ -22,9 +22,13 @@ import re, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-for c in [ROOT / "index.monolith.legacy.html", ROOT / "index.html"]:
-    if c.exists() and c.stat().st_size > 1_000_000:
-        SRC = c; break
+import subprocess
+_cands = [ROOT / "index.monolith.legacy.html", ROOT / "index.html", Path("/tmp/legacy.html")]
+SRC = next((c for c in _cands if c.exists() and c.stat().st_size > 1_000_000), None)
+if SRC is None:  # monolit je commitnutý v git HEAD
+    r = subprocess.run(["git", "show", "HEAD:index.html"], cwd=ROOT, capture_output=True)
+    Path("/tmp/legacy.html").write_bytes(r.stdout)
+    SRC = Path("/tmp/legacy.html")
 
 MAP = [
     ("TERÉN", "src/world/terrain.js"), ("VODNÉ LÍNIE", "src/world/terrain.js"),
