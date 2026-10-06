@@ -31,7 +31,7 @@ export const S = {
   terrainMesh: null, // <- legacy @3608
   SUN_OFF: { x:170, y:120, z:-95 }, // <- legacy @3637
   IS_MOBILE: (typeof window !== "undefined" && typeof window.matchMedia === "function") && window.matchMedia("(pointer: coarse)").matches, // <- legacy @3762
-  LABEL_MAX: S.IS_MOBILE ? 10 : 40, // <- legacy @3779
+  LABEL_MAX: 40, // <- legacy @3779 (hodnota sa dopočíta nižšie — S nesmie čítať samo seba v literáli!)
   SKY_ZENITH: 0x6fa9dc, // <- legacy @3781
   SKY_HORIZON: 0xece7d6, // <- legacy @3782
   SKY_FOG: 0xdfe0d2, // <- legacy @3783
@@ -43,9 +43,9 @@ export const S = {
   TEX: {}, // <- legacy @3845
   DYN_GEO: [], // <- legacy @3846
   ROUTE_N: 1600, // <- legacy @3855
-  routeX: new Float32Array(S.ROUTE_N + 1), // <- legacy @3856
-  routeZ: new Float32Array(S.ROUTE_N + 1), // <- legacy @3857
-  routeH: new Float32Array(S.ROUTE_N + 1), // <- legacy @3858
+  routeX: null, // <- legacy @3856 (alokuje sa nižšie — S nesmie čítať S.ROUTE_N v literáli!)
+  routeZ: null, // <- legacy @3857
+  routeH: null, // <- legacy @3858
   routeLen: 1, // <- legacy @3859
   bridgeS0: 0, // <- legacy @3861
   bridgeS1: 0, // <- legacy @3861
@@ -72,3 +72,9 @@ export const S = {
       _size:new THREE.Vector2(), _cc:new THREE.Color()
     }, // <- legacy @7476
 };
+
+// Odvodené hodnoty AŽ po literáli (vnútri literálu by S čítalo samo seba = TDZ!).
+S.LABEL_MAX = S.IS_MOBILE ? 10 : 40;
+S.routeX = new Float32Array(S.ROUTE_N + 1);
+S.routeZ = new Float32Array(S.ROUTE_N + 1);
+S.routeH = new Float32Array(S.ROUTE_N + 1);
