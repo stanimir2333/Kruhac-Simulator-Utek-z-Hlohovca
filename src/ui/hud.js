@@ -22,7 +22,7 @@ export function createHUD(state) {
       clearTimeout(toastT); toastT = setTimeout(() => ui.toast.classList.remove('show'), ms);
     },
     /** Volaj max 5×/s z main loopu. */
-    update(dt, t, playerS, routeLen, osm) {
+    update(dt, t, playerS, routeLen, osm) {   // eslint-disable-line no-unused-vars
       if (!ui.hud?.classList.contains('on')) return;
       const p = state.player;
       const kmh = Math.abs(p.speed) * 3.6;

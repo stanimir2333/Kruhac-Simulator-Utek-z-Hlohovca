@@ -32,7 +32,9 @@
     display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px 14px;font-size:13px;}
   #radio-name{color:var(--green);font-weight:bold;text-align:center;white-space:nowrap;}
   #radio-btns{display:flex;gap:16px;}
-  .rbtn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 14px;font-size:15px;}
+  .rbtn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 14px;font-size:15px;
+    background:var(--panel);color:var(--amber);font-family:inherit;}
+  .rbtn:active{background:var(--amber);color:#0b0906;}
   #meters{position:absolute;top:10px;left:10px;width:230px;padding:10px 12px;}
   #meters .row{margin:6px 0;}
   #meters label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
@@ -146,10 +148,14 @@
   #peter .ptext{color:#ffd97a;margin-top:3px;line-height:1.6;white-space:pre-wrap;}
   #boost-badge{display:none;color:var(--green);}
   #boost-badge.on{display:inline;}
-  #dmg{position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;
+  /* display:none NIE opacity:0 — pri opacity:0 zostávajú dve plnoobrazovkové
+     vrstvy v kompozícii a browser ich skladá nad canvasom každý snímok.
+     Sú stále vypnuté (JS ich nikdy nezapína), takže sa strata vizuálne nemení. */
+  #dmg{position:fixed;inset:0;pointer-events:none;z-index:49;display:none;
     background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.55) 100%);}
-  #vign-red{position:fixed;inset:0;pointer-events:none;z-index:48;opacity:0;
+  #vign-red{position:fixed;inset:0;pointer-events:none;z-index:48;display:none;
     background:radial-gradient(ellipse at center,transparent 55%,rgba(255,30,0,.35) 100%);}
+  #dmg.on,#vign-red.on{display:block;}
 
   /* ---------- Overlay obrazovky ---------- */
   .overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
@@ -189,13 +195,18 @@
      plynovej/brzdnej štuple. Body.touch ho presúva doľava hore (vpravo hore je
      minimap) a #meters posunie nižšie, nech sa nič neprekrýva. */
   body.touch #set-btn{top:10px;bottom:auto;left:10px;right:auto;}
+  /* Zrno je plnoobrazovková priehľadná vrstva nad canvasom — na najslabších
+     zariadeniach stojí viac než panely HUD. Vypnúť (vizualizácia ostáva). */
+  body.touch #grain{display:none;}
   body.touch #meters{top:42px;}
   body.touch #noclip{top:10px;bottom:auto;left:auto;right:10px;}
   body.touch #hint{display:none;}
   body.touch #mission{top:214px;width:180px;}
   body.touch #drift{top:150px;width:150px;}
   body.touch #cheat-toast{top:120px;font-size:13px;letter-spacing:2px;padding:7px 16px;}
-  /* ---------- Ray tracing ovládanie ---------- */
+  /* ---------- RT ovládanie ----------
+     RT engine sa neportuje; panel riadi realtime tiene (fx/sunshadow.js) a
+     postprocessing. LITE/STD/ULTRA = preset tieňovej mapy (ui/settings.js). */
   #settings .card{max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
     pointer-events:auto;}
   #set-rt-toggle{width:100%;pointer-events:auto;cursor:pointer;font-family:inherit;
@@ -226,7 +237,9 @@
 #pre-log{font-size:11px;color:#ffd97a;margin-top:10px;min-height:2.6em;line-height:1.6;white-space:pre-wrap;}
 #pre-tip{font-size:11px;opacity:.7;margin-top:8px;}
 
-/* ---------- POLICE HEAT (GTA hviezdičky 1–5) ---------- */
+/* ---------- POLICE HEAT (GTA hviezdičky 1–5) ----------
+     Heat/polícia boli odstránené zámerne (AGENTS.md "Dead code"). Štýly tu
+     ostávajú, aby sa dal #wanted oživiť bez hľadania v CSS. */
 #wanted{position:absolute;top:10px;right:190px;padding:6px 12px;font-size:18px;letter-spacing:2px;
   display:none;}
 #wanted.on{display:block;}

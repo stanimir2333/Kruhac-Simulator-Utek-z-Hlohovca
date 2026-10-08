@@ -28,18 +28,22 @@ Verified: running it with no code changes dirties `public/data/mapData.json`.
 Always `git status` after a build, and never run `npm run extract` casually —
 it clobbers hand-tuned map/audio data.
 
-## Audio: assets are gitignored, so deploys are silent
+## Audio: 23 MB binárky sú VERZOVANÉ v gite
 
-Only `public/audio/manifest.json` is tracked; `station-*.mp3|wav` are gitignored
-(regenerate locally with `npm run extract`, or un-comment the Git-LFS line in
-`.gitattributes` + the block in `.gitignore`). A fresh clone / GitHub Pages build
-therefore has a manifest but **zero mp3s** — the radio label still shows a station
-name while `radio.play()` sets a `src` that 404s and is swallowed by
-`.catch(() => {})` (`src/audio/radio.js:30`). There is no error UI.
+`public/audio/station-*.mp3|wav` (8 stôp, 23 MB) **musia zostať v repo**. GitHub
+Pages slúži koreň repa, takže `public/audio/` je jediný zdroj, z ktorého sa
+hrá. Nie je to východisko len pre túto úpravu: stopy sa generujú z monolitu
+(`/home/stanislav/index.monolith.legacy.html`), ktorý **nie je v repo** — CI/Pages
+build ich nedokáže vygenerovať. Ak ich niekedy omylom zignoruješ, deploy má
+manifest (mená staníc svietia) ale 8 chýbajúcich mp3 → 404 spustený
+`.catch(() => {})` (`src/audio/radio.js:30`) ticho prehltne a rádio je mŕtve
+bez akejkoľvek chyby na obrazovke. Git LFS tu nepoužívame (Pages by servíroval
+pointery).
 
 There is **no deploy config at all**: no `.github/workflows`, no CNAME/.nojekyll,
-`dist/` is gitignored. Pages must be serving the repo root or a manually copied
-`dist/` — confirm which before debugging a deploy-only bug.
+`dist/` is gitignored. Pages slúži **koreň repa** (z `main`/root), takže
+`index.html` beží bez buildu a `three` rieši importmap na unpkg
+(`index.html:9`). Predpoklad na debug deployových chýb.
 
 ## Path resolution: the 6-candidate lists are load-bearing
 
@@ -48,6 +52,9 @@ There is **no deploy config at all**: no `.github/workflows`, no CNAME/.nojekyll
 `public/data/…` in order. This exists because the game must boot from **Vite dev**,
 from `dist/`, from `python -m http.server` at repo root, from a Pages deploy serving
 the repo root (where data lives at `/public/…`), and from `file://`.
+On a Pages *project* site the absolute candidates (`/public/…`) 404 because they
+drop the `/<repo>/` prefix — only the `./public/…` one resolves. Same reason
+`ASSET_ROOT = "assets/textures/"` is relative and hits the repo-root `assets/`.
 Add a new data path → add candidates, don't switch to an absolute path.
 `file://` degrades to `TINY_FALLBACK` map + procedural textures, never errors.
 
@@ -84,17 +91,85 @@ Add a new data path → add candidates, don't switch to an absolute path.
 - Ported modules keep provenance comments naming monolith line ranges — keep them
   accurate when editing.
 
+### Git: môžeš commitovať a pushovať bez dožiadania
+
+**Nevyžiadaj si povolenie na commit ani push.** Po hotovej práci v tomto rebu je
+**štandard `git add -A && git commit && git push`** na `main` (origin je
+`https://github.com/stanimir2333/Kruhac-Simulator-Utek-z-Hlohovca`). Používateľ
+to povolil výslovne 2026-10-08.
+
+Vyhnutie sa:
+- NIKDY necommituj bez `git status` + `git diff` prehliadnutia. Toto repo má
+  `prebuild`, ktorý ticho prepíše `public/data/mapData.json` a `public/audio/*`
+  (pozri "npm run build silently rewrites tracked data") — ak sú tie súbory
+  špinavé, NECH sú súčasťou commitu.
+- NIKDY `git commit -a`/`-A` bez kontroly `git status --short public/` a bez
+  `git diff --cached` — 8 stôp mp3 je 23 MB a Pages ich nedokáže vygenerovať.
+- NIKDY `push --force`, `git config`, `git rebase -i`, `git commit --amend`.
+  Force-push na `main` je vždy strata práce; reset je jediný pôvod commitu.
+- Commituj celú zmenu ako JEDEN commit, ak nepovedal inak. Nechaj `git status`
+  čistý a `git log --oneline -1` ukazuje tvoj commit.
+- Pred pushom over `python3 tools/leak-check.py` + `deno check --no-remote` na
+  zmenených súboroch. `node` v tomto sandboxe nie je nainštalovaný, takže
+  `npm run dev` / `npm run build` spustiť nemožno — overenie kódu rob cez
+  `deno check` a `deno lint` (pozri Verification).
+
+Commit message: krátky, slovenský, bez tičňatých bodiek na konci, ~72 znaky.
+Dobré vzory z histérie: `fix water white: initWater after cars + boot material
+sync`, `legacy-exact: full AI traffic port + water reflection gaps closed`,
+`hightmap-fix`, `add-peter`, `radio na pages: verzuj station-*.mp3`.
+
 ## Dead code — don't chase, don't "fix"
 
 - `src/ai/police.js` (253 lines): not imported anywhere; police/heat removed on
-  purpose. `main.js:28` explains it. `sfx.ping()` exists only for it.
-- `sfx.getBalance()`, unused `WORLD` import in `src/audio/radio.js:3`.
-- HUD with no handler (keyboard only): `#snd-btn` (mute), `#radio-prev`,
-  `#radio-next`, `#wanted` stars. CSS gives them `pointer-events:auto`, which
-  looks clickable but isn't.
+  purpose. `main.js:28` explains it. `sfx.ping()` exists only for it — and so do
+  `HEAT` in `src/core/config.js`, `riverbankSlowdown` in `water.js` and
+  `waterDist2` in `height.js`. **Do not "clean up" these four**: deleting them
+  leaves police.js with unresolvable imports.
+- `#wanted` stars in the HUD have no handler (police is gone). `display:none`
+  until police returns; the CSS is kept for that day.
 - `tools/split-modules.py`, `tools/gen_placeholders.mjs`: one-off migration
   helpers. `gen_placeholders.mjs` is **stale** — it parses painters out of
   `index.html`, which is now a 12 KB shell with no painter block.
+
+Already removed (were dead, now gone): `overlapOBB`, `gearRatio`, `heightAt`,
+`gridAlloc`, `pruneOSM`, `fetchFirst`, `sfx.getBalance`, `isMuted`,
+`driftState`, `driftBreak`, `nearSNP`, `photoMatFor`, `landmarkTex`, `LM_SEEN`,
+`SNP_PTS`, the `PHOTO_*`/`CORR_*` stubs, `buildTrafficMesh`/`buildPoliceMesh`/
+`flashBars` (`src/world/cars.js` now only builds the player mesh),
+`mapDragEnd`/`setMapDragEnd`/`mapWasDragged`, engine's `onRender`/`setViewDist`,
+and the duplicate deck-height formula (`routeDeckY` delegates to
+`wheelGroundY` in `height.js` — one source of truth, don't re-fork it).
+
+## Load-bearing invariants — don't break these
+
+- **`gridQuery(g, x, z, ring, out)`** takes the output buffer as a parameter and
+  `S.GQ` is **gone**. Each grid owns its scratch (`RGRID_GQ`, `VEG_GQ`, `BLD_GQ`,
+  `WARP_GQ`). The old shared `S.GQ` only worked because no query nested; a
+  `roadDist2()` call inside a `BGRID` loop would have silently corrupted the
+  outer result. Never reintroduce a module-global here.
+- **`routeSamplesFlat` returns `[pts, sArr]`.** It used to publish `s` values in
+  a module-global `RS`, and `buildRoads` captured it twice — the second call
+  overwrote the first, so the `pre` strip got the bridge's `s` values and
+  `deckBlend()` lifted the first ~45 m of the route to deck height. No shared
+  state between calls.
+- **`drawCars` dirty cache** compares each car's transform against the last one
+  written (`c.drawOn`/`c.d*`). `needsUpdate` only fires when something actually
+  changed, and `bi`/`wi`/`hi` must advance for skipped cars too or every instance
+  after a frozen one shifts by one. `buildCarMeshes` clears `drawOn` before the
+  first draw.
+- **Touch controls**: `main.js` adds `body.touch` + `#touch.on` when
+  `S.IS_MOBILE`. Without it the pedals stay `display:none` and mobile is
+  unplayable.
+- **`state.paused` is shared** by the big map (`menus.js`) and the hidden-tab
+  handler (`main.js`, guarded by `pausedByTab`). The tab handler must not unpause
+  a game paused by the map.
+- **Settings source of truth**: `shadowTier` is the only state for the shadow
+  map; `settings.rtQ` is *derived* from it (`RT_TIER_FROM_SHADOW`) and only `sh`
+  is persisted. The `set-shq` and `set-rtq` buttons both write `shadowTier` —
+  that's intentional, they are two views of one setting.
+- **FPS cap** comes from `settings.fps` via `wireSettingsUI` → `applyAll`. Don't
+  re-add an `engine.setFpsCap(...)` in the boot path with a hardcoded value.
 
 ## Verification
 
@@ -103,15 +178,22 @@ No test/lint/typecheck scripts exist. What actually exists and passes today:
 ```bash
 python3 tools/leak-check.py        # undefined-identifier scan, src/world/*.js ONLY
 python3 tools/check_textures.py     # texture slots vs assets/ (needs Pillow; exit 1 on drift)
+deno lint --json src/               # unused vars, prefer-const … (no repo config; not enforced)
+deno check --no-remote src/*.js     # parse + type check per file (no node needed)
 ```
 
 `leak-check.py` only covers `src/world/` — a clean run there says nothing about
-`src/audio`, `src/game`, `src/ai`, or `src/ui`.
+`src/audio`, `src/game`, `src/ai`, or `src/ui`. `deno lint` has no repo config,
+so expect ~40 pre-existing findings; only `no-unused-vars` and `no-undef` matter
+for a change. Everything else is manual: load the game, watch the console
+(`[boot]`, `[map]`, `[TEX]` lines), and drive it with the keybinds — `WASD` drive,
+`H` horn, `Q`/`E` radio, `X` mute, `R` restart (+ 2.5 s dashboard self-test),
+`M` map, `T` turbo, `F` Peter, `F3` bloom cycle, `ESC` settings. Cheat codes are
+typed GTA-style (`NOCLIP`, `WARPZAMOK`, `WARPPETER`, `FIXCAR`, `TURBO`) and
+suppress single-key shortcuts while a prefix is being typed (`cheatLocked()`),
+so press those keys alone when testing a shortcut.
 
-Everything else is manual: load the game, watch the console (`[boot]`, `[map]`,
-`[TEX]` lines), and drive it with the keybinds — `WASD` drive, `H` horn,
-`Q`/`E` radio, `X` mute, `R` restart (+ 2.5 s dashboard self-test), `M` map,
-`T` turbo, `F` Peter, `F3` bloom cycle, `ESC` settings. Cheat codes are typed
-GTA-style (`NOCLIP`, `WARPZAMOK`, `WARPPETER`, `FIXCAR`, `TURBO`) and suppress
-single-key shortcuts while a prefix is being typed (`cheatLocked()`), so press
-those keys alone when testing a shortcut.
+`#fps` now shows `FPS · N DC · Nk tri` (2 Hz) — draw calls and triangles from
+`renderer.info`. That readout is the tool for any further perf work; check it
+before and after instead of guessing. `[boot]`/`[TEX]` now print per-step boot
+timings in ms for the same reason.

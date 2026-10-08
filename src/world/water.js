@@ -295,7 +295,8 @@ export function nearestWaterY(x, z){
 }
 
 // Taktika brehov Váhu (Heat-únik): off-road pás pozdĺž rieky spomaľuje
-// policajné SUV viac než hráčovo auto. Vlastná helperka (v monolitu nebola).
+// policajné SUV viac než hráčovo auto. Volá ho src/ai/police.js (mŕtvy modul,
+// podľa AGENTS.md zámerne zachovaný) — preto ostáva.
 export function riverbankSlowdown(x, z) {
   const d2 = waterDist2(x, z);
   if (d2 < 120 * 120) return 0.62; // v koryte / tesne pri brehu

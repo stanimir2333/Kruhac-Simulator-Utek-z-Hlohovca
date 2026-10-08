@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { S } from '../world/shared.js';
 import { routePose } from '../world/roads.js';
 import { driveY, getTerrainHeight, LANE_OFF } from '../world/height.js';
-import { gridQuery } from '../world/ground.js';
+import { gridQuery, GQ_MAX } from '../world/ground.js';
 import { nearestRoute } from '../ai/traffic.js';
 import { DR } from './drift.js';
 
@@ -76,14 +76,18 @@ export const WARP = { x: 0, z: 0 };
 
 // teleport nesmie skončiť vnútri múru: vytlačí bod z OBB budov (BGRID)
 // rovnakou konvenciou uhlov ako overlapBox (forward = (sin,cos))
+// Vlastný výstupný buffer: clearOfBuildings je teleport (vzorovo mimo slučky),
+// nesmie zdieľať buffer, ktorý práve číta collideWorld (pozri gridQuery).
+const WARP_GQ = new Int32Array(GQ_MAX);
+
 export function clearOfBuildings(x, z) {
   let px = x;
   let pz = z;
   for (let pass = 0; pass < 3; pass++) {
-    const n = gridQuery(S.BGRID, px, pz, 1);
+    const n = gridQuery(S.BGRID, px, pz, 1, WARP_GQ);
     let moved = false;
     for (let i = 0; i < n; i++) {
-      const b = S.GQ[i];
+      const b = WARP_GQ[i];
       const dx = px - S.BX.x[b];
       const dz = pz - S.BX.z[b];
       const c = Math.cos(S.BX.rot[b]);

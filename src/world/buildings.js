@@ -196,18 +196,8 @@ export function hx3(c){ return [((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255
 // Načítavanie obrázkov zo zložky assets/tex je ZRUŠENÉ: bežné budovy používajú
 // výhradne procedurálne CanvasTexture (TEX.winGrid + TEX.winRough + TEX.roofTile
 // + TEX.sheet + TEX.gravel). Žiadny TextureLoader, žiadne externé PNG.
-export const TEXPHOTOS = [];
-export const MAT_PHOTO = [];
-export const PHOTO_TINT = [[1,1,1],[0.93,0.93,0.93],[0.86,0.86,0.88]];
-export const PHOTO_FILES = [];
 export function photoPreload(){
   return Promise.resolve(0); // no-op: všetko je procedurálne, nič sa nenačítava
-}
-export const PHOTO_SRC = [];
-export const CORR_EXCLUDE = {};
-export const CORR_POOL = [];
-export function photoMatFor(f){
-  return -1; // foto-materiály neexistujú (čisté PBR)
 }
 export const LANDMARKS = [
   { file:null, x:-388, z:-396, r:45 },
@@ -219,19 +209,9 @@ export const LANDMARKS = [
 export const TOWERS = [[287,82],[313,-965],[260,-1183]];
 // Komíny na Manckovičovej (man_made=chimney z OSM): [x, z, výška, typ] — tehla vyšší, betón nižší
 export const CHIMNEYS = [[-1702.3,-325.6,48,"concrete"],[-1687.9,-357.5,60,"brick"]];
-export const LM_SEEN = [];
-export let SNP_PTS = null;
-export function nearSNP(x, z){
-  if(!SNP_PTS) return false;
-  for(let i=0;i<SNP_PTS.length;i+=2){
-    const dx = SNP_PTS[i]-x, dz = SNP_PTS[i+1]-z;
-    if(dx*dx+dz*dz < 4900) return true;
-  }
-  return false;
-}
-export function landmarkTex(k, ki){
-  return -1; // čisté PBR: žiadne foto-textúry, vždy procedurálna fasáda kategórie
-}
+// (bývalé LM_SEEN/SNP_PTS/nearSNP/landmarkTex odstránené: LM_SEEN sa len zapĺňal
+//  a nikdy nečítal, SNP_PTS slúžil výhradne nečítanej nearSNP, landmarkTex
+//  vracal konštantu -1. Žiadny z nich nebol v hre použitý.)
 // ---------- VEŽA KOSTOLA sv. MICHALA ----------
 // Kostol sv. Michala (OSM tag church) je v mape len garáž. Veža stojí v konci
 // lode obrátenom k Námestiu sv. Michala: v orientovanej sústave kostola (os = jeho
@@ -392,26 +372,7 @@ export function buildBuildings(){
   // domček pri päte komínov (ako na fotke)
   kept.push({ x:-1695.1, z:-341.6, w:12, d:8, a:0.3, h:5, zone:0,
     fp:[-1695.1,-341.6,5,"","hall",-1701.1,-345.6,-1689.1,-345.6,-1689.1,-337.6,-1701.1,-337.6] });
-  for(let li=0;li<LANDMARKS.length;li++){
-    const L = LANDMARKS[li];
-    if(L.multi || L.zones || L.file === null){ LM_SEEN.push(-2); continue; }
-    let bi = -1, bd = L.r*L.r;
-    for(let i=0;i<kept.length;i++){
-      const dx = kept[i].x-L.x, dz = kept[i].z-L.z, d2 = dx*dx+dz*dz;
-      if(d2 < bd){ bd = d2; bi = i; }
-    }
-    LM_SEEN.push(bi);
-  }
-  SNP_PTS = [];
-  for(let si=0;si<S.streetS.length;si++){
-    if(S.streetS[si][2].indexOf("povstania") >= 0){
-      const s0 = S.streetS[si][0], s1 = Math.min(S.streetS[si][1], s0+450);
-      for(let s=s0;s<=s1;s+=15){
-        const f = Math.max(0, Math.min(S.ROUTE_N-1, Math.floor(s/S.routeLen*S.ROUTE_N)));
-        SNP_PTS.push(S.routeX[f], S.routeZ[f]);
-      }
-    }
-  }
+  
   // chunkované mergnuté extrusie (presný footprint, 250 m bunky)
   for(let i=0;i<kept.length;i++){
     if(kept[i].skipMesh) continue;
@@ -533,7 +494,7 @@ export function buildBuildings(){
     if(ch.wInd.i.length){ const m = new THREE.Mesh(finishGeo(ch.wInd), S.MAT.indWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rPitch.i.length){ const m = new THREE.Mesh(finishGeo(ch.rPitch), S.MAT.pitchedRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rFlat.i.length){ const m = new THREE.Mesh(finishGeo(ch.rFlat), S.MAT.flatRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
-    S.CHUNKS.push({ x:cx, z:cz, r:r, ms:parts });
+    S.CHUNKS.push({ x:cx, z:cz, r:r, ms:parts, vis:true });
   });
   // kolízne dáta budov do mriežky + exaktné footprinty (dvor test)
   const n = kept.length;

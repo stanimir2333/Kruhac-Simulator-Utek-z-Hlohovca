@@ -495,6 +495,13 @@ export function facadeAux(SZ){
 }
 
 export function buildTextures(){
+  // Časovanie jednotlivých fáz. fGrass/fDirt/fConcrete sú generátory pixelov
+  // (512² × niekoľko fBm oktáv) a spolu zaberú najviac času z celého bootu;
+  // bez čísel je každá ďalšia optimalizácia bootu odhadom.
+  const T = (typeof performance !== 'undefined' && performance.now) ? () => performance.now() : () => 0;
+  let _t = T();
+  const mark = (name) => { const n = T(); if (n) console.log("[TEX] " + name + " " + (n - _t).toFixed(0) + " ms"); _t = n; };
+
   // ---------- ROAD: asfalt (difúzia + normála + drsnost) ----------
   // UV pásu je v METROCH (pozri buildStrip/mergedStrips), takže repeat = 1/4 znamená
   // dlažbu každé 4 m: 512 px / 4 m = 128 px/m. Zrno asfaltu čitateľné z kabíny.
@@ -504,7 +511,8 @@ export function buildTextures(){
   const A = fAsphalt(HQ);
   S.TEX.asphalt  = texSlotCanvas("asphalt",  "road/asphalt_diffuse.jpg",   A.dif, true,  ROAD_REP);
   S.TEX.asphaltN = texSlotCanvas("asphaltN", "road/asphalt_normal.png", normalCanvas(A.S, A.hf, 1.4), false, ROAD_REP);
-  S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCanvas(A.S, A.rg),  false, ROAD_REP);
+S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCanvas(A.S, A.rg),  false,  ROAD_REP);
+  mark("asphalt");
 
   // ---------- TERRAIN: trávnik + hlina + zvlnenie ----------
   // repeat je odvodený z reálnej šírky mapy: 1 dlažba = ~32 m, teda 128 px / 32 m.
@@ -523,6 +531,7 @@ export function buildTextures(){
   // MAT.ground) a povrch nespevnených ciest (tu berie vlastný repeat 1/6 m).
   const D = fDirt(HQ);
   S.TEX.dirt    = texSlotCanvas("dirt",    "terrain/dirt_diffuse.png", commitField(D), true, [1/6, 1/6]);
+  mark("trávnik+hlina");
 
   // ---------- BUILDINGS: betón + tehla ----------
   // Betón je bez smeru, takže jeden slot zdieľajú komíny, veža, stĺpy aj pamätník.
@@ -535,6 +544,7 @@ export function buildTextures(){
   const WD = fWood(S.IS_MOBILE ? 128 : 256);
   S.TEX.wood  = texSlotCanvas("wood",  "buildings/wood.png", commitField(WD), true, [1, 3]);
   S.TEX.woodN = texSlotCanvas("woodN", "buildings/wood_normal.png", normalCanvas(WD.size, WD.hf, 1.8), false, [1, 3]);
+  mark("betón+tehla+drevo");
 
   // ---------- FASÁDA: difúzia zo slotu + 3 sprievodné mapy ODOVIDENÉ z nej ----
   // Difúzia je SLOT (buildings/wall.png): kým ten neexistuje, kreslí sa omietka
@@ -596,6 +606,7 @@ export function buildTextures(){
     g.fillStyle="rgba(50,40,25,0.35)";
     for(let i=0;i<12;i++){ g.fillRect(0,(i*23)%s,s,3); }
   });
+  mark("fasády+strechy");
   texReport(true);
 }
 

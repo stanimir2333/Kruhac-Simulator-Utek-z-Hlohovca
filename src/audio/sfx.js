@@ -53,6 +53,8 @@ export function createSfx() {
       const s = ctx.createBufferSource(); s.buffer = buf; s.connect(master); s.start();
     },
     // Policajný warning PING (heat stúpol): dvoj-tón 880 → 1175 Hz, ~0.6 s.
+    // Jediný potenciálny volaj je mŕtvy src/ai/police.js — ponechané podľa
+    // AGENTS.md ("sfx.ping() exists only for it").
     ping() {
       if (!ensure()) return;
       const t0 = ctx.currentTime;
@@ -95,7 +97,6 @@ export function createSfx() {
       balance = Math.max(-1, Math.min(1, Number(v) || 0));
       if (panner) panner.pan.value = balance;
     },
-    getBalance() { return balance; },
     setMuted(m) { muted = !!m; if (master) master.gain.value = muted ? 0 : 0.9; },
   };
 }

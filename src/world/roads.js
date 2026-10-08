@@ -1,8 +1,8 @@
 // src/world/roads.js — vozovky, trasa 513, kruháče, most, koľaje, zeleň (verbatim port).
 import * as THREE from 'three';
 import { S } from './shared.js';
-import { getTerrainHeight, riverBedY, meshSample, deckBlend } from './height.js';
-import { groundRayY, staticDone, gridAdd, gridQuery } from './ground.js';
+import { getTerrainHeight, riverBedY, meshSample, wheelGroundY } from './height.js';
+import { groundRayY, staticDone, gridAdd, gridQuery, GQ_MAX } from './ground.js';
 import { makeLabel } from './textures.js';
 import { regLabel } from './labels.js';
 
@@ -257,44 +257,48 @@ export function mergedBoxes(list, mat, tpl){
   return m;
 }
 
-let RS = []; // s-vzorky posledneho routeSamplesFlat (indexovo zhodné s bodmi)
-
+// Vracia [pts, sArr] — s-vzorky POČTALI ako modulový `RS`, takže dva body
+// volania v buildRoads (`preS`/`postS`) odkazovali na TOTÁŽ pole; druhé volanie
+// prepísalo dáta prvého a `pre` dostal s-vzorky z mosta. deckBlend() ich potom
+// vytiahol na úroveň DECK_Y a prvých ~45 m trasy od štartu viselo vo vzduchu.
+// Vracia sa preto obe polia naraz — žiadny zdieľaný stav medzi volaniami.
 export function routeSamplesFlat(s0, s1, step){
   const pts = [];
-  RS = [];
+  const sArr = [];
   const i0 = Math.max(0, Math.floor(s0/S.routeLen*S.ROUTE_N));
   const i1 = Math.min(S.ROUTE_N, Math.ceil(s1/S.routeLen*S.ROUTE_N));
-  for(let i=i0;i<=i1;i+=step){ pts.push(S.routeX[i], S.routeZ[i]); RS.push(i*S.routeLen/S.ROUTE_N); }
-  if(pts.length < 4){ pts.push(S.routeX[i1], S.routeZ[i1]); RS.push(i1*S.routeLen/S.ROUTE_N); }
-  return pts;
+  for(let i=i0;i<=i1;i+=step){ pts.push(S.routeX[i], S.routeZ[i]); sArr.push(i*S.routeLen/S.ROUTE_N); }
+  if(pts.length < 4){ pts.push(S.routeX[i1], S.routeZ[i1]); sArr.push(i1*S.routeLen/S.ROUTE_N); }
+  return [pts, sArr];
 }
 
+// Deleguje na jediný kanonický vzorec v height.js (wheelGroundY). Cesta
+// nemá lat obmedzenie (kreslí sa aj mimo osi), ale Nájazd musí sedieť s fyzikou,
+// preto sa nepoužíva vlastná kópia vzorca — inak sa obe rozšli.
 export function routeDeckY(x, z, s){
-  const t = getTerrainHeight(x, z)+0.15;
-  const b = deckBlend(s);
-  return b > 0 ? t+(S.DECK_Y-t)*b : t;
+  return wheelGroundY(x, z, s, 0);
 }
 
 export function buildRoads(){
-  const roadY = function(x, z){ return getTerrainHeight(x, z)+0.15; }; // vozovka kopíruje terén
-  const lineY = function(x, z){ return getTerrainHeight(x, z)+0.20; };
   // Nájazdy mosta sa kreslia presne po fyzike (terén -> DECK_Y), žiadne skoky.
+  // (roadY/lineY odstránené: nepoužívali sa — rY/lY volajú routeDeckY, ktorý
+  //  je delegát na fyzikálny wheelGroundY.)
   const rY = function(x, z, s){ return routeDeckY(x, z, s); };
   const lY = function(x, z, s){ return routeDeckY(x, z, s)+0.05; };
-  const pre = routeSamplesFlat(0, S.bridgeS0-2, 4); const preS = RS;
-  const post = routeSamplesFlat(S.bridgeS1+2, S.routeLen, 4); const postS = RS;
+  const [pre, preS] = routeSamplesFlat(0, S.bridgeS0-2, 4);
+  const [post, postS] = routeSamplesFlat(S.bridgeS1+2, S.routeLen, 4);
   buildStrip(pre, S.ROAD_HW, rY, S.MAT.routeAsphalt, 0, preS);   // vozovka 7 m (bias proti miestnym cestám)
   buildStrip(pre, 0.15, lY, S.MAT.white, 0, preS);             // stredová čiara
   buildStrip(post, S.ROAD_HW, rY, S.MAT.routeAsphalt, 0, postS);
   buildStrip(post, 0.15, lY, S.MAT.white, 0, postS);
-  const deck = routeSamplesFlat(S.bridgeS0-2, S.bridgeS1+2, 2);
+  const [deck] = routeSamplesFlat(S.bridgeS0-2, S.bridgeS1+2, 2);
   buildStrip(deck, 4.5, S.DECK_Y, S.MAT.bridge);          // mostovka 9 m, tmavý asfalt
   buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, 2.85); // červené cyklopruhy
   buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, -2.85);
   buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, 3.8); // svetlé chodníky
   buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, -3.8);
   // zábradlá sprevádzajú aj nájazdy (y0 = terén, y1 = vozovka + 1 m)
-  const rail = routeSamplesFlat(S.bridgeS0-S.RAMP_LEN, S.bridgeS1+S.RAMP_LEN, 2); const railS = RS;
+  const [rail, railS] = routeSamplesFlat(S.bridgeS0-S.RAMP_LEN, S.bridgeS1+S.RAMP_LEN, 2);
   const railTop = function(x, z, s){ return routeDeckY(x, z, s)+1.0; };
   buildWall(rail, 4.35, rY, railTop, S.MAT.rail, railS);  // modré zábradlá
   buildWall(rail, -4.35, rY, railTop, S.MAT.rail, railS);
@@ -305,12 +309,13 @@ export function buildRoads(){
     const bot = riverBedY(S._v1.x, S._v1.z)-1.2;
     putBox(S.MAT.pillar, 7, S.DECK_Y-bot, 3, S._v1.x, (S.DECK_Y+bot)/2, S._v1.z, S._hWrap.v);
   }
-  const esc = routeSamplesFlat(S.routeLen-14, S.routeLen-4, 1); // úniková brána
+  const [esc] = routeSamplesFlat(S.routeLen-14, S.routeLen-4, 1); // úniková brána
   buildStrip(esc, 4, function(x, z){ return getTerrainHeight(x, z)+0.21; }, S.MAT.escape);
   buildTownRoads(); // celá sieť (ramená kryje priamo)
 }
 
 const RGRID = { cs:10, nx:0, nz:0, head:null, next:null };
+const RGRID_GQ = new Int32Array(GQ_MAX);   // vlastný výstupný buffer (pozri gridQuery)
 
 const RPTS = { a:null };
 
@@ -367,10 +372,10 @@ export function buildTownRoads(){
 }
 
 export function roadDist2(x, z){
-  const n = gridQuery(RGRID, x, z, 1);
+  const n = gridQuery(RGRID, x, z, 1, RGRID_GQ);
   let best = 1e18;
   for(let i=0;i<n;i++){
-    const id = S.GQ[i];
+    const id = RGRID_GQ[i];
     const dx = RPTS.a[id*2]-x, dz = RPTS.a[id*2+1]-z;
     const d = dx*dx+dz*dz;
     if(d < best) best = d;

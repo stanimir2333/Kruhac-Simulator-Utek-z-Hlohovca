@@ -3,6 +3,36 @@
 import * as THREE from 'three';
 import { S } from './shared.js';
 
+// ---------- DISTANCE CULLING CHUNKOV (budovy + vegetácia, 2 Hz) ----------
+// S.CHUNKS bol plnený v buildings.js aj nature.js, ale nikto ho nečítal —
+// komentáre sľubovali "distance culling (2 Hz)" a neexistoval. Chunk sa vypne,
+// keď je hráč ďalej než (polomer + dosah); vracia počet prepnutých chunkov
+// (0 = nič sa nemenilo), aby main vedel, či treba niečo hlásiť.
+const CHUNK_REACH = 700;   // 700 m nad polomer chunku: budovy aj stromy ostávajú vidieť
+let cullAt = 0, cullX = 1e18, cullZ = 1e18;
+
+export function cullChunks(x, z, now) {
+  if (now < cullAt) return 0;
+  const dx = x - cullX, dz = z - cullZ;
+  if (dx * dx + dz * dz < 400) return 0;   // <20 m od poslednej kontroly
+  cullAt = now + 0.5;
+  cullX = x; cullZ = z;
+  let n = 0;
+  const list = S.CHUNKS;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    const ex = c.x - x, ez = c.z - z;
+    const lim = c.r + CHUNK_REACH;
+    const vis = (ex * ex + ez * ez) < lim * lim;
+    if (c.vis === vis) continue;
+    c.vis = vis;
+    const ms = c.ms;
+    for (let j = 0; j < ms.length; j++) ms[j].visible = vis;
+    n++;
+  }
+  return n;
+}
+
 export function buildSkyDome(scene, renderer) {
   const geo = new THREE.SphereGeometry(3200, 24, 12);
   const top = new THREE.Color(S.SKY_ZENITH);

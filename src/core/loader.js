@@ -33,20 +33,13 @@ export async function fetchWithProgress(url, onProgress) {
 export const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 export const idle = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
+// Vracia { data, bytes } — bytes je veľkosť stiahnutého payloadu, aby volajúci
+// nemusel JSON.stringify() celej mapy len na to, aby vypísal jej veľkosť
+// (0,5 MB stringify je na hlavnom vlákne zbytočný hitch).
 export async function fetchJsonAsync(url, onProgress) {
   const buf = await fetchWithProgress(url, onProgress);
   await nextFrame(); // nech preloader prekreslí 100 % pred parse
   const text = new TextDecoder().decode(new Uint8Array(buf));
   await idle(0);     // parse beží až v ďalšom tasku — UI medzitým žije
-  return JSON.parse(text);
-}
-
-/** Skús viac URL za sebou (dev `/data/…` vs. build `./data/…` vs. file://). */
-export async function fetchFirst(urls, loader, onProgress) {
-  let lastErr;
-  for (const u of urls) {
-    try { return { data: await loader(u, onProgress), url: u }; }
-    catch (e) { lastErr = e; }
-  }
-  throw lastErr ?? new Error('žiadne URL nefunguje: ' + urls.join(', '));
+  return { data: JSON.parse(text), bytes: buf.byteLength };
 }

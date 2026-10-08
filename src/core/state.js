@@ -19,6 +19,8 @@ export function createState() {
     // traffic + police pooly (naplní init, v slučke len recyklácia)
     traffic: [],
     police: null,       // PoliceHeatSystem (src/ai/police.js)
-    settings: { res: 1, fps: 60, dist: 220, bloom: 1, water: 2, rt: false },
+    // POZNÁMKA: grafické nastavenia NIE sú tu — vlastní ich src/ui/settings.js
+    // (uložený v localStorage 'kruhac-set', jediný zdroj pravdy). Duplicitný
+    // `settings` v state prepisoval načítaný FPS limit natvrdom 60 pri každom starte.
   };
 }

@@ -20,6 +20,17 @@ export function createDashboard() {
   let odo0 = 0;
   try { odo0 = parseFloat(localStorage.getItem(ODO_KEY)) || 0; } catch { odo0 = 0; }
 
+  // Podklad ciferníkov (tieň + obruč + stupnica + čísla + popisky) sa NEMENÍ —
+  // kreslí sa RAZ do offscreen canvasu a každý snímok sa len blitne. Predtým sa
+  // zakaždým snímkom vytváral radial gradient + ~124 stroke() + ~29 fillText()
+  // na ciferník, teda ~700 canvas operácií/s zbytočne.
+  function bakeFace(paint) {
+    const c = document.createElement('canvas');
+    c.width = W; c.height = W;
+    paint(c.getContext('2d'));
+    return c;
+  }
+
   function face(ctx) {
     ctx.clearRect(0, 0, W, W);
     // hlboká čierna plocha ako na Octavii II
@@ -99,6 +110,24 @@ export function createDashboard() {
     ctx.beginPath(); ctx.arc(C, C, 8, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = '#e8eaee';
     ctx.beginPath(); ctx.arc(C, C, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  // Predkreslené podklady. build() beží raz pri vytvorení dashboardu.
+  let tachoBg = null, speedoBg = null;
+  function build() {
+    tachoBg = bakeFace((g) => { face(g); ticksTacho(g); textOf(g, '1/min × 100'); });
+    speedoBg = bakeFace((g) => { face(g); ticksSpeedo(g); textOf(g, 'km/h'); });
+  }
+  function textOf(g, s) {
+    g.save(); g.shadowBlur = 0;
+    g.fillStyle = '#9aa0a8'; g.font = '8px Arial, monospace'; g.textAlign = 'center';
+    g.fillText(s, C, C + 33);
+    g.restore();
+  }
+  // Podklad + ihla + svietiace kontrolky. (predkreslené, žiadne stroke() za snímok
+  // okrem samotnej ihly a kontroliek, ktoré menia stav)
+  function gauge(ctx, bg) {
+    ctx.clearRect(0, 0, W, W);
+    ctx.drawImage(bg, 0, 0);
   }
   // --- kontrolky ako na Octavii: bez krabičiek, len svietiaci symbol na čiernej ---
   // CHECK ENGINE trigger ponechaný: self-test alebo teplota >= 0.9
@@ -194,14 +223,18 @@ export function createDashboard() {
     }
   }
 
+  build(); // predkresli podklady ciferníkov raz
+
   return {
     getOdo() { return odo0; },
     selfTest() { testUntil = performance.now() + 2500; },
-    update(player) {
+    update(player, dt = 0.0167) {
       const now = performance.now();
       const kmh = Math.abs(player.speed) * 3.6;
-      dKmh += (kmh - dKmh) * 0.5;
-      dRpm += ((player.rpm || 900) - dRpm) * 0.5;
+      // vyhladenie ihiel frame-rate NEZÁVISLÉ (predtým pevné 0.5 → iný pri 30 FPS)
+      const kSm = 1 - Math.exp(-12 * dt);
+      dKmh += (kmh - dKmh) * kSm;
+      dRpm += ((player.rpm || 900) - dRpm) * kSm;
       const test = now < testUntil;
       const epc = test || (player.temp || 0) > 0.7;
       const check = test || (player.temp || 0) >= 0.9;
@@ -212,24 +245,14 @@ export function createDashboard() {
       const batt = test || fuel <= 0;
       // otáčkomer 0–70 (×100) — čísla po 5 ako na Octavii II z fotky
       if (tctx) {
-        face(tctx);
-        ticksTacho(tctx);
-        tctx.save(); tctx.shadowBlur = 0; // popis bez glow
-        tctx.fillStyle = '#9aa0a8'; tctx.font = '8px Arial, monospace'; tctx.textAlign = 'center';
-        tctx.fillText('1/min × 100', C, C + 33);
-        tctx.restore();
+        gauge(tctx, tachoBg);
         needle(tctx, dRpm / 7000);
         lampEPC(tctx, C - 19, C + 49, epc);
         lampEngine(tctx, C + 19, C + 49, check); // CHECK ENGINE ponechaný
       }
       // rýchlostník 0–260 — popisy po 20 ako na fotke
       if (sctx) {
-        face(sctx);
-        ticksSpeedo(sctx);
-        sctx.save(); sctx.shadowBlur = 0;
-        sctx.fillStyle = '#9aa0a8'; sctx.font = '8px Arial, monospace'; sctx.textAlign = 'center';
-        sctx.fillText('km/h', C, C + 33);
-        sctx.restore();
+        gauge(sctx, speedoBg);
         needle(sctx, dKmh / 260);
         lampBattery(sctx, C - 30, C + 49, batt);
         lampOil(sctx, C, C + 49, oil);

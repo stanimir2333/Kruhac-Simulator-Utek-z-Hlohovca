@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Kruháč Simulator: Útek z Hlohovca</title>
-<meta name="description" content="Three.js GTA-style útek z Hlohovca — modulárny Vite build, async mapa, Police Heat 1–5.">
+<meta name="description" content="Three.js GTA-style útek z Hlohovca — modulárny Vite build, async mapa, 4,5 km trasa 513, misie s Petrom.">
 <link rel="stylesheet" href="./src/styles.css">
 <script type="importmap">
 { "imports": {
@@ -45,15 +45,23 @@
     <span id="boost-badge">TURBO</span>
   </div>
 
-  <div id="wanted" class="panel"><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="evade" id="wanted-evade"></span></div>
+  <!-- Heat hviezdičky:awabala na odstránenie src/ai/police.js (zámerné, pozri
+     AGENTS.md "Dead code"). Panel má display:none a bez .on sa nikdy nezobrazí;
+     ponechaný pre prípad, že sa polícia vráti — doteraz nemal žiadny handler. -->
+<div id="wanted" class="panel"><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="evade" id="wanted-evade"></span></div>
+  <!-- Digitálne readouty: dashboard.js ich plní cez getElementById, ale v HTML
+       chýbali (CSS .grow už pre ne bolo napísané) — ciferníky nemali číslo
+       rýchlosti ani otáčok a chýbal indikátor prevodu. -->
   <div id="gauges" class="panel">
-    <div class="gauge"><canvas id="g-rpm" width="150" height="150"></canvas></div>
-    <div class="gauge"><canvas id="g-mfa" width="150" height="150"></canvas></div>
+    <div class="gauge"><canvas id="g-rpm" width="150" height="150"></canvas>
+      <span class="grow"><b id="g-rpm-num">900</b><small>ot</small></span></div>
+    <div class="gauge"><canvas id="g-mfa" width="150" height="150"></canvas>
+      <span class="grow"><b id="g-gear">N</b><small id="g-spd-num">0</small> km/h</span></div>
     <div class="gauge"><canvas id="g-spd" width="150" height="150"></canvas></div>
   </div>
   <div id="radio-wrap" class="panel">
     <span id="radio-name">RÁDIO HLOHOVEC</span>
-    <div id="radio-btns"><span class="rbtn" id="radio-prev">◀</span><span class="rbtn" id="radio-next">▶</span></div>
+    <div id="radio-btns"><button class="rbtn" id="radio-prev">◀</button><button class="rbtn" id="radio-next">▶</button></div>
   </div>
   <div id="meters" class="panel">
     <div class="row"><label><span>TEPLOTA MOTORA</span><span id="val-temp">20%</span></label>
@@ -84,7 +92,7 @@
   </div>
   <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · T turbo · F3 bloom · ESC nastavenia<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO</div>
   <div id="fps" class="panel">60 FPS</div>
-  <div id="ver" class="panel">B25 · LM</div>
+  <div id="ver" class="panel">B26 · LM</div>
 </div>
 
 <div id="cheat-toast" class="panel">CHEAT ACTIVATED: <b id="cheat-name">—</b></div>

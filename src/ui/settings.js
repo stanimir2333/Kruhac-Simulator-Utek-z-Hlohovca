@@ -53,6 +53,13 @@ function balLabel(v) {
 }
 // Náhrada labelu za RT_LEVELS[RT.level].name.
 const RT_LEVEL_NAMES = ['LITE', 'STANDARD', 'ULTRA'];
+// Opačná mapa: RT úroveň → tieňový tier (LITE=2K, STD=4K, ULTRA=8K).
+// shadowTier je jediný zdroj pravdy; tieto dva smery ho nemôžu rozejdeť.
+const SHADOW_FROM_RT = [1, 2, 3];
+// Opačná mapa: tieňový tier → RT úroveň. 1K nemá vlastný preset (najnižšie
+// LITE), takže 1K aj 2K zobrazujú LITE; 4K = STANDARD, 8K = ULTRA.
+// (index musí zostať v RT_LEVEL_NAMES — dlhé 3 spôsobilo undefined.)
+const RT_TIER_FROM_SHADOW = [0, 1, 2, 2];
 
 // Rozpočet VRAM: pri prekročení ustúpi o JEDEN schod
 // (max 1× za 3 s, drag slideru nekaskáduje): najprv tiene.
@@ -180,12 +187,13 @@ export function saveSettings() {
       res: settings.res,
       fps: settings.fps,
       dist: settings.dist,
-      sh: shadowTier,
+      sh: shadowTier,        // jediný zdroj pravdy pre tieňovú mapu
       bl: settings.bloom,
       wq: settings.water,
       bal: settings.bal,
       rt: settings.rt ? 1 : 0,
-      rtq: settings.rtQ,
+      // `rtq` sa už neukladá — odvádza sa zo `sh` (pozri RT_TIER_FROM_SHADOW).
+      // Staré zápisy v localStorage sa ignorujú, nič sa nestane.
       rtsh: settings.rtSh,
       rtli: settings.rtLi,
       rtql: settings.rtQl,
@@ -201,19 +209,23 @@ export function loadSettings() {
     if (s.res >= 0.5 && s.res <= 2) settings.res = s.res;
     if (s.fps >= 15 && s.fps <= 150) settings.fps = s.fps;
     if (s.dist >= 100 && s.dist <= 2000) settings.dist = s.dist;
+    // `sh` (tieňový tier) je jediný uložený zdroj pravdy. `rtq` sa už nečíta
+    // — bol to druhý zápis do tej istej premennej a spôsobil, že uložený stav
+    // závisel od poradia kliknutí. syncSettingsUI ho odviedie z shadowTier.
     if (s.sh >= 0 && s.sh <= SHADOW_TIERS.length - 1) {
       shadowTier = s.sh;
       settings.shq = s.sh;
     }
+    settings.rtQ = RT_TIER_FROM_SHADOW[Math.max(0, Math.min(SHADOW_TIERS.length - 1, shadowTier))];
     if (s.bl >= 0 && s.bl <= 2) settings.bloom = s.bl;
     if (s.wq >= 0 && s.wq <= 2) settings.water = s.wq;
     if (typeof s.bal === 'number' && s.bal >= -1 && s.bal <= 1) settings.bal = s.bal;
     // Monolit: URL prepínače (?rt=/?rtq=/?rts=) mali prednosť pred uloženým
     // nastavením — VYNECHANÉ (neportuje sa; uložené RT sa vždy prevezme).
-    if (s.rt === 1) settings.rt = true;
-    if (s.rtq >= 0 && s.rtq <= 2) settings.rtQ = s.rtq;
-    if (s.rtsh >= 0 && s.rtsh <= 1.5) settings.rtSh = s.rtsh;
-    if (s.rtli >= 0 && s.rtli <= 2) settings.rtLi = s.rtli;
+if (s.rt === 1) settings.rt = true;
+    // s.rtq sa už NEČÍTA — pozri komentár vyššie.
+    if (s.rtsh >= 0 && s.rtsh <= 1.5) settings.rtSh = s.rtSh;
+    if (s.rtli >= 0 && s.rtli <= 2) settings.rtLi = s.rtLi;
     if (s.rtql >= 0.3 && s.rtql <= 1) settings.rtQl = s.rtql;
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
@@ -284,14 +296,21 @@ export function syncSettingsUI(ctx) {
   }
   const rtV = $('set-rt-v');
   if (rtV) rtV.textContent = settings.rt ? 'ZAP.' : 'VYP.';
-  const rtqV = $('set-rtq-v');
-  if (rtqV) rtqV.textContent = RT_LEVEL_NAMES[settings.rtQ];
-  $('settings')?.classList.toggle('rt-off', !settings.rt);
-  const segs = $('set-rtq')?.children;
-  if (segs) {
-    // všetky úrovne dostupné aj na mobile (vrátane 8K tieňovej mapy)
-    for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i === settings.rtQ);
-  }
+// TIENE·MAPA (LITE/STD/ULTRA) ZOBRAZUJE shadowTier, nie vlastný settings.rtQ.
+      // Oba ovládače zapisovali do jednej premennej `shadowTier`, takže uložený
+      // stav závisel od toho, ktorý bol kliknutý naposledy (po starte sa navyše
+      // načítal `rtq` a prepísal `shq`). Teraz je zdroj pravdy jeden: shadowTier
+      // (zapisuje ho set-shq aj set-rtq), a `rtq` sa z neho iba odvádza.
+      const qTier = RT_TIER_FROM_SHADOW[shadowTier];
+      settings.rtQ = qTier;
+      const rtqV = $('set-rtq-v');
+      if (rtqV) rtqV.textContent = RT_LEVEL_NAMES[qTier];
+      $('settings')?.classList.toggle('rt-off', !settings.rt);
+      const segs = $('set-rtq')?.children;
+      if (segs) {
+        // všetky úrovne dostupné aj na mobile (vrátane 8K tieňovej mapy)
+        for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i === qTier);
+      }
   $('set-rtsh') && ($('set-rtsh').value = settings.rtSh);
   const rtshV = $('set-rtsh-v');
   if (rtshV) rtshV.textContent = Math.round(settings.rtSh * 100) + '%';
@@ -423,9 +442,10 @@ export function wireSettingsUI(ctx, toast) {
   $('set-rtq')?.addEventListener('click', (e) => {
     const b = e.target.closest ? e.target.closest('button') : null;
     if (!b || b.disabled) return;
-    settings.rtQ = parseInt(b.getAttribute('data-q'), 10);
+    const q = Math.max(0, Math.min(2, parseInt(b.getAttribute('data-q'), 10)));
     // ÚROVEŇ = preset tieňovej mapy: LITE 2K / STD 4K / ULTRA 8K.
-    applyShadowTier(c, [1, 2, 3][Math.max(0, Math.min(2, settings.rtQ))]);
+    // applyShadowTier nastaví settings.rtQ z nového shadowTieru (pozri syncSettingsUI).
+    applyShadowTier(c, SHADOW_FROM_RT[q]);
     saveSettings();
   });
   const rtRange = (id, labelId, key) => {

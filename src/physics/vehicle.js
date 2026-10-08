@@ -1,7 +1,7 @@
 // src/physics/vehicle.js — arkádová fyzika (6-stupňová prevodovka, 250 km/h limitér,
 // OBB SAT kolízie, odpruženie) + kolízie s OSM budovami (exactBldAt, verbatim logika).
 import { S } from '../world/shared.js';
-import { gridQuery } from '../world/ground.js';
+import { gridQuery, GQ_MAX } from '../world/ground.js';
 export function createVehicle(opts = {}) {
   return {
     x: opts.x ?? 0, y: opts.y ?? 0, z: opts.z ?? 0, h: 0,
@@ -12,13 +12,18 @@ export function createVehicle(opts = {}) {
   };
 }
 
-export function gearRatio(gear) {
-  return [0, 3.4, 2.4, 1.8, 1.35, 1.05, 0.85][gear] ?? 1;
-}
+// (gearRatio odstránená: tabuľka pomerov sa nepoužívala — GEAR_VMAX/GEAR_ACC
+//  v updateVehicle definujú strop a Ťah priamo pre 6 kvaltov.)
 
 // Strop rýchlosti a záťah po kvaltoch (m/s, m/s²) — šestka dá plných 250 km/h.
 const GEAR_VMAX = [0, 15, 25, 38, 52, 63, 72];
 const GEAR_ACC = [0, 17, 13, 10, 8, 7, 7];
+
+// Telemetria pre HUD/misie. Modulový scratch, NIE nový objekt: updateVehicle
+// beží každý snímok a `return {…}` by hodil na smetisko ~6 objektov/s (pri 150 FPS
+// FPS-capu). Prepisuje sa, volatelia NESMIU si výsledok podržať cez snímok —
+// jediný caller je main.js, ktorý ho hneď spotrebuje.
+const TEL = { kmh: 0, drifting: false, accel: 0 };
 
 /** Krok fyziky — volá sa z main loopu s pevným dt (clamp 0.1). Vracia telemetriu pre HUD/police. */
 export function updateVehicle(v, input, dt, terrainY) {
@@ -71,14 +76,12 @@ export function updateVehicle(v, input, dt, terrainY) {
   // teplota: státie varí, plynulá jazda chladí (z monolitu)
   v.temp += ((Math.abs(v.speed) < 1 ? 0.03 : -0.012) + Math.abs(accel) * 0.0006) * dt;
   v.temp = Math.max(0, Math.min(1, v.temp));
-  return { kmh, drifting, accel };
+  TEL.kmh = kmh; TEL.drifting = drifting; TEL.accel = accel;
+  return TEL;
 }
 
-/** Lacný 2D OBB test (SAT) hráč vs. auto — bez alokácií. */
-export function overlapOBB(ax, az, ah, aw, al, bx, bz, bh, bw, bl) {
-  const dx = bx - ax, dz = bz - az;
-  return dx * dx + dz * dz < (aw + bw) * (aw + bw);
-}
+/** Prístup k telemetrickému scratchu pre hráča bez fyziky (noclip) — bez alokácie. */
+export function vehicleTelemetry() { return TEL; }
 
 export const CAR_HW = 0.85, CAR_HL = 2.05;
 
@@ -153,23 +156,30 @@ export function pushOutOBB(p, cx, cz, ch, hw, hl) {
   const depth = best + 0.02;
   p.x += bnx * depth;
   p.z += bnz * depth;
-  const fx = Math.sin(ph), fz = Math.cos(ph);
-  return { hit: true, nx: bnx, nz: bnz, impact: -(fx * p.speed * bnx + fz * p.speed * bnz) };
+  return { hit: true, nx: bnx, nz: bnz, impact: -(f1x * p.speed * bnx + f1z * p.speed * bnz) };
 }
+
+// Výstupný buffer pre dotaz na budovy. Vlastný (pozri gridQuery v ground.js):
+// vnorený dotaz by inak prepísal výsledok, ktorý tu ešte čítame.
+const BLD_GQ = new Int32Array(GQ_MAX);
 
 /** Kolízie hráča: budovy (BGRID + exact verify) + autá (pooly). Vracia max impact. */
 export function collideWorld(p, cars = []) {
   let impact = 0;
+  const nc = cars.length;
   for (let pass = 0; pass < 2; pass++) {
-    for (const c of cars) {
+    // indexová slučka namiesto for..of: `cars` je ALL_CARS (60+) a for..of
+    // alokuje iterátor pri každom z oboch priechodov (teda 2×/snímok)
+    for (let ci = 0; ci < nc; ci++) {
+      const c = cars[ci];
       const dx = c.x - p.x, dz = c.z - p.z;
       if (dx * dx + dz * dz > 3600) continue;
       const r = pushOutOBB(p, c.x, c.z, c.h, CAR_HW, CAR_HL);
       if (r.hit && r.impact > impact) impact = r.impact;
     }
-    const bn = gridQuery(S.BGRID, p.x, p.z, 1);
+    const bn = gridQuery(S.BGRID, p.x, p.z, 1, BLD_GQ);
     for (let i = 0; i < bn; i++) {
-      const b = S.GQ[i];
+      const b = BLD_GQ[i];
       const dx = S.BX.x[b] - p.x, dz = S.BX.z[b] - p.z;
       if (dx * dx + dz * dz > 3600) continue;
       const svx = p.x, svz = p.z;

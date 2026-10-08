@@ -6,7 +6,7 @@
 //                     mapZoomAt, mapPanBy,
 //   js cca 9068–9190: miniStatic/bigStatic, drawMapStatic, renderMiniStatic, renderBigStatic,
 //   js cca 9190–9258: drawMap (ADAPTOVANÉ: legacy traffic pooly -> api.cars + api.police),
-//   js cca 9259–9342: mapDragEnd, mapWasDragged, mapClientToCanvas, mapBindInput,
+//   js cca 9259–9342: mapClientToCanvas, mapBindInput,
 //   js cca 9343–9367: sizeBigMap (toggleMap vedome VYNECHANÉ — toggle rieši menus.js).
 // OSM dáta výhradne cez S.osm / S.routeX / S.routeZ / S.routeH / S.ROUTE_N /
 // S.routeLen / S.bridgeS0 / S.bridgeS1 / S.streetS / S.GB (všetko existuje
@@ -348,6 +348,9 @@ export function drawMapStatic(ctx, W, H, full, view){
   mapXY(S.routeX[S.ROUTE_N], S.routeZ[S.ROUTE_N], ox, oy, sc);
   ctx.fillStyle = "#39ff6a";
   ctx.fillRect(_mxy.x-3, _mxy.y-3, 6, 6);
+  // Názvy ulíc + POI + tlabels: statické, len pre VEĽKÚ mapu (minimapa je 170 px
+  // a text by bol nečitateľný). Kreslia sa do cache, nie na každý snímok.
+  if(full) drawMapLabels(ctx, W, H, view);
 }
 export function renderMiniStatic(staticCvs, targetCvs, force){
   if(!staticCvs || !targetCvs) return;
@@ -367,11 +370,48 @@ export function renderBigStatic(staticCvs, targetCvs, force){
   if(staticCvs.height !== targetCvs.height) staticCvs.height = targetCvs.height;
   drawMapStatic(staticCvs.getContext("2d"), staticCvs.width, staticCvs.height, true, v);
 }
+// Názvy ulíc + POI + tlabels sú STATICKÉ (závisia len od transformácie mapy, nie
+// od hráča). Kreslili sa doteraz v drawMap() pri každom snímku veľkej mapy —
+// ~50 fillText() s text layoutom na snímok. Teraz patria do statickej vrstvy,
+// kde sa kreslia raz pri zmení zoomu/panu (drawMapStatic končí, vidz nižšie).
+function drawMapLabels(ctx, W, H, view){
+  mapTrans(W, H, view);
+  const sc = MO.sc, ox = MO.ox, oy = MO.oy;
+  const osm = S.osm;
+  if(!osm) return;
+  ctx.textAlign = "center";
+  // názvy ulíc
+  ctx.fillStyle = "#ffd97a";
+  ctx.font = "13px Courier";
+  for(let i=0;i<S.streetS.length;i++){
+    const smid = (S.streetS[i][0]+S.streetS[i][1])/2;
+    mapRoutePoint(smid, 26);
+    mapXY(_lp.x, _lp.z, ox, oy, sc);
+    ctx.fillText(S.streetS[i][2], _mxy.x, _mxy.y);
+  }
+  // POI
+  ctx.fillStyle = "#ffb000";
+  for(let i=0;i<osm.pois.length;i++){
+    const p = osm.pois[i];
+    mapXY(p[0], p[1], ox, oy, sc);
+    ctx.fillText(p[2], _mxy.x, _mxy.y-8);
+  }
+  // tlabels
+  ctx.fillStyle = "#8a9a5b";
+  ctx.font = "11px Courier";
+  for(let i=0;i<osm.tlabels.length;i++){
+    const t = osm.tlabels[i];
+    mapXY(t[0], t[1], ox, oy, sc);
+    ctx.fillText(t[2], _mxy.x, _mxy.y);
+  }
+}
+
 // dynamická vrstva: statický podklad + živé body.
 // ADAPTÁCIA legacy drawMap: trafficPool/incomingPool/ambientPool neexistujú —
 // autá cez cars ([{x,z,h,dir}]; dir<0 = protismer), polícia cez police
 // ({units:[{x,z}], roadblocks:[{x,z}]}). Hráč cez player ({x,z,h}).
 // Peter (zadávateľ misií) cez peter ({x,z}, fialová).
+// Názvy ulíc/POI/tlabels už NIE sú tu — kreslí ich drawMapLabels do statickej vrstvy.
 export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police, peter){
   mapTrans(W, H, view);
   const sc = MO.sc, ox = MO.ox, oy = MO.oy;
@@ -442,32 +482,7 @@ export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police, 
     ctx.fillRect(_mxy.x-s/2, _mxy.y-s/2, s, s);
   }
   if(full){
-    const osm = S.osm;
-    // názvy ulíc + POI
-    ctx.fillStyle = "#ffd97a";
-    ctx.font = "13px Courier";
-    ctx.textAlign = "center";
-    for(let i=0;i<S.streetS.length;i++){
-      const smid = (S.streetS[i][0]+S.streetS[i][1])/2;
-      mapRoutePoint(smid, 26);
-      mapXY(_lp.x, _lp.z, ox, oy, sc);
-      ctx.fillText(S.streetS[i][2], _mxy.x, _mxy.y);
-    }
-    if(osm){
-      ctx.fillStyle = "#ffb000";
-      for(let i=0;i<osm.pois.length;i++){
-        const p = osm.pois[i];
-        mapXY(p[0], p[1], ox, oy, sc);
-        ctx.fillText(p[2], _mxy.x, _mxy.y-8);
-      }
-      ctx.fillStyle = "#8a9a5b";
-      ctx.font = "11px Courier";
-      for(let i=0;i<osm.tlabels.length;i++){
-        const t = osm.tlabels[i];
-        mapXY(t[0], t[1], ox, oy, sc);
-        ctx.fillText(t[2], _mxy.x, _mxy.y);
-      }
-    }
+    // len ŽIVÉ popisky — statické názvy ulíc/POI sú už v statickej vrstve
     if(player){
       ctx.fillStyle = "#39ff6a";
       ctx.font = "bold 15px Courier";
@@ -483,9 +498,10 @@ export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police, 
   }
 }
 // ---------- OVLÁDANIE MAPY: koliesko = zoom, ťahanie = posun, dva prsty = pinch ----
-export let mapDragEnd = 0;       // koniec ťahania; klik do 350 ms po ňom sa ignoruje (a neotvorí veľkú mapu)
-export function setMapDragEnd(t){ mapDragEnd = t; }
-export function mapWasDragged(){ return (performance.now() - mapDragEnd) < 350; }
+// (mapDragEnd/setMapDragEnd/mapWasDragged odstránené: guard „klik po ťahaní sa
+//  ignoruje" mal zmysel len pre minimapu, ktorá sa ťažila — ale ťahanie je
+//  bindované IBA na veľkú mapu (#bigmap-canvas), kde otváranie neklikáme.
+//  mapsWasDragged nikto nevolal.)
 export function mapClientToCanvas(canvas, e){
   const r = canvas.getBoundingClientRect();
   return { x:canvas.width*(e.clientX-r.left)/(r.width || 1),
@@ -552,7 +568,6 @@ export function mapBindInput(canvas, view, opts){
       // po skončení štipky zostane jeden prst -> pokračujeme v ťahaní
       if(canvas.__pts.size === 1){ const q = [...canvas.__pts.values()][0]; drag = true; moved = 99; lx = q.x; ly = q.y; return; }
     }
-    if(drag && moved > 3) mapDragEnd = performance.now();   // označ ťahanie pre klik
     drag = false;
   };
   canvas.addEventListener("pointerup", up);
@@ -593,6 +608,11 @@ export function createMinimap(state, api){
   const bigStatic = document.createElement("canvas");
   let tilesTried = false;
   let bigWasOpen = false;
+  // Throttle minimapy na ~20 Hz. Predtým sa kreslila na každý snímok rámca
+  // (drawImage 170×170 + ~120 fillRect), hoci mapa sa v zime mení len o pár
+  // pixelov a HUD beží na 5 Hz. update() volá main loop každý tick.
+  let miniAcc = 0;
+  const MINI_HZ = 0.05;
   const carsOf = function(){ return (api && api.traffic && api.traffic.cars) ? api.traffic.cars : []; };
   const policeOf = function(){
     if(api && api.police) return api.police;
@@ -609,7 +629,7 @@ export function createMinimap(state, api){
   if(bigCvs){
     mapBindInput(bigCvs, MV.big, { resetOnDblClick:true, redraw:redrawBig });
   }
-  function update(){
+  function update(dt){
     // cache sa dá postaviť až po computeBounds()+buildRoute() (S.GB + S.routeX)
     if(!MAP.ready) buildMapCache();
     if(!tilesTried && MAP.ready){
@@ -617,17 +637,25 @@ export function createMinimap(state, api){
       enableTiles(function(){ MV.mini.dirty = true; MV.big.dirty = true; });
       renderMiniStatic(miniStatic, miniCvs, true);
       renderBigStatic(bigStatic, bigCvs, true);
+      miniAcc = MINI_HZ; // prvý kreslíme hneď, ďalšie po MINI_HZ
     }
     if(!MAP.ready) return;
-    // Minimapa sa prekresľuje každý frame (lacno: statika z cache + živé body).
+    // Veľká mapa len keď je otvorená (+ pri zoom/pan cez redrawBig).
+    const open = bigEl ? !bigEl.classList.contains("hidden") : false;
+    const fresh = (open !== bigWasOpen);
+    if(open && bigCtx && bigCvs){
+      if(fresh) sizeBigMap(bigCvs, bigStatic);
+    }
+    // 20 Hz throttle: mapa nemá zmysel obnovovať 60×/s, hráč sa v zime posunie
+    // o centimeter. Otvorenie/zatvorenie veľkej mapy kreslí vždy hneď.
+    miniAcc += (typeof dt === "number") ? dt : MINI_HZ;
+    if(miniAcc < MINI_HZ) return;
+    miniAcc = 0;
     if(miniCtx && miniCvs){
       renderMiniStatic(miniStatic, miniCvs);
       drawMap(miniCtx, miniCvs.width, miniCvs.height, false, miniStatic, MV.mini, state.player, carsOf(), policeOf(), peterOf());
     }
-    // Veľká mapa len keď je otvorená (+ pri zoom/pan cez redrawBig).
-    const open = bigEl ? !bigEl.classList.contains("hidden") : false;
     if(open && bigCtx && bigCvs){
-      if(!bigWasOpen) sizeBigMap(bigCvs, bigStatic);
       renderBigStatic(bigStatic, bigCvs);
       drawMap(bigCtx, bigCvs.width, bigCvs.height, true, bigStatic, MV.big, state.player, carsOf(), policeOf(), peterOf());
     }

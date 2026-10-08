@@ -7,7 +7,6 @@ export const LANE_OFF = 1.75;   // pravý pruh v smere úniku (jazdíme vpravo)
 // svojho koryta (rieka tečie z kopca, brehy z OSM). RIVER_REF_Y je len
 // referenčná nula pre rezervu podania mosta, ak by koryto chýbalo.
 const RIVER_REF_Y = -8;
-const DECK_Y_BASE = 0.16;     // rezervná úroveň mostovky (prepisuje sa profilom trasy)
 const RIVER_CLEAR = 4.5;      // minimálne podanie mosta nad hladinou Váhu
 const DECK_RISE = 4.2;         // mostovka je o toľko nad okolitou nivóou (násyp/rampa)
 // -- Zámocký kopec: vrch nad Zámockou záhradou (OSM park 563x652 m, stred -1883,-128) --
@@ -185,7 +184,8 @@ export function riverWaterY(x, z){
   return riverBedY(x, z)+RIVER_WATER_LIFT;
 }
 
-// vzdialenosť k najbližšej vodnej línii (kvadrát) - maska zástavby v buildGround
+// vzdialenosť k najbližšej vodnej línii (kvadrát). Volá ju riverbankSlowdown
+// (src/world/water.js), ktorý používa mŕtvy src/ai/police.js.
 export function waterDist2(x, z){
   if(!S.WPT.x) return 1e18;
   let best = 1e18;
@@ -199,7 +199,7 @@ export function waterDist2(x, z){
       while(id >= 0){
         const dx = S.WPT.x[id]-x, dz = S.WPT.z[id]-z, d = dx*dx+dz*dz;
         if(d < best) best = d;
-        id = S.WPT.next[id];
+        id = S.WGRID.next[id];
       }
     }
   }
@@ -566,8 +566,7 @@ export function getTerrainHeight(x, z){
   return heightAtAnalytic(x, z);
 }
 
-// historický alias (všetky existujúce call-site-y čítajú rovnakú hodnotu)
-export function heightAt(x, z){ return getTerrainHeight(x, z); }
+// (historický alias heightAt odstránený: žiadny call-site ho nepoužíval.)
 
 // výška pod kolesom: mostovka s rampami až na pevninu, inde collider + lift vozovky
 export function driveY(x, z, s, lat){ return wheelGroundY(x, z, s, lat); }
@@ -589,7 +588,11 @@ export function deckBlend(s){
   return smooth01(((S.bridgeS1+R)-s)/R);
 }
 
-// výška pod kolesom: mostovka s rampami, inde collider + lift vozovky
+// Kanonická výška pod kolesom: mostovka s nájazdami, inde collider + lift vozovky.
+// JEDINÝ zdroj pravdy pre obe varianty (roads.js routeDeckY aj tento export)
+// — vzorec bol predtým skopírovaný na dvoch miestach a hrozilo ich rozdrift.
+// `lat` je priečna odchýlka od osi trasy: mostovka platí len do ±7 m, lebo pri
+// lat=0 by deckBlend dvíhal auto do nekonečna do strán.
 export function wheelGroundY(x, z, s, lat){
   if(lat > -7 && lat < 7){
     const b = deckBlend(s);

@@ -52,11 +52,6 @@ export function computeBounds(){
   S.TER_DET_F = 1/(S.TER_CELL*8);
 }
 
-export function gridAlloc(cs){
-  const nx = Math.ceil((S.GB.x1-S.GB.x0)/cs), nz = Math.ceil((S.GB.z1-S.GB.z0)/cs);
-  return { cs:cs, nx:nx, nz:nz, head:new Int32Array(nx*nz).fill(-1), next:null, n:0 };
-}
-
 export function gridAdd(g, x, z, id){
   let cx = Math.floor((x-S.GB.x0)/g.cs), cz = Math.floor((z-S.GB.z0)/g.cs);
   if(cx < 0) cx = 0; else if(cx >= g.nx) cx = g.nx-1;
@@ -66,10 +61,18 @@ export function gridAdd(g, x, z, id){
   g.head[c] = id;
 }
 
+// Výstupný buffer je PARAMETER, nie modulový globál. Predtým všetky mriežky
+// zapisovali do jedného S.GQ — bezpečné len dovtedy, kým sa žiadny dotaz
+// nevnoril do iného (napr. gridQuery(BGRID) → roadDist2() → gridQuery(RGRID)).
+// Vlastný buffer per mriežka robí invariant štrukturálnym: dotaz už nemôže
+// prepísať výsledok vonkajšieho.
+// Max. 160 slotov na dotaz (zodpovedá historickému S.GQ).
+export const GQ_MAX = 160;
+
 // g.nid je nepovinné: mriežka budov (BGRID) má slot na (bunku,budovu), takže
 // slotové číslo treba preložiť na index budovy (`nid`). Ostatné mriežky
 // (cesty, voda) majú jeden slot na prvok a `nid` chýba - id je slot sám.
-export function gridQuery(g, x, z, ring){
+export function gridQuery(g, x, z, ring, out){
   let n = 0;
   const nid = g.nid;
   const ccx = Math.floor((x-S.GB.x0)/g.cs), ccz = Math.floor((z-S.GB.z0)/g.cs);
@@ -78,7 +81,7 @@ export function gridQuery(g, x, z, ring){
       const cx = ccx+ax, cz = ccz+az;
       if(cx < 0 || cz < 0 || cx >= g.nx || cz >= g.nz) continue;
       let id = g.head[cz*g.nx+cx];
-      while(id >= 0 && n < 160){ S.GQ[n++] = nid ? nid[id] : id; id = g.next[id]; }
+      while(id >= 0 && n < GQ_MAX){ out[n++] = nid ? nid[id] : id; id = g.next[id]; }
     }
   }
   return n;

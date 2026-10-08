@@ -1,6 +1,5 @@
 // src/audio/radio.js — 8 staníc externe, lazy load až po prvom geste (autoplay policy).
 // manifest.json (1 kB) sa fetchne hneď; mp3 (2–5 MB) až po kliku ŠTART / Q/E.
-import { WORLD } from '../core/config.js';
 
 export async function loadRadioManifest() {
   // Vite: /audio/… (public/ → koreň). Plain `python -m http.server`: /public/audio/…

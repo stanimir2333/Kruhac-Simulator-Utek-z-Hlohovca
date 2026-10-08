@@ -31,7 +31,8 @@ export function createEngine(container) {
 
   let raf = 0, last = performance.now(), fpsCap = 60, acc = 0;
   let renderOverride = null; // bloom composer (src/fx/bloom.js) sa sem zapojí
-  const listeners = { tick: [], render: [] };
+  const listeners = { tick: [] };
+  const resizeExtra = [];    // callbacky z onResizeExtra (na odstránenie v dispose)
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     let dt = Math.min((now - last) / 1000, 0.1);
@@ -41,7 +42,6 @@ export function createEngine(container) {
     if (acc < 1 / fpsCap) return;
     dt = acc; acc = 0;
     for (const fn of listeners.tick) fn(dt, now / 1000);
-    for (const fn of listeners.render) fn(dt);
     if (renderOverride) renderOverride();
     else renderer.render(scene, camera);
   };
@@ -49,13 +49,19 @@ export function createEngine(container) {
   return {
     renderer, scene, camera, sun,
     onTick(fn) { listeners.tick.push(fn); },
-    onRender(fn) { listeners.render.push(fn); },
     setRenderOverride(fn) { renderOverride = fn; },
-    onResizeExtra(fn) { addEventListener('resize', fn); },
+    // (onRender/setViewDist odstránené: onRender nikto neprihlásil, setViewDist
+    //  prekrýval s settings.applyViewDist, ktorý je jediný používaný zdroj.)
+    // onResizeExtra drží odkaz na callback, aby ho dispose() vedel odobrať —
+    // predtým sa resize listenery hromadili bez možnosti ich zrušiť.
+    onResizeExtra(fn) { resizeExtra.push(fn); addEventListener('resize', fn); },
     setFpsCap(v) { fpsCap = v; },
-    setViewDist(m) { scene.fog.far = m * 4; camera.far = m * 6; camera.updateProjectionMatrix(); },
     start() { last = performance.now(); raf = requestAnimationFrame(loop); },
     stop() { cancelAnimationFrame(raf); },
-    dispose() { removeEventListener('resize', onResize); renderer.dispose(); },
+    dispose() {
+      removeEventListener('resize', onResize);
+      for (const fn of resizeExtra) removeEventListener('resize', fn);
+      renderer.dispose();
+    },
   };
 }

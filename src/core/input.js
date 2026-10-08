@@ -1,11 +1,16 @@
 // src/core/input.js — klávesnica + dotyk (bez alokácií v slučke).
+// Klávesy, ktoré musia zabrániť scroll stránky (nahor/dole/medzerník).
+// Konštanta, nie literál v handlery — `.includes()` na novom poli alokovalo
+// pole pri KAŽDOM stlačení klávesy.
+const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'Space']);
+
 export function createInput() {
   const keys = Object.create(null);
   const touch = { left: false, right: false, gas: false, brake: false, hand: false };
   const onKey = (down) => (e) => {
     if (e.repeat) return;
     keys[e.code] = down;
-    if (down && ['ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault?.();
+    if (down && NO_SCROLL.has(e.code)) e.preventDefault?.();
   };
   const kd = onKey(true), ku = onKey(false);
   window.addEventListener('keydown', kd);

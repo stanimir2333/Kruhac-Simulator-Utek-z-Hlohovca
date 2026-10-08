@@ -21,9 +21,10 @@ import {
 import { buildRiver, initWater, updateWater, waterResize, setWaterQuality } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
-import { buildSkyDome } from './world/sky.js';
+import { buildSkyDome, cullChunks } from './world/sky.js';
+import { cullLabels } from './world/labels.js';
 import { buildPlayerMesh, syncMesh } from './world/cars.js';
-import { createVehicle, updateVehicle, collideWorld } from './physics/vehicle.js';
+import { createVehicle, updateVehicle, vehicleTelemetry, collideWorld } from './physics/vehicle.js';
 import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshes, drawCars, setHorn, setMuted } from './ai/traffic.js';
 // Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
 import { loadRadioManifest, createRadio } from './audio/radio.js';
@@ -33,7 +34,7 @@ import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { wireSettingsUI } from './ui/settings.js';
-import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift } from './game/drift.js';
+import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift, DR } from './game/drift.js';
 import {
   buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
   updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
@@ -90,6 +91,15 @@ async function boot() {
   };
   wireSettingsUI(settingsCtx, (m) => hud.toast(m));
 
+  // Dotykové ovládanie: #touch má v CSS display:none a objaví sa len cez .on,
+  // ktoré nikto nepridával — pedále aj šípky teda nikdy neboli viditeľné.
+  // body.touch navyše presúva #set-btn/#meters/#noclip/#mission/#drift (styles.css),
+  // takže bez nej sa na mobile panely navzájom prekrývajú.
+  if (S.IS_MOBILE) {
+    document.body.classList.add('touch');
+    document.getElementById('touch')?.classList.add('on');
+  }
+
   // 1) MAPA (async fetch s progresom)
   pre.step(0.08, 'sťahujem mapu Hlohovca…');
   const { data: osm, fallback } = await loadMapData((p, msg) =>
@@ -101,19 +111,24 @@ async function boot() {
 
   // 2) SVET v legacy poradí (každý krok yieldne → bar žije)
   const step = async (p, msg) => { pre.step(p, msg); await nextFrame(); };
-  await step(0.32, 'textúry…');       buildTextures();
-  await step(0.40, 'materiály…');     buildShared();
-  await step(0.44, 'trasa…');         buildRoute();
-  await step(0.47, 'koryto Váhu…');   buildWaterSamples();
-  await step(0.50, 'výškový model…'); buildRouteSub(); buildElevModel();
-  await step(0.55, 'profily ciest…'); buildRoadProfiles(); buildRoundHeights();
-  await step(0.60, 'terén…');         computeBounds(); buildGround();
-  await step(0.68, 'cesty…');         buildRoads();
-  await step(0.71, 'kruháče…');       buildRoundabouts();
-  await step(0.73, 'Váh…');           buildRiver();
-  await step(0.75, 'koľaje + zeleň…'); buildRails(); buildGreens(); buildCemetery();
-  await step(0.80, 'budovy…');        await photoPreload(); buildBuildings();
-  await step(0.86, 'stromy + lampy…'); buildLampsTrees(); buildVegInstanced(); snapVegetationToTerrain();
+  // Časovanie ťažkých krokov do konzoly — každý je jediný blokujúci úsek,
+  // teda bez čísel netušíme, ktorý sťojí polovicu bootu.
+  const _now = () => performance.now();
+  let _bt = _now();
+  const beat = (name) => { const n = _now(); console.log("[boot] " + name + " " + (n - _bt).toFixed(0) + " ms"); _bt = n; };
+  await step(0.32, 'textúry…');       buildTextures(); beat('textúry');
+  await step(0.40, 'materiály…');     buildShared(); beat('materiály');
+  await step(0.44, 'trasa…');         buildRoute(); beat('trasa');
+  await step(0.47, 'koryto Váhu…');   buildWaterSamples(); beat('koryto');
+  await step(0.50, 'výškový model…'); buildRouteSub(); buildElevModel(); beat('výškový model');
+  await step(0.55, 'profily ciest…'); buildRoadProfiles(); buildRoundHeights(); beat('profily ciest');
+  await step(0.60, 'terén…');         computeBounds(); buildGround(); beat('terén');
+  await step(0.68, 'cesty…');         buildRoads(); beat('cesty');
+  await step(0.71, 'kruháče…');       buildRoundabouts(); beat('kruháče');
+  await step(0.73, 'Váh…');           buildRiver(); beat('Váh');
+  await step(0.75, 'koľaje + zeleň…'); buildRails(); buildGreens(); buildCemetery(); beat('koľaje + zeleň');
+  await step(0.80, 'budovy…');        await photoPreload(); buildBuildings(); beat('budovy');
+  await step(0.86, 'stromy + lampy…'); buildLampsTrees(); buildVegInstanced(); snapVegetationToTerrain(); beat('vegetácia');
   await step(0.88, 'efekty + misie…');
   buildParticles(scene);
   buildCheckpoints();
@@ -160,6 +175,22 @@ async function boot() {
   addEventListener('pointerdown', unlock, { once: true });
   addEventListener('keydown', unlock, { once: true });
 
+  // Prepínač zvuku [X] — zdieľaný medzi klávesou a tlačidlom #snd-btn, ktoré
+  // malo pointer-events:auto a kurzor, ale NEMALO žiadny handler (klikal sa do
+  // prázdna). Teraz obidve cesty volajú toto.
+  const syncSndBtn = () => {
+    const b = document.getElementById('snd-btn');
+    if (b) b.textContent = state.muted ? 'ZVUK: OFF [X]' : 'ZVUK: ON [X]';
+  };
+  const toggleMute = () => {
+    state.muted = !state.muted;
+    sfx.setMuted(state.muted);
+    setMuted(state.muted);
+    syncSndBtn();
+  };
+  document.getElementById('snd-btn')?.addEventListener('click', toggleMute);
+  syncSndBtn();
+
   // klávesové skratky mimo input.js + cheat-kódy (GTA štýl: písanie hocikde)
   const cheatApi = {
     car, toast: (m) => hud.toast(m),
@@ -181,11 +212,7 @@ async function boot() {
       peterTalk({ car, toast: (m) => hud.toast(m) });
     }
     if (e.code === 'KeyT' && state.started && !typing) toggleTurbo((m) => hud.toast(m));
-    if (e.code === 'KeyX' && !typing) {
-      const m = !state.muted; state.muted = m; sfx.setMuted(m); setMuted(m);
-      const b = document.getElementById('snd-btn');
-      if (b) b.textContent = m ? 'ZVUK: OFF [X]' : 'ZVUK: ON [X]';
-    }
+    if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });
@@ -203,17 +230,29 @@ async function boot() {
     }
   });
   document.getElementById('btn-start')?.addEventListener('click', () => radio.play(0), { once: true });
+  // #radio-prev / #radio-next mali pointer-events:auto ako klikateľné, ale žiadny
+  // handler — myšou sa nedalo prepnúť stanicu (fungovalo len Q/E). Obidve
+  // tlačidlá teraz volajú tie isté metódy rádia ako klávesy.
+  document.getElementById('radio-prev')?.addEventListener('click', () => radio.prev());
+  document.getElementById('radio-next')?.addEventListener('click', () => radio.next());
   // mobil / myš: klik na Petra = to isté ako [F]
   document.getElementById('peter')?.addEventListener('click', () => {
     if (state.started && !state.paused) peterTalk({ car, toast: (m) => hud.toast(m) });
   });
-  // skrytý tab = pauza (motor stíchne, svet nespadne do chaosu)
+  // bigmap (src/ui/menus.js) tiež nastavuje state.paused; tento príznak hovorí,
+// či pauzu spôsobil samotný tab — inak by sa hra odomkla aj pri otvorenej mape.
+  let pausedByTab = false;
+  // Skrytý tab = pauza (motor stíchne, svet nespadne do chaosu).
+  // Návrat do tabu odomyká IBA ak pauzu spôsobil samotný tab — ak je práve otvorená
+  // veľká mapa (tá tiež nastavuje state.paused), hra musí zostať stáť.
   document.addEventListener('visibilitychange', () => {
     if (!state.started) return;
     if (document.hidden && !state.paused) {
       state.paused = true;
+      pausedByTab = true;
       hud.toast('PAUZA — vráť sa do tabu.');
-    } else if (!document.hidden && state.paused) {
+    } else if (!document.hidden && pausedByTab) {
+      pausedByTab = false;
       state.paused = false;
     }
   });
@@ -225,6 +264,21 @@ async function boot() {
   let playerLat = 0; // priečna odchýlka od osi trasy (pre mostovku)
   const camPos = new THREE.Vector3(_v3.x - Math.sin(car.h) * 9, car.y + 3.5, _v3.z - Math.cos(car.h) * 9);
   camera.position.copy(camPos);
+
+  // ---- NULOVÉ ALOKÁCIE V SLUČKE --------------------------------------------
+  // Callback-y a options-objekty sa STAVUJÚ RAZ tu, nie každý snímok: pri 150 FPS
+  // capu to bolo ~900 odpadných objektov/s len na `{…}` a `(m) => …` v ticku.
+  const toastFn = (m) => hud.toast(m);
+  const missionApi = {
+    car, playerS: 0, routeLen: S.routeLen,
+    toast: toastFn,
+    onWin: (m) => hud.toast(m || 'MISIA SPLNENÁ ✔'),
+    onFail: (m) => hud.toast(m || 'Misia zlyhala'),
+  };
+  const peterApi = { toast: toastFn, started: false };
+  // Telemetria z updateVehicle je modulový scratch (vehicle.js TEL) — `tel` je
+  // len alias naň, žiadna alokácia.
+  let tel = vehicleTelemetry();
 
   engine.onTick((dt, t) => {
     state.time = t;
@@ -239,8 +293,11 @@ async function boot() {
 
     // — hráč (turbo dvíha limiter na 300 km/h; noclip lieta bez fyziky) —
     car.vmax = turboActive() ? VMAX_TURBO : 250 / 3.6;
-    updateTurbo(dt, (m) => hud.toast(m));
-    let tel = { kmh: Math.abs(car.speed) * 3.6, drifting: false, accel: 0 };
+    updateTurbo(dt, toastFn);
+    tel = vehicleTelemetry();
+    tel.kmh = Math.abs(car.speed) * 3.6;
+    tel.drifting = false;
+    tel.accel = 0;
     let impact = 0;
     if (isNoclip()) {
       updateNoclip(dt, car, input);
@@ -281,21 +338,29 @@ async function boot() {
       if (playerS > S.routeLen - 25 && !state.finished) {
         state.finished = true; state.started = false;
         sfx.win();
+        const mins = Math.floor(state.time / 60), secs = Math.floor(state.time % 60);
+        const km = (car.odo / 1000).toFixed(1);
         document.getElementById('end-title').textContent = 'UŠIEL SI!';
         document.getElementById('end-sub').textContent = 'Hlohovec ostal v spätnom zrkadle.';
+        // #end-text / #end-stats boli v HTML od začiatku prázdne a nikto ich
+        // neplnil — pri víťazstve ostali prázdne. Vyplnené aspoň so súhrnom.
+        document.getElementById('end-text').textContent =
+          'Prešiel si celú trasu 513 z Hlohovca von z mesta.';
+        document.getElementById('end-stats').innerHTML =
+          `ČAS <b>${mins}:${String(secs).padStart(2, '0')}</b><br>` +
+          `NAJAZD <b>${km} km</b><br>` +
+          `NÁDRŽ <b>${Math.round(car.fuel * 100)} %</b><br>` +
+          `DRIFT REKORD <b>${Math.round(DR.best)}</b>`;
         document.getElementById('ov-end')?.classList.remove('hidden');
       }
     }
 
-    // — doprava + misie + Peter —
+    // — doprava + misie + Peter (options-objekty hotové od štantu, vidri vyššie) —
     updateTraffic(traffic, dt, state.player, playerS, S.routeLen);
-    updateMissions(dt, {
-      car, playerS, routeLen: S.routeLen,
-      toast: (m) => hud.toast(m),
-      onWin: (m) => hud.toast(m || 'MISIA SPLNENÁ ✔'),
-      onFail: (m) => hud.toast(m || 'Misia zlyhala'),
-    });
-    updatePeter(dt, t, car, { toast: (m) => hud.toast(m), started: state.started });
+    missionApi.playerS = playerS;      // playerS je `let` — poloha beží
+    peterApi.started = state.started;
+    updateMissions(dt, missionApi);
+    updatePeter(dt, t, car, peterApi);
     sfx.engine((car.rpm - 900) / 7100, input.throttle());
 
     // — meshe —
@@ -313,6 +378,11 @@ async function boot() {
       const diag = updateSunShadow(sun, car.x, car.y, car.z, settings.dist, shadowTierR());
       if (diag) setShadowDiag(diag.texel, diag.depth);
     }
+    // distance culling: chunky (budovy + vegetácia) a blízke štítky, oboje 2 Hz.
+    // Obe boli naplnené, ale nikdy neprefiltrované — mení len .visible, teda
+    // frustum culling aj fyzika (S.BX/S.BF) ostávajú nedotknuté.
+    cullChunks(car.x, car.z, t);
+    cullLabels(car.x, car.z, t);
 
     // — kamera (naháňačka s vyhladením) —
     const fx = Math.sin(car.h), fz = Math.cos(car.h);
@@ -328,20 +398,25 @@ async function boot() {
     if (hudAcc > 0.2) {
       hudAcc = 0;
       hud.update(dt, t, playerS, S.routeLen, osm);
-      dash.update(state.player);
+      dash.update(state.player, dt);
       updateDriftHUD();
       updateMissionHUD(car);
       updateBoostHUD();
     }
-    minimap.update();
+    minimap.update(dt); // 20 Hz throttle (pozri createMinimap.update)
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 0.5) {
       const el = document.getElementById('fps');
-      if (el) el.textContent = `${Math.round(fpsN / fpsAcc)} FPS`;
+      // draw calls + trojuholníky: jediný spoľahlivý ukazov, kde sa reálne
+      // stráca výkon (drawCars, bloom, odraz Váhu). Bez toho je každá ďalšia
+      // optimalizácia odhadom.
+      const info = renderer.info.render;
+      if (el) el.textContent = `${Math.round(fpsN / fpsAcc)} FPS · ${info.calls} DC · ${(info.triangles / 1000) | 0}k tri`;
       fpsAcc = 0; fpsN = 0;
     }
   });
-  engine.setFpsCap(state.settings.fps);
+  // FPS limit už nastavil wireSettingsUI → applyAll z uloženého settings.fps.
+  // Tento riadok ho prepisoval natvrdo na 60 a zahodil nastavenie pri každom starte.
   engine.start();
 
   pre.finish();

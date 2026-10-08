@@ -122,6 +122,11 @@ export function makeCar(grp) {
     x: 0, z: 0, h: 0, y: 0, pitch: 0, roll: 0, w0: 0, w1: 0, w2: 0, w3: 0, speed: 0, spin: 0, braking: true, grp: grp,
     s: 0, dir: 1, seg: 0, vmax: 0, lane: 0, hOff: 0, t: 0,
     d2: 0, lod: 0, lodT: 0, blockT: 0, hidden: false, hornT: 0, hornCd: 0,
+    // Cache naposledy ZAPÍSANEJ inštančnej matice. drawCars porovnáva aktuálny
+    // transform s týmto a preskočí zápis, ak sa nič nezmenilo (typicky LOD-2
+    // zmrazené autá a `hidden`). drawOn: false = ešte nikdy nezapísané.
+    drawOn: false, dx: 0, dy: 0, dz: 0, dh: 0, dpitch: 0, droll: 0,
+    dw0: 0, dw1: 0, dw2: 0, dw3: 0, dspin: 0, dbrake: false, dhidden: false,
   }; // + horn triggery (kolóna>3s, náhodne blízko)
 }
 
@@ -154,15 +159,33 @@ export function buildCarMeshes() {
   IM.body.instanceColor.needsUpdate = true;
   for (let i = 0; i < MAXC * 2; i++) { IM.brake.setColorAt(i, BRAKE_OFF); }
   IM.brake.instanceColor.needsUpdate = true;
+  // Prvý drawCars musí zapísať VŠETKY sloty (cache je prázdny) — inak by
+  // brzdové svetlá ostali na predvolenej farbe z predchádzajúcej slučky.
+  for (let i = 0; i < ALL_CARS.length; i++) ALL_CARS[i].drawOn = false;
   drawCars();
 }
 
 // vykresli všetky autá do instancií (bez alokácií, volá sa každý snímok) (verbatim js 6725–6791)
+// ZMENA: per-auto cache transformu. Kým sa x/y/z/h/pitch/roll/kolesá/spin/
+// braking nezmenili, matice inštancií sa NEDOTKNÚ (typicky LOD-2 zmrazené autá
+// a `hidden` — tie majú identickú nulovú maticu). needsUpdate sa posiela na GPU
+// len ak sa naozaj niečo zapísalo. Bez toho sa každý snímok prepisovalo ~660
+// matíc + 120 farieb, z väčšej časti zbytočne.
 export function drawCars() {
   if (!IM) return; // pred buildCarMeshes nie je čo kresliť
   let bi = 0, wi = 0, hi = 0;
+  let mDirty = false, cDirty = false;
   for (let k = 0; k < ALL_CARS.length; k++) {
     const c = ALL_CARS[k];
+    // --- dirty test: zhoda s naposledy zapísanou maticou ---
+    if (c.drawOn && c.dx === c.x && c.dy === c.y && c.dz === c.z && c.dh === c.h
+        && c.dpitch === c.pitch && c.droll === c.roll && c.dspin === c.spin
+        && c.dw0 === c.w0 && c.dw1 === c.w1 && c.dw2 === c.w2 && c.dw3 === c.w3
+        && c.dbrake === c.braking && c.dhidden === c.hidden) {
+      // rovnaká matica = rovnaké sloty (telo/kabína/blob + 4 kolesá + 2 svetlá)
+      bi++; wi += 4; hi += 2;
+      continue;
+    }
     if (c.hidden) { // LOD freeze >350 m: nulová matica (indexy inštancií ostávajú stabilné)
       dummy.scale.set(0, 0, 0);
       dummy.position.set(c.x, c.y, c.z);
@@ -177,54 +200,64 @@ export function drawCars() {
       IM.brake.setMatrixAt(hi, dummy.matrix); hi++;
       IM.blob.setMatrixAt(bi, dummy.matrix);
       bi++;
-      continue;
-    }
-    const fx = Math.sin(c.h), fz = Math.cos(c.h);
-    dummy.scale.set(1, 1, 1);
-    dummy.position.set(c.x, 0.62 + c.y, c.z);
-    dummy.rotation.set(c.pitch, c.h, c.roll);
-    dummy.updateMatrix();
-    IM.body.setMatrixAt(bi, dummy.matrix);
-    dummy.position.set(c.x + (-0.3) * fx, 1.15 + c.y, c.z + (-0.3) * fz);
-    dummy.rotation.set(c.pitch, c.h, c.roll);
-    dummy.updateMatrix();
-    IM.cabin.setMatrixAt(bi, dummy.matrix);
-    for (let w = 0; w < 4; w++) {
-      const ox = WPOS[w][0], oz = WPOS[w][1];
-      const wy = w === 0 ? c.w0 : (w === 1 ? c.w1 : (w === 2 ? c.w2 : c.w3));
-      dummy.position.set(c.x + ox * fz + oz * fx, wy + 0.33, c.z + (-ox * fx + oz * fz));
-      dummy.rotation.set(c.spin, c.h, 0);
-      dummy.updateMatrix();
-      IM.wheel.setMatrixAt(wi++, dummy.matrix);
-    }
-    for (let s2 = -1; s2 <= 1; s2 += 2) {
-      dummy.position.set(c.x + (s2 * 0.55) * fz + 2.12 * fx, 0.66 + c.y, c.z + (-(s2 * 0.55) * fx + 2.12 * fz));
+    } else {
+      const fx = Math.sin(c.h), fz = Math.cos(c.h);
+      dummy.scale.set(1, 1, 1);
+      dummy.position.set(c.x, 0.62 + c.y, c.z);
       dummy.rotation.set(c.pitch, c.h, c.roll);
       dummy.updateMatrix();
-      IM.head.setMatrixAt(hi, dummy.matrix);
-      dummy.position.set(c.x + (s2 * 0.55) * fz + (-2.12) * fx, 0.72 + c.y, c.z + (-(s2 * 0.55) * fx + (-2.12) * fz));
+      IM.body.setMatrixAt(bi, dummy.matrix);
+      dummy.position.set(c.x + (-0.3) * fx, 1.15 + c.y, c.z + (-0.3) * fz);
       dummy.rotation.set(c.pitch, c.h, c.roll);
       dummy.updateMatrix();
-      IM.brake.setMatrixAt(hi, dummy.matrix);
-      IM.brake.setColorAt(hi, c.braking ? BRAKE_ON : BRAKE_OFF);
-      hi++;
+      IM.cabin.setMatrixAt(bi, dummy.matrix);
+      for (let w = 0; w < 4; w++) {
+        const ox = WPOS[w][0], oz = WPOS[w][1];
+        const wy = w === 0 ? c.w0 : (w === 1 ? c.w1 : (w === 2 ? c.w2 : c.w3));
+        dummy.position.set(c.x + ox * fz + oz * fx, wy + 0.33, c.z + (-ox * fx + oz * fz));
+        dummy.rotation.set(c.spin, c.h, 0);
+        dummy.updateMatrix();
+        IM.wheel.setMatrixAt(wi++, dummy.matrix);
+      }
+      for (let s2 = -1; s2 <= 1; s2 += 2) {
+        dummy.position.set(c.x + (s2 * 0.55) * fz + 2.12 * fx, 0.66 + c.y, c.z + (-(s2 * 0.55) * fx + 2.12 * fz));
+        dummy.rotation.set(c.pitch, c.h, c.roll);
+        dummy.updateMatrix();
+        IM.head.setMatrixAt(hi, dummy.matrix);
+        dummy.position.set(c.x + (s2 * 0.55) * fz + (-2.12) * fx, 0.72 + c.y, c.z + (-(s2 * 0.55) * fx + (-2.12) * fz));
+        dummy.rotation.set(c.pitch, c.h, c.roll);
+        dummy.updateMatrix();
+        IM.brake.setMatrixAt(hi, dummy.matrix);
+        if (c.dbrake !== c.braking) IM.brake.setColorAt(hi, c.braking ? BRAKE_ON : BRAKE_OFF);
+        hi++;
+      }
+      dummy.position.set(c.x, 0.16 + c.y, c.z);
+      dummy.rotation.set(0, c.h, 0);
+      dummy.scale.set(1.05, 1, 2.25);
+      dummy.updateMatrix();
+      IM.blob.setMatrixAt(bi, dummy.matrix);
+      bi++;
     }
-    dummy.position.set(c.x, 0.16 + c.y, c.z);
-    dummy.rotation.set(0, c.h, 0);
-    dummy.scale.set(1.05, 1, 2.25);
-    dummy.updateMatrix();
-    IM.blob.setMatrixAt(bi, dummy.matrix);
-    bi++;
+    // --- zapíš cache ---
+    c.drawOn = true;
+    c.dx = c.x; c.dy = c.y; c.dz = c.z; c.dh = c.h;
+    c.dpitch = c.pitch; c.droll = c.roll; c.dspin = c.spin;
+    c.dw0 = c.w0; c.dw1 = c.w1; c.dw2 = c.w2; c.dw3 = c.w3;
+    if (c.dbrake !== c.braking) cDirty = true;
+    c.dbrake = c.braking; c.dhidden = c.hidden;
+    mDirty = true;
   }
   IM.body.count = bi; IM.cabin.count = bi; IM.blob.count = bi;
   IM.wheel.count = wi; IM.head.count = hi; IM.brake.count = hi;
-  IM.body.instanceMatrix.needsUpdate = true;
-  IM.cabin.instanceMatrix.needsUpdate = true;
-  IM.wheel.instanceMatrix.needsUpdate = true;
-  IM.head.instanceMatrix.needsUpdate = true;
-  IM.brake.instanceMatrix.needsUpdate = true;
-  IM.blob.instanceMatrix.needsUpdate = true;
-  IM.brake.instanceColor.needsUpdate = true;
+  if (mDirty) {
+    IM.body.instanceMatrix.needsUpdate = true;
+    IM.cabin.instanceMatrix.needsUpdate = true;
+    IM.wheel.instanceMatrix.needsUpdate = true;
+    IM.head.instanceMatrix.needsUpdate = true;
+    IM.brake.instanceMatrix.needsUpdate = true;
+    IM.blob.instanceMatrix.needsUpdate = true;
+  }
+  if (cDirty) IM.brake.instanceColor.needsUpdate = true;
 }
 
 // ---------- POOL-INICIALIZÁCIA (verbatim legacy buildTraffic js 6872–6896, len S.* sed) ----------
@@ -259,7 +292,7 @@ export function buildTraffic() {
 // ---------- KOMPATIBILNÉ API (na ňom stojí main.js) ----------
 // JEDNO pole postavené RAZ pri create (concat referencií poolov — žiadne alokácie v update).
 // `n` sa preberá pre kompatibilitu, veľkosti poolov riadia legacy consty TRAFFIC_N/INCOMING_N/AMBIENT_N.
-export function createTraffic(n) {
+export function createTraffic(n) {   // eslint-disable-line no-unused-vars
   buildTraffic();
   let seed = 777; // deterministický ambient-scatter (legacy buildPlayer js 6967–6968)
   function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
@@ -662,6 +695,5 @@ export function setMuted(m) {
   aiMuted = !!m;
 }
 
-export function isMuted() {
-  return aiMuted;
-}
+// (isMuted odstránená: jediný potenciálny čitateľ bola mŕtva polícia; mute
+//  stav drží modulová aiMuted cez setMuted.)

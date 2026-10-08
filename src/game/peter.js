@@ -161,11 +161,6 @@ export function peterDist(cx, cz) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-export function isNearPeter(car) {
-  if (!PETER.built || !car) return false;
-  return peterDist(car.x, car.z) < PETER_TALK_RADIUS;
-}
-
 // [F] pri Petrovi: zadá ďalšiu misiu, inak poradí podľa stavu.
 // Vracia true, ak hlášku spracoval Peter (volajúci preskočí iný význam klávesy).
 export function peterTalk(api = {}) {

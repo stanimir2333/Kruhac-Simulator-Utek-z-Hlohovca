@@ -93,7 +93,7 @@ export function updateDrift(dt, car = {}, inputLike = null) {
   // player.steer → car.steer, player.yawRate → car.yawRate, player.x/z → car.x/z,
   // input.hand (bool) → inputLike.handbrake() (fn). game.noclip → car.noclip.
   // Scoring je verbatim: pozemná rýchlosť + slip angle, na ručnú sa neviaže
-  // (param inputLike je pre API kompatibilitu a heat-systém — pozri driftState).
+  // (param inputLike je pre API kompatibilitu a heat-systém — scoring ho nepotrebuje).
   const noclip = !!(car && car.noclip);
   if (noclip) {
     DR.on = false;
@@ -247,6 +247,9 @@ export function buildParticles(sceneParam) {
     sizeAttenuation: true,
   });
   PS.pts = new THREE.Points(g, S.MAT.smoke);
+  // farby zapíše psEmit, animujú sa pozície — color atribút netreba dorátať
+  // v updateParticles (pozri koniec funkcie).
+  PS.pts.geometry.attributes.color.needsUpdate = true;
   PS.pts.frustumCulled = false;
   PS.pts.updateMatrix();
   PS.pts.matrixAutoUpdate = false;
@@ -276,6 +279,9 @@ export function psEmit(x, y, z, vx, vy, vz, life, r, g2, b, grav) {
   PS.col[i * 3] = r;
   PS.col[i * 3 + 1] = g2;
   PS.col[i * 3 + 2] = b;
+  // farba je definitívna (nemá žiadnu animáciu) → upload hneď pri emitu,
+  // nie na každý snímok v updateParticles
+  if (PS.pts) PS.pts.geometry.attributes.color.needsUpdate = true;
 }
 
 export function emitDriftSmoke(car = {}) {
@@ -336,11 +342,13 @@ export function emitSparks(x, y, z, n) {
 export function updateParticles(dt) {
   if (!PS.pts) return;
   const n = PS.n;
+  const posAttr = PS.pts.geometry.attributes.position;
   for (let i = 0; i < n; i++) {
     if (PS.life[i] <= 0) continue;
     PS.life[i] -= dt;
     if (PS.life[i] <= 0) {
       PS.pos[i * 3 + 1] = -999;
+      posAttr.needsUpdate = true;
       continue;
     }
     const dr = PS.grav[i] > 0.5 ? 0.4 : 1.6; // iskry: gravitácia, dym: odpor + stúpanie
@@ -350,12 +358,14 @@ export function updateParticles(dt) {
     PS.pos[i * 3] += PS.vel[i * 3] * dt;
     PS.pos[i * 3 + 1] += PS.vel[i * 3 + 1] * dt;
     PS.pos[i * 3 + 2] += PS.vel[i * 3 + 2] * dt;
+    posAttr.needsUpdate = true;
   }
-  PS.pts.geometry.attributes.position.needsUpdate = true;
-  PS.pts.geometry.attributes.color.needsUpdate = true;
+  // `color` sa nikdy neanimuje (farba sa píše len pri psEmit) — jeho needsUpdate
+  // patrí do emitovacej cesty, nie do update. Position sa uploaduje len keď
+  // sa naozaj niečo pohybovalo alebo zhaslo; inak by sa ~6 kB posielalo
+  // do GPU 60×/s aj pri úplne prázdnom bazéne častíc.
 }
 
-// Stav pre heat-systém (polícia číta DR.on / DR.rate bez priameho importu DR).
-export function driftState() {
-  return DR;
-}
+// (driftState odstránená: vracia DR, ale jediný potenciálny čitateľ bol
+//  heat-systém, ktorý odišiel so src/ai/police.js. missions.js importuje DR
+//  priamo.)
