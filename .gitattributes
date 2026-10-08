@@ -1,6 +1,7 @@
-# Ak sa rozhodneš verzovať audio cez Git LFS (namiesto .gitignore),
-# odkomentuj nasledujúci riadok a spusti `git lfs install`:
-# public/audio/station-* filter=lfs diff=lfs merge=lfs -text
+# Audio (public/audio/station-*.mp3|wav, 23 MB) verzujeme ako PLAIN binárky.
+# Git LFS tu nepoužívame: Pages slúži koreň repa priamo a LFS pointer by vodič
+# dostal 128 B JSON namiesto audia (nasmernovať ho vie až build step, ktorý
+# tu nie je). Najväčší súbor je 5,2 MB — pod limitom GitHubu (100 MB).
 #
-# mapData.json (0.5 MB, gzip 168 kB) verzujeme BEZ LFS — je to vektorová mapa,
-# diff je čitateľný a každá zmena križovatky má byť viditeľná v PR.
+# mapData.json (0.5 MB, gzip 168 kB) verzujeme tiež BEZ LFS — je to vektorová
+# mapa, diff je čitateľný a každá zmena križovatky má byť viditeľná v PR.

@@ -2,16 +2,12 @@
 # Monolitická záloha (32 MB) — po migrácii netreba verzovať, stačí git história.
 index.monolith.legacy.html
 
-# Extrahované audio (23 MB binárne) — regeneruj lokálne: `npm run extract`
-# Manifest (1 kB, mená staníc) verzujeme, zvuk nie.
-public/audio/station-*.mp3
-public/audio/station-*.wav
-public/audio/station-*.ogg
-public/audio/station-*.bin
-
-# Alternatíva: ak chceš audio verzovať cez Git LFS, zakomentuj vyššie a odkomentuj:
-# (vyžaduje `git lfs install` + `git lfs track "public/audio/*"`)
-# public/audio/*
+# Extrahované audio (23 MB) JE VERZOVANÉ — GitHub Pages slúži koreň repa,
+# takže public/audio/ je jediný zdroj, z ktorého sa hrá. Nepodarí sa to
+# zbuildovať inde: monolit, z ktorého `npm run extract` ťahá stopy, žije LEN
+# lokálne (/home/stanislav/index.monolith.legacy.html) a nie je v repo, takže
+# CI/Pages build nedokáže zvuk vygenerovať — musí byť v gite.
+# Ak by sa raz audio zmenilo, `npm run extract` ich prepíše z monolitu.
 
 # Vite výstup
 dist/
