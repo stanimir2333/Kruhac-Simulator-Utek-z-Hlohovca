@@ -76,6 +76,7 @@ roughJPG() { # <src.jpg> <dst-name> <px>
 AS=asphalt_02_1k.mtlx
 BR=dark_brick_wall_1k.mtlx
 GR=leafy_grass_1k.mtlx
+CO=concrete_layers_02_1k
 
 echo "asphalt_02 -> road/"
 diffuse    "$(src $AS asphalt_02_diff_1k.jpg)"     road/asphalt_diffuse.jpg     512 "$GAIN_ASPHALT"
@@ -91,7 +92,14 @@ echo "dark_brick_wall -> buildings/"
 diffuse    "$(src $BR dark_brick_wall_diff_1k.jpg)" buildings/brick.jpg          512 "$GAIN_BRICK"
 normal     "$(src $BR dark_brick_wall_nor_gl_1k.exr)" buildings/brick_normal.png 512
 
+# Betón NORMALOVÁ mapa — jediný slot, ktorý textures.js deklaroval, ale na disku
+# nebol (bol v PROC_ONLY v check_textures.py a šiel na procedurálny fallback).
+# Bez nej nemala MAT.concrete / veža / komín / stĺp normálovú mapu vôbec.
+echo "concrete_layers_02 -> buildings/"
+normal     "$(src $CO concrete_layers_02_nor_gl_1k.exr)" buildings/concrete_normal.png 512
+
 echo
-echo "hotovo. Zvyšné sloty (dirt, concrete, wood, wall, gravel, terrain_normal)"
-echo "ostávajú na procedurálnom fallbacke / generovaných placeholderoch."
+echo "hotovo. Sloty, ktoré zostávajú na procedurálny fallbacku:"
+echo "  buildings/wall.png — fasáda má 3 sprievodné mapy odvodené z jasu difúzie"
+echo "  betónová difúzia zostáva vlastná (ambientCG concrete je sivý a príliš svetlý)."
 find "$OUT" -type f \( -name "*.png" -o -name "*.jpg" \) -printf "%-50p %9s B\n" | sort

@@ -1,0 +1,16 @@
+{
+ "file": "hlohovec_dem.png",
+ "w": 257,
+ "h": 257,
+ "base": 130.0,
+ "scale": 0.1,
+ "packing": "r16",
+ "bbox": [
+  -3274.5,
+  -3504.2,
+  2033.8,
+  1563.3
+ ],
+ "datum": 130.2,
+ "src": "Mapzen terrarium (SRTM/NASA, public domain), zoom 14"
+}

@@ -16,7 +16,8 @@ BUILTINS = {'Math','JSON','Object','Array','Number','String','Boolean','parseInt
  'THREE','document','window','performance','requestAnimationFrame','cancelAnimationFrame','console',
  'localStorage','location','addEventListener','removeEventListener','setTimeout','clearTimeout',
  'setInterval','clearInterval','innerWidth','innerHeight','devicePixelRatio','navigator','fetch',
- 'TextDecoder','Image','Audio','URL','Blob','Promise','S'}
+ 'TextDecoder','Image','Audio','URL','Blob','Promise','S',
+ 'createImageBitmap','OffscreenCanvas','ImageData'}
 SKIP = {'shared.js'}
 NAMES = re.compile(r'[A-Za-z_$][\w$]*')
 

@@ -1,4 +1,4 @@
-// src/world/height.js — analytický výškový model OSM (verbatim port, js 2932–3547, bez sim-funkcií).
+// src/world/height.js — výškový model terénu (SRTM DEM + korekcie z OSM).
 import { S } from './shared.js';
 import { roadDist2 } from './roads.js'; //POZOR: deferred-use cyklus roads↔height — volá sa až za behu, nie pri importe
 
@@ -9,23 +9,31 @@ export const LANE_OFF = 1.75;   // pravý pruh v smere úniku (jazdíme vpravo)
 const RIVER_REF_Y = -8;
 const RIVER_CLEAR = 4.5;      // minimálne podanie mosta nad hladinou Váhu
 const DECK_RISE = 4.2;         // mostovka je o toľko nad okolitou nivóou (násyp/rampa)
-// -- Zámocký kopec: vrch nad Zámockou záhradou (OSM park 563x652 m, stred -1883,-128) --
-const CASTLE_R = 560, CASTLE_H = 30;
-// Polomer podpory jedneho OSM meracieho bodu. OSM ma v exporte len 8 pouzitelnych
-// uzlov ele, takze podpora musi pokryt medzery medzi nimi inak by pole nebolo
-// spojite a medzi bodmi by vznikali diery. 900 m je nad polovickou vzdialenostou
-// najdalsieho paru bodov (Zamocka zahrada / Podzamska ~113 m) a pod vacsinou
-// ostatnych medzier, takze kazdy bod ma este Asupor vplyv na kazdy iny.
+// ---------- VÝŠKOVÁ MAPA (SRTM DEM) ----------
+// Podklad terénu je raster nadmorských výšok z Mapzen terrarium (SRTM/NASA),
+// ktorý stiahne a prehustí tools/build_dem.py na mriežku TER_SEG+1. OSM má v
+// okolí Hlohovca IBA 10 uzlov s `ele=`, takže predtým sa svah musel vymýšľať
+// (plný kužeľ + FBM šum) a najvyšší kopeč v teréne bol fiktívny (Urbánek 242 m
+// medzitým z OSM zmizol).
+// DEM je uložený ako R=high byte, G=low byte (16-bitová hodnota v dvoch
+// kanáloch) — canvas getImageData vracia len 8 bitov, takže 16-bitová PNG by
+// sa v hre stratila na 0,7 m/krok. Načíta ho mapData.loadHeightmap().
+let DEM = null;              // Float32Array (h * w) v hracích Y, riadok = z
+let DEM_W = 0, DEM_H = 0;
+// Polomer podpory jedneho OSM meracieho bodu. OSM má v exporte len 10 použiteľných
+// uzlov ele, takže podpora musí pokryť medzery medzi nimi inak by pole nebolo
+// spojité a medzi bodmi by vznikali diery.
 const ELE_RAD = 900;
-// Odmietnutie chybnych nadmorskych vysk. Export obsahuje uzol mesta
-// (id 26036344, ele=451 m) prevzaty z GNS - pre Hlohovec je to preklep, realna
-// nadmorska vyska mesta je ~135 m a lezi o 291 m nad medianou. Takuto hodnotu
-// vyfiltrujeme dvoma bránami: fyzikálny rozsah a odľahlost od mediany.
-// Tolerancia 120 m je zvolena tak, aby NEPREKROČILA realny relief z mapy
-// (rúdny svah Malých Karpátov "Urbánek" je 242 m, teda 82 m od mediany) - inak by
-// sa odfiltrovala aj spravodajva vyska z vrcholu kopca.
-const ELE_OUTLIER = 120;      // maximalna odchylka od mediany (m)
-const ELE_FLOOR = 118, ELE_CEIL = 460;  // absolutny fyzikálny rozsah pre okolie (m)
+// Odmietnutie chybných nadmorských výšk. Export obsahuje uzol mesta
+// (ele=451 m) prevzatý z GNS - pre Hlohovec je to preklep, reálna nadmorská
+// výška mesta je ~135 m a leží o 291 m nad medianou. Takúto hodnotu
+// vyfiltrujeme dvoma bránami: fyzikálny rozsah a odľahlosť od mediany.
+const ELE_OUTLIER = 120;      // maximálna odchylka od mediany (m)
+const ELE_FLOOR = 118, ELE_CEIL = 460;  // absolútny fyzikálny rozsah pre okolie (m)
+// Korekcia z OSM je NAD DEM, nie namiesto neho. Body `ele=` sa od SRTM líšia
+// až o 30 m (mýtnica, Šulekovo), takže nekorektujeme presne — iba posunieme
+// terén o malú, ohraničenú hodnotu tam, kde je OSM dôveryhodné (okolie mosta).
+const ELE_MAX_FIX = 2.5;      // maximálna korekcia z jedného OSM bodu (m)
 // -- Simplex noise 2D (kompaktná seeded implementácia, žiadna závislosť) --
 const SX_P = new Uint8Array(512);
 (function(){
@@ -45,6 +53,10 @@ let ROUND_C = null;
 const RIVER_BANK = 75;
 const RIVER_DEPTH = 3.6;         // hĺbka koryta pod okolitou nivelou
 const RIVER_WATER_LIFT = 1.5;   // hladina vody nad dnom koryta
+// Odsadenie bodu vodnej línie od dna údolia, pri ktorom ešte veríme, že je to
+// breh rieky (a nie chyba v geometrii OSM). Pozri pruneWaterLines().
+const RIVER_VALLEY = 12;         // ... pre rieku (width >= 10)
+const RIVER_VALLEY_STREAM = 30;  // ... pre potoky a kanály (prahšie, idú po svahu)
 const WGRID_REACH = 45+RIVER_BANK;   // max. dolet koryta
 const WGRID_CS = WGRID_REACH+2;           // 3x3 bunky musia vždy pokryť celý vplyv
 const RIV = [0, 0]; // [deltaY, riverF] - scratch (bez alokácií)
@@ -79,11 +91,26 @@ export function sxNoise(x, z){
   return 70*n;
 }
 
-export function sxFbm(x, z){
-  return sxNoise(x, z)*0.65 + sxNoise(x*2.13+7.3, z*2.13-3.1)*0.25 + sxNoise(x*4.41-5.2, z*4.41+9.7)*0.10;
-}
+// (sxFbm odstránený: s DEM ako podkladom sa už FBM relief NEsčíta — bol by
+//  vymýšľaný relief navrchu reálneho. Zostal len detail jednej bunky.)
 
 export function smooth01(t){ t = t < 0 ? 0 : (t > 1 ? 1 : t); return t*t*(3-2*t); }
+
+// Najnižšie minimum DEM v kruhu okolo (x, z) — používa sa na filtrovanie
+// vodných línií (rieka musí byť v údolí, nie na svahu). Vzorkuje 8 smerov
+// v dvoch polomeroch; hrubé mriežka DEM (20 m) na to stačí.
+function valleyFloor(x, z, r1, r2){
+  let lo = demAt(x, z);
+  for(let i=0;i<8;i++){
+    const a = i*0.7853981634;
+    const dx = Math.cos(a), dz = Math.sin(a);
+    let v = demAt(x+dx*r1, z+dz*r1);
+    if(v < lo) lo = v;
+    v = demAt(x+dx*r2, z+dz*r2);
+    if(v < lo) lo = v;
+  }
+  return lo;
+}
 
 // najmenšia štvorcová vzdialenosť bodu od vzorkovanej línie S = [x,z,x,z,...]
 export function dist2ToSamples(x, z, samples){
@@ -105,6 +132,53 @@ export function resampleLine(pts, step){   // pts = [x0,z0,x1,z1,...] -> [x,z,..
   }
   if(out.length < 4) return [pts[0], pts[1], pts[pts.length-2], pts[pts.length-1]];
   return out;
+}
+
+// ---------- VODNÉ LÍNIE Z OSM + priestorová mriežka (rýchle dotazy bez O(n) skenu) ----------
+// Voda z OSM sa normalizuje JEDNYKRÁT tu a prepíše späť do S.osm.water, aby
+// všetci spotrebitelia (koryto v teréne, sieť hladiny vo water.js, kroviny
+// pri brehu v nature.js) videli rovnaké — a správne — dáta.
+//
+// GEOMETRIA `waterway=river` JE V OSM PRI HLOHOVCI VEĽMI HRUBÁ: way Váhu má
+// úseky 819 m dlhé a jeho koniec beží 1,2 km na JUH po sváhu Malých Karpátov
+// (z 137 m na 290 m n.m.). Overené: body tejto chyby ležia na DEM lokálne na
+// VÝRAZE, nie v údolí. Pred SRTM to bolo neviditeľné — terén bol vymyslený,
+// rovný a chyba len ležala v zemi. S reálnou výškovou mapou to isté vyzerá
+// ako voda plavúca 130 m nad krajom, takže to musí ísť preč.
+//
+// Rieka musí byť v údolí: bod, ktorý leží o viac než RIVER_VALLEY m nad
+// najnižším bodom v okolí, nie je breh rieky, ale chyba v OSM. Z takých bodov
+// sa vyberá len NAJDLHŠIA SÚVISLÁ SÉRIA (reálny tok), zvyšok sa zahodí.
+export function pruneWaterLines(){
+  const wl = S.osm.water;
+  if(!wl || !DEM) return 0;
+  const out = [];
+  let cutRuns = 0, cutPts = 0;
+  for(let li=0;li<wl.length;li++){
+    const L = wl[li], n = (L.length-1)/2;
+    if(n < 2){ continue; }
+    const big = (L[0] >= 10);
+    const tol = big ? RIVER_VALLEY : RIVER_VALLEY_STREAM;
+    let run = null, bestRun = null, bestLen = 0;
+    for(let i=0;i<n;i++){
+      const x = L[1+i*2], z = L[2+i*2];
+      if((demAt(x, z) - valleyFloor(x, z, 260, 520)) < tol){
+        if(!run) run = [];
+        run.push(x, z);
+      } else {
+        cutPts++;
+        if(run && run.length > bestLen){ bestLen = run.length; bestRun = run; }
+        run = null;
+      }
+    }
+    if(run && run.length > bestLen){ bestLen = run.length; bestRun = run; }
+    if(!bestRun || bestLen < 4){ cutRuns++; continue; }
+    if(bestLen < n*2) cutRuns++;
+    out.push([L[0]].concat(bestRun));
+  }
+  if(cutRuns) console.log(`[VODA] ${cutRuns} línií s úsekom mimo údolia zahodených (${cutPts} bodov) — OSM river je v okolí hrubý`);
+  S.osm.water = out;
+  return cutRuns;
 }
 
 export function buildWaterSamples(){
@@ -217,13 +291,38 @@ export function bumpK(d2, R){
   return q2*q2*(4*q+1);
 }
 
-// regionálny trend: svah od koryta Váhu (západ, nízko) na východ (vysoko) + Zámocký kopec
-export function trendAt(x, z){
-  let h = (x+600)*0.003;
-  const cdx = x-S.CASTLE_X, cdz = z-S.CASTLE_Z;
-  const cd2 = (cdx*cdx+cdz*cdz)/(CASTLE_R*CASTLE_R);
-  if(cd2 < 9) h += CASTLE_H*Math.exp(-cd2*2.2);   // verné stúpanie k Zámockému parku
-  return h;
+// Výška z DEM (SRTM) s lineárnou interpoláciou medzi štyrmi susednými bodmi.
+// Vracia 0 mimo DEM — za hranicami mapy je rovina a terrainRelief to ukrojí.
+export function demAt(x, z){
+  if(!DEM) return 0;
+  const x0 = S.GB.x0, z0 = S.GB.z0;
+  const cw = (S.GB.x1-x0)/(DEM_W-1), cd = (S.GB.z1-z0)/(DEM_H-1);
+  let fx = (x-x0)/cw, fz = (z-z0)/cd;
+  if(fx < 0) fx = 0; else if(fx > DEM_W-1.001) fx = DEM_W-1.001;
+  if(fz < 0) fz = 0; else if(fz > DEM_H-1.001) fz = DEM_H-1.001;
+  const ix = fx|0, iz = fz|0;
+  const u = fx-ix, v = fz-iz;
+  const a = DEM[iz*DEM_W+ix], b = DEM[iz*DEM_W+ix+1];
+  const c = DEM[(iz+1)*DEM_W+ix], d = DEM[(iz+1)*DEM_W+ix+1];
+  return (a+(c-a)*v)*(1-u) + (b+(d-b)*v)*u;
+}
+
+// Nasadenie DEM (mapData.loadHeightmap ho volá pred buildElevModel).
+// bbox musí sedieť s computeBounds() inak by bol DEM posunutý voči terénu.
+export function setHeightmap(dem){
+  if(!dem || !dem.grid) return false;
+  const bb = S.osm.bbox;
+  const want = [bb[0]-400, bb[1]-400, bb[2]+400, bb[3]+400];
+  const got = dem.bbox;
+  const drift = got ? Math.max(
+    Math.abs(got[0]-want[0]), Math.abs(got[1]-want[1]),
+    Math.abs(got[2]-want[2]), Math.abs(got[3]-want[3])) : 0;
+  if(drift > 1){
+    console.warn(`[DEM] bbox nesúhlasí s mapou o ${drift.toFixed(0)} m — terén by bol posunutý, DEM zanedbávam`);
+    return false;
+  }
+  DEM = dem.grid; DEM_W = dem.w; DEM_H = dem.h;
+  return true;
 }
 
 // korekčné pole z OSM nadmorských výšok (0 mimo podpory, C² na okraji)
@@ -231,22 +330,25 @@ export function osmElevAt(x, z){
   let s = 0;
   for(let i=0;i<ELE_N;i++){
     const c = ELE_A[i];
-    if(c > -0.05 && c < 0.05) continue;
+    if(c > -0.02 && c < 0.02) continue;
     const dx = x-ELE_PX[i], dz = z-ELE_PZ[i], d2 = dx*dx+dz*dz, R = ELE_R[i];
     if(d2 < R*R) s += c*bumpK(d2, R);
   }
+  if(s > ELE_MAX_FIX) s = ELE_MAX_FIX; else if(s < -ELE_MAX_FIX) s = -ELE_MAX_FIX;
   return s;
 }
 
-// Zvlnenie terénu (nie je to výška, len bázový reliéf). Frekvencie sú
-// BANDLIMITOVANÉ na mriežku TER_SEG - pozri computeBounds().
+// Zvlnenie terénu. Frekvencie sú BANDLIMITOVANÉ na mriežku TER_SEG - pozri
+// computeBounds(). S DEM sa zvlnenie už NESMIE scítať s reálnym reliefom, takže
+// zostáva len detail úrovne jednej bunky (1/(8*bunky) ≈ 166 m), ktorý mriežka
+// ešte vie vykresliť a ktorý zjemňuje rovné plochy medzi DEM bodmi.
 export function terrainRelief(x, z){
-  return sxFbm(x*S.TER_FBM_F, z*S.TER_FBM_F)*2.0 + sxNoise(x*S.TER_DET_F+3.7, z*S.TER_DET_F-1.2)*0.35;
+  return sxNoise(x*S.TER_DET_F+3.7, z*S.TER_DET_F-1.2)*0.35;
 }
 
 // terén BEZ koryta = podklad výškových profilov ciest (násyp cez rieku = premostenie)
 export function landAt(x, z){
-  return trendAt(x, z) + osmElevAt(x, z) + terrainRelief(x, z);
+  return demAt(x, z) + osmElevAt(x, z) + terrainRelief(x, z);
 }
 
 export function buildElevModel(){
@@ -273,7 +375,9 @@ export function buildElevModel(){
   // nadurčenú sústavu (N ťažiskových + N jednotlivých riadkov), čo je
   // najmenších štvorcov kompromis - terén potom NA OSM BODOCH neprechádzal
   // (namerané chyby až 75 m). Teraz je sústava štvorcová s N rovnicami a
-  // N neznámymi, takže každý OSM bod je preklepovo dodrzaný.
+  // N neznámymi, takže každý OSM bod je preklepovo dodržaný — ale b je teraz
+  // ROZDIEL proti SRTM, nie absolútna výška. Bez toho by 10 lôk s chybou až
+  // 29 m (mýtnica, Šulekovo) zatajilo DEM a hra by stála na svahoch.
   ELE_N = ok.length;
   ELE_PX = new Float32Array(ELE_N); ELE_PZ = new Float32Array(ELE_N);
   ELE_TY = new Float32Array(ELE_N); ELE_R = new Float32Array(ELE_N);
@@ -281,9 +385,9 @@ export function buildElevModel(){
   for(let i=0;i<ELE_N;i++){
     ELE_PX[i] = ok[i][0]; ELE_PZ[i] = ok[i][1]; ELE_TY[i] = ok[i][2]-S.ELE_DATUM;
     ELE_R[i] = ELE_RAD;
-    b[i] = ELE_TY[i]-trendAt(ELE_PX[i], ELE_PZ[i]);   // korekcia regionálneho trendu
+    b[i] = ELE_TY[i]-demAt(ELE_PX[i], ELE_PZ[i]);   // korekcia voči SRTM
   }
-  // Symetrická sústava KᵀKa = Kᵀb (K[i][j] = jadro od bodu i k bodu j)
+// Symetrická sústava KᵀKa = Kᵀb (K[i][j] = jadro od bodu i k bodu j)
   const K = [];
   for(let i=0;i<ELE_N;i++){
     const row = new Float64Array(ELE_N);
@@ -332,7 +436,7 @@ export function buildElevModel(){
   // kontrola v zanikajucich sa amplitudahach vracala zavodne cisla.
   let worst = 0;
   for(let i=0;i<ELE_N;i++){
-    let got = trendAt(ELE_PX[i], ELE_PZ[i]);
+    let got = demAt(ELE_PX[i], ELE_PZ[i]);
     for(let j=0;j<ELE_N;j++){
       const dx = ELE_PX[j]-ELE_PX[i], dz = ELE_PZ[j]-ELE_PZ[i];
       got += ELE_A[j]*bumpK(dx*dx+dz*dz, ELE_R[j]);
@@ -503,8 +607,8 @@ export function buildRoundHeights(){
 
 // ---------- ANALYTICKÝ TERÉN (pred buildGround) ----------
 export function heightAtAnalytic(x, z){
-  // 1) regionálny trend + OSM nadmorské výšky
-  let h = trendAt(x, z) + osmElevAt(x, z);
+  // 1) SRTM DEM + malá korekcia z OSM nadmorských výšok
+  let h = demAt(x, z) + osmElevAt(x, z);
   // 2) koryto Váhu a potokov (z OSM vodných línií)
   const rc = riverCarveAt(x, z, h);
   const riverF = rc[1];

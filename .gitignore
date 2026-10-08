@@ -23,3 +23,7 @@ Thumbs.db
 *.log
 !tools/*.log.md
 __pycache__/
+
+# deno je len pomocka na `deno check`/`deno lint` (npm je realny toolchain)
+deno.lock
+node_modules/

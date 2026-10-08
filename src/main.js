@@ -6,12 +6,12 @@ import { createState } from './core/state.js';
 import { createEngine } from './core/engine.js';
 import { createInput } from './core/input.js';
 import { nextFrame } from './core/loader.js';
-import { loadMapData, assertMapShape } from './world/mapData.js';
+import { loadWorld, assertMapShape } from './world/mapData.js';
 import { S } from './world/shared.js';
 import { buildTextures, buildShared } from './world/textures.js';
 import {
   buildWaterSamples, buildElevModel, buildRoadProfiles, buildRoundHeights,
-  buildRouteSub, driveY, LANE_OFF,
+  buildRouteSub, driveY, setHeightmap, pruneWaterLines, LANE_OFF,
 } from './world/height.js';
 import { computeBounds, buildGround } from './world/ground.js';
 import {
@@ -100,9 +100,9 @@ async function boot() {
     document.getElementById('touch')?.classList.add('on');
   }
 
-  // 1) MAPA (async fetch s progresom)
+  // 1) MAPA + vrstvy z nového OSM exportu + výšková mapa (všetko async s progresom)
   pre.step(0.08, 'sťahujem mapu Hlohovca…');
-  const { data: osm, fallback } = await loadMapData((p, msg) =>
+  const { osm, fallback, dem } = await loadWorld((p, msg) =>
     pre.step(0.08 + p * 0.22, msg ?? `mapa ${(p * 100) | 0} %`));
   assertMapShape(osm);
   S.osm = osm;
@@ -118,11 +118,20 @@ async function boot() {
   const beat = (name) => { const n = _now(); console.log("[boot] " + name + " " + (n - _bt).toFixed(0) + " ms"); _bt = n; };
   await step(0.32, 'textúry…');       buildTextures(); beat('textúry');
   await step(0.40, 'materiály…');     buildShared(); beat('materiály');
+  // S.GB MUSÍ byť známy pred všetkým, čo si staví vlastnú priestorovú mriežku.
+  // Bolo to poradie chybné a nikto si to nevšimol, lebo zlyhanie je tiché:
+  //   buildWaterSamples() -> S.WGRID.nx = ceil(0/cs) = 0  => riverCarveAt()
+  //     nikdy nenašiel žiadny bod, koryto Váhu sa do terénu VYKRESLILO a hladina
+  //     vody ležala pod zemou,
+  //   buildRoadProfiles() -> S.RDG.nx = 0 => roadCorridorAt() nič nenašiel,
+  //     takže vozovka sa nikdy neuhla do terénu (terén hodil popod ňou).
+  // Obe mriežky sú teraz postavené nad skutočným rozsahom mapy.
+  await step(0.42, 'rozsah mapy…');   computeBounds(); setHeightmap(dem); beat('rozsah mapy + DEM');
   await step(0.44, 'trasa…');         buildRoute(); beat('trasa');
-  await step(0.47, 'koryto Váhu…');   buildWaterSamples(); beat('koryto');
+  await step(0.47, 'koryto Váhu…');   pruneWaterLines(); buildWaterSamples(); beat('koryto');
   await step(0.50, 'výškový model…'); buildRouteSub(); buildElevModel(); beat('výškový model');
   await step(0.55, 'profily ciest…'); buildRoadProfiles(); buildRoundHeights(); beat('profily ciest');
-  await step(0.60, 'terén…');         computeBounds(); buildGround(); beat('terén');
+  await step(0.60, 'terén…');         buildGround(); beat('terén');
   await step(0.68, 'cesty…');         buildRoads(); beat('cesty');
   await step(0.71, 'kruháče…');       buildRoundabouts(); beat('kruháče');
   await step(0.73, 'Váh…');           buildRiver(); beat('Váh');

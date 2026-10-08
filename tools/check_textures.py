@@ -32,7 +32,9 @@ TEXDIR = os.path.join(ROOT, "assets", "textures")
 MAXPX = 1024
 
 # Subory, ktorych NEEXISTENCIA je zamerana (slot ide na proceduralny fallback).
-PROC_ONLY = {"buildings/concrete_normal.png"}
+# (prazdne - zatial vsetky sloty v textures.js maju subor alebo su proceduralne
+#  deklarovane cez null, takze sem nic nepotrebuje prist.)
+PROC_ONLY: set[str] = set()
 
 # slot -> (druh, cielova priemerna luma 0-255 alebo None, tolerancia v %)
 # luma ciel = priemerny fallback z procedurálnych painterov v index.html.
@@ -47,7 +49,6 @@ SLOTS = {
     "buildings/wall.png":           ("diffuse", None),
     # betón je zamerne tmavší než fallback (realne albedo), takže 30 % tolerancie
     "buildings/concrete_diffuse.jpg":  ("diffuse", 165.0, 30),
-    # normalová mapa zámerne chýba -> slot ide na procedurálnu (nie je biela guma)
     "buildings/concrete_normal.png":  ("normal",  None),
     "buildings/brick.jpg":          ("diffuse", 82.5),
     "buildings/brick_normal.png":   ("normal",  None),

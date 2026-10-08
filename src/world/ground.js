@@ -44,11 +44,10 @@ export function computeBounds(){
   // jednu bunku. To bolo tie tmavé pravidelné pruhy na teréne - mriežka nedokáže
   // takú vlnu vykresliť a len ju roztlačí do periodickej chyby sklonu.
   // Teraz frekvencie odvodené priamo z bunky, takže pri zmene hustoty mriežky
-  // alebo rozlohy mapy zostanú bezpečné:
-  //   fbm báza 1/(24*bunky) = 1/498 m -> oktávy 498 / 234 / 113 m (>= 5,4 bunky)
-  //   detail   1/(8*bunky)  = 1/166 m
+  // alebo rozlohy mapy zostanú bezpečné: detail 1/(8*bunky) ≈ 166 m.
+  // FBM oktávy (1/(24*bunky) ≈ 498 m) odišli so sxFbm: podklad terénu je
+  // reálny SRTM DEM a zvlnenie sa už NESČÍTA s reálnym reliefom.
   S.TER_CELL = Math.max(S.GB.x1-S.GB.x0, S.GB.z1-S.GB.z0)/S.TER_SEG;
-  S.TER_FBM_F = 1/(S.TER_CELL*24);
   S.TER_DET_F = 1/(S.TER_CELL*8);
 }
 
@@ -104,33 +103,45 @@ export function gmix(a, b, t){
   return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
 }
 
-// lesy: Zámocký kopec (Zámocká záhrada) + svah Malých Karpátov (Urbánek)
+// Prahy farby terénu sú v HERNEJ Y = m nad 130,2 m n.m. (S.ELE_DATUM).
+// Pred SRTM bol terén vymyslený a ležal v pásme -2..+30 m; dnešný DEM má
+// 130..308 m n.m., teda hra Y -0,6 .. +177, takže staré prahy by spravili
+// z mesta lúku a zo svahov kamenin. Hodnoty zodpovedajú meraniu
+// (tools/preview_terrain.py): niva mesta 8..16 m, Zámocká záhrada 32..40 m,
+// svah Malých Karpátov 60..100 m, hreb nad 130 m.
+const CLR_BED = 1.5;      // dno koryta
+const CLR_BANK = 3.0;     // breh -> náplavka
+const CLR_FIELD = 6.0;    // náplavka -> lúky a mesto
+const CLR_HILL = 34;      // lúky a mesto -> pahorkatina (Zámocký park je 32-40)
+const CLR_DRY = 78;       // pahorkatina -> suché trávniky
+const CLR_ROCK = 130;     // suché trávniky -> skaly (hreb Malých Karpátov)
+
+// lesy: Zámocká záhrada (OSM park 563x652 m, stred -1883,-128) + svah
+// Malých Karpátov (Urbánek, OSM uzol 242 m n.m.). Prahy `h >` sú nad
+// skutočnou nadmorskou výškou daného miesta, nie nad vymyslenou nadm.
 export function groundForest(x, z, h){
   const cdx = x-S.CASTLE_X, cdz = z-S.CASTLE_Z;
-  if((cdx*cdx+cdz*cdz) < 480*480 && h > 3) return 1;
+  if((cdx*cdx+cdz*cdz) < 480*480 && h > 30) return 1;
   const udx = x-S.URBAN_X, udz = z-S.URBAN_Z;
-  if((udx*udx+udz*udz) < S.URBAN_R*S.URBAN_R && h > 24) return 1;
+  if((udx*udx+udz*udz) < S.URBAN_R*S.URBAN_R && h > 64) return 1;
   return 0;
 }
 
 export function groundColor(h, x, z, urbD2){
   const C = GCPAL;
   let c;
-  if(h < -9.5) c = C.bed;                                   // dno koryta
-  else if(h < -7) c = gmix(C.bed, C.bank, (h+9.5)/2.5);    // breh
-  else if(h < -1.5) c = C.bank;                             // náplavka
-  else if(h < -0.5) c = gmix(C.bank, C.grass, (h+1.5)/1.0);
-  // Celý zvyšok rampy je JEDEN MONOTÓNNY PRECHOD bez tvrdých stavov. Predtým to
-  // boli tri vetvy s prehodenými faktorami, takže na h = -0,5 m farba skočila
-  // SPÄŤ z C.grass na C.bank a na h = 8 m z C.grass na C.grass2 - tvrdé hrany
-  // presne na izoliniách, ktoré sa na miernom terene vinú a kreslia pruhy.
-  // Teraz: -0,5..8 m grass->grass2, 8..14 m drží grass2, 14..22 m -> C.dry.
-  else if(h < 8) c = gmix(C.grass, C.grass2, (h+0.5)/8.5);   // mesto a lúky
-  else if(h < 22) c = gmix(C.grass2, C.dry, Math.max(0,(h-14)/8)); // pahorkatiny
-  else c = gmix(C.dry, C.rock, Math.min(1, (h-22)/24));     // skaly nad 22 m n.m.
+  // JEDEN MONOTÓNNY PRECHOD bez tvrdých stavov: tvrdá hrana presne na
+  // izolinii sa na miernom teréne vinie a kreslí pruhy.
+  if(h < CLR_BED-2.5) c = C.bed;                                        // dno koryta
+  else if(h < CLR_BED) c = gmix(C.bed, C.bank, (h-CLR_BED+2.5)/2.5);    // breh
+  else if(h < CLR_BANK) c = C.bank;                                     // náplavka
+  else if(h < CLR_FIELD) c = gmix(C.bank, C.grass, (h-CLR_BANK)/(CLR_FIELD-CLR_BANK));
+  else if(h < CLR_HILL) c = gmix(C.grass, C.grass2, (h-CLR_FIELD)/(CLR_HILL-CLR_FIELD));
+  else if(h < CLR_DRY) c = gmix(C.grass2, C.dry, (h-CLR_HILL)/(CLR_DRY-CLR_HILL));
+  else c = gmix(C.dry, C.rock, Math.min(1, (h-CLR_DRY)/(CLR_ROCK-CLR_DRY)));
   if(groundForest(x, z, h)) return C.forest;
   // parcely mimo mesta: pšenica / orná pôda / lúka (150x200 m pootočené o 20°)
-  if(h > -0.5 && h < 10 && urbD2 > 16900){
+  if(h > CLR_FIELD && h < CLR_HILL && urbD2 > 16900){
     const pxr = x*0.94+z*0.34, pzr = -x*0.34+z*0.94;
     const fh = Math.abs(Math.sin(Math.floor(pxr/150)*12.9898+Math.floor(pzr/200)*78.233)*43758.5453) % 1;
     if(fh >= 0.3 && fh < 0.55) c = C.wheat;
@@ -227,16 +238,16 @@ export function buildGround(){
     colors[i*3] = c[0]*v; colors[i*3+1] = c[1]*v; colors[i*3+2] = c[2]*v;
     // aBlend: 0 = trávnik, 1 = holá hlina. Teraz NEJDE o jednu opakovanú dlažku,
     // ale o zmes dvoch vrstiev (viditeľný shader MAT.ground), takže rozhoduje
-    // sklon strmšie ako 17 %, skalnatina nad 22 m, breh pri rieke a dve mierky
+    // sklon strmšie ako 17 %, skalnatina nad 95 m, breh pri rieke a dve mierky
     // šumu (200 m hrubé fliaky + 50 m roztrhané okraje). Bez toho sa dlažka trávnika
-    // opakuje ako mriežka a je to vidieť na 4,5 km terénu.
+    // opakuje ako mriežka a je to vidieť na 5 km terénu.
     const ix = Math.round((p.getX(i)+cx-x0)/MGW), iz = Math.round((p.getZ(i)+cz-z0)/MGD);
     const gx = (H[iz*G+Math.min(G-1,ix+1)] - H[iz*G+Math.max(0,ix-1)])/(2*MGW);
     const gz = (H[Math.min(G-1,iz+1)*G+ix] - H[Math.max(0,iz-1)*G+ix])/(2*MGD);
     const slope = Math.sqrt(gx*gx+gz*gz);
     let b = sstep(0.06, 0.26, slope)*0.60;                             // strmé svahy
-    b += ss01((h-22)/18)*0.55;                                        // holé skaly
-    b += ss01((-h-0.6)/1.6)*0.80;                                     // breh pri rieke
+    b += ss01((h-CLR_ROCK)/34)*0.55;                                   // holé skaly
+    b += ss01((CLR_FIELD-h)/1.6)*0.80;                                 // breh pri rieke
     // dve mierky šumu sú VAŽENÉ NAD 0 (0.62 / 0.56), inak by sxNoise so stredom 0.5
     // hodil polovicu terénu do holov. Takto ostáva trávnik všade a holá pôda
     // vyrába len na vrcholoch tých najvyšších fliakov (približne 15 % plochy).

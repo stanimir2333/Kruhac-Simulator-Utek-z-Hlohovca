@@ -10,11 +10,50 @@ npm run dev            # vite dev server on http:// (COOP: same-origin header)
 npm run build          # -> dist/index.html (single inlined JS+CSS) + dist/data + dist/audio
 npm run build:portable # inlines mp3/wav too -> ~25 MB HTML, parser stalls. Avoid.
 npm run preview        # serve dist/
+
+# offline generátory mapy (všetky idempotentné, nič v repore neprepíšu omylom)
+python3 tools/build_dem.py         # SRTM DEM -> assets/terrain/hlohovec_dem.{png,json}
+python3 tools/gen_osm_extra.py     # OSM export -> public/data/osmExtra.json
+python3 tools/preview_terrain.py   # meradlo: histogram výšok + kľúčové body (--ascii)
 ```
 
 `node`/`npm` are **not installed in this sandbox** (only `deno` + `python3` 3.14,
-`oiiotool`, ImageMagick). Install node >= 18 before touching JS, or verify by
-reading code — you cannot run the dev server here.
+`oiiotool`, ImageMagick, `chromium`). `deno install` stiahne `node_modules`, takže
+potom funguje `deno check`/`deno lint`. Overiť že hra naozaj nabehne sa dá aj
+bez node: `python3 -m http.server 8811` v koreni repa a potom `chromium
+--headless=new --enable-unsafe-swiftshader --screenshot=... http://127.0.0.1:8811/index.html`
+— konzola (`[map] [DEM] [boot] [VODA] vegetácia`) sa vypíše cez
+`--enable-logging=stderr --v=1 | grep CONSOLE`.
+
+## Terén: výšková mapa je SRTM DEM, nie analytický model
+
+Podklad terénu je raster nadmorských výšok v `assets/terrain/hlohovec_dem.png`
+(16-bitová hodnota rozložená do dvoch kanálov — canvas `getImageData` vracia len
+8 bitov, takže 16-bitová PNG by sa v hre stratila na 0,7 m/krok). Rozsah DEM je
+presne `computeBounds()`, teda `bbox ± 400 m`, a rozmermi sedí s `TER_SEG+1`
+(257×257) — **jeden bod DEM == jeden vrchol terénovej mriežky**, žiadna
+interpolácia ani posun. `height.js:demAt()` je spodok, `landAt()` = DEM + malá
+korekcia z OSM `ele=` (ohraničená na `ELE_MAX_FIX` = 2,5 m) + zvlnenie.
+
+Prečo to nie je v `mapData.json`: DEM je 50 kB binárka a `osmExtra.json` je
+generovaný. `public/data/osmExtra.json` (`blds`, `elev`, `trees`) je **vrstva
+navyše** nad `mapData.json`, ktorú generuje `tools/gen_osm_extra.py`; `prebuild`
+ju nedokáže prepísať, takže je bezpečná. `mapData.js:loadWorld()` zloží obe.
+
+`build_dem.py`/`gen_osm_extra.py` si berú body **mimo bounding boxu exportu** zo
+starých dát, lebo `~/Downloads/map(3).osm` pokrýva x −2568..980, z −3057..323 a
+mapa siahá na x −2874..1634, z −3104..1163. Bez toho by zmizlo ~1600 stromov.
+Všetko idie cez DEM, takže výsledok je vždy nadmnožina.
+
+## ⚠ Poradie bootu: `computeBounds()` pred `buildWaterSamples()`
+
+`main.js` volá `computeBounds()` ako **prvý** krok po načítaní mapy. Všetky
+priestorové mriežky (`S.WGRID` voda, `S.RDG` koridory ciest, `S.RGRID`,
+`S.BGRID`, `UGRID`) sa počítajú z `S.GB.x1-S.GB.x0`, takže predtým — keď
+`S.GB` bolo ešte `{0,0,0,0}` — vyšlo `nx = ceil(0/cs) = 0` a **ticho** sa nič
+nestalo: koryto Váhu sa nikdy nevyrezalo do terénu a vozovka sa nikdy neuhla
+do terénu. Presunúť `computeBounds()` dole je jediná oprava; nič iné v tom
+poradí nepoužívaj.
 
 ## ⚠ `npm run build` silently rewrites tracked data
 
@@ -55,7 +94,9 @@ the repo root (where data lives at `/public/…`), and from `file://`.
 On a Pages *project* site the absolute candidates (`/public/…`) 404 because they
 drop the `/<repo>/` prefix — only the `./public/…` one resolves. Same reason
 `ASSET_ROOT = "assets/textures/"` is relative and hits the repo-root `assets/`.
-Add a new data path → add candidates, don't switch to an absolute path.
+`assets/terrain/hlohovec_dem.*` (SRTM DEM) goes through the same relative list,
+`ASSET_CANDIDATES` in `src/world/mapData.js`. Add a new data path → add
+candidates, don't switch to an absolute path.
 `file://` degrades to `TINY_FALLBACK` map + procedural textures, never errors.
 
 ## Architecture
@@ -177,21 +218,32 @@ No test/lint/typecheck scripts exist. What actually exists and passes today:
 
 ```bash
 python3 tools/leak-check.py        # undefined-identifier scan, src/world/*.js ONLY
-python3 tools/check_textures.py     # texture slots vs assets/ (needs Pillow; exit 1 on drift)
-deno lint --json src/               # unused vars, prefer-const … (no repo config; not enforced)
-deno check --no-remote src/*.js     # parse + type check per file (no node needed)
+python3 tools/check_textures.py    # texture slots vs assets/ (needs Pillow; exit 1 on drift)
+deno lint --json src/              # unused vars, prefer-const … (no repo config; not enforced)
+deno check --no-remote src/*.js    # parse + type check per file (needs `deno install` once)
+python3 tools/preview_terrain.py   # off-line: čo uvidí heightAtAnalytic + kľúčové body
+python3 tools/gen_osm_extra.py     # idempotentný; 2. beh musí dať byte-identické JSON
+python3 tools/build_dem.py --dry   # vypíše plán tile-ov bez stahovania
 ```
 
 `leak-check.py` only covers `src/world/` — a clean run there says nothing about
 `src/audio`, `src/game`, `src/ai`, or `src/ui`. `deno lint` has no repo config,
 so expect ~40 pre-existing findings; only `no-unused-vars` and `no-undef` matter
-for a change. Everything else is manual: load the game, watch the console
-(`[boot]`, `[map]`, `[TEX]` lines), and drive it with the keybinds — `WASD` drive,
-`H` horn, `Q`/`E` radio, `X` mute, `R` restart (+ 2.5 s dashboard self-test),
-`M` map, `T` turbo, `F` Peter, `F3` bloom cycle, `ESC` settings. Cheat codes are
-typed GTA-style (`NOCLIP`, `WARPZAMOK`, `WARPPETER`, `FIXCAR`, `TURBO`) and
-suppress single-key shortcuts while a prefix is being typed (`cheatLocked()`),
-so press those keys alone when testing a shortcut.
+for a change. Na `src/world/{height,ground,nature,mapData}.js` + `main.js` je
+ich dnes 4 a je to presne baseline z HEAD — nepridávaj nové. Everything else is manual: load the game,
+watch the console (`[boot]`, `[map]`, `[DEM]`, `[TEX]` lines), and drive it with
+the keybinds — `WASD` drive, `H` horn, `Q`/`E` radio, `X` mute, `R` restart
+(+ 2.5 s dashboard self-test), `M` map, `T` turbo, `F` Peter, `F3` bloom cycle,
+`ESC` settings. Cheat codes are typed GTA-style (`NOCLIP`, `WARPZAMOK`,
+`WARPPETER`, `GHOSTCAM`, `FIXCAR`, `TURBO`) and suppress single-key shortcuts
+while a prefix is being typed (`cheatLocked()`), so press those keys alone when
+testing a shortcut.
+
+**Bez node sa dá overiť aj vizuálne** (pozri Commands): `python3 -m http.server`
++ `chromium --headless=new --enable-unsafe-swiftshader`. Screenshoty sú v
+/tmp a hra beží ~10 FPS pod softwarovým WebGL — to nie je výkonnostný údaj,
+`#fps` je vtedy bez zmyslu. Over, čo konzola vypíše (`blds`, `vegetácia:`,
+`hladina … m n.m.`) a čo je na snímke.
 
 `#fps` now shows `FPS · N DC · Nk tri` (2 Hz) — draw calls and triangles from
 `renderer.info`. That readout is the tool for any further perf work; check it
