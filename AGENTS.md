@@ -234,11 +234,10 @@ ich dnes 4 a je to presne baseline z HEAD — nepridávaj nové. Everything else
 watch the console (`[boot]`, `[map]`, `[DEM]`, `[TEX]` lines), and drive it with
 the keybinds — `WASD` drive, `H` horn, `Q`/`E` radio, `X` mute, `R` restart
 (+ 2.5 s dashboard self-test), `M` map, `T` turbo, `F` Peter, `F3` bloom cycle,
-`ESC` settings. Cheat codes are typed GTA-style (`NOCLIP` = ghost cam, `WARPZAMOK`, `WARPURBANEK`,
-`WARPBRIDGE`, `WARPSTATION`, `WARPPETER`, `FIXCAR`, `TURBO`) and suppress
-single-key shortcuts
-while a prefix is being typed (`cheatLocked()`), so press those keys alone when
-testing a shortcut.
+`ESC` settings. Cheat codes are typed GTA-style (`NOCLIP` = ghost cam,
+`WARPZAMOK`, `WARPURBANEK`, `WARPBRIDGE`, `WARPSTATION`, `WARPPETER`, `FIXCAR`,
+`TURBO`) and suppress single-key shortcuts while a prefix is being typed
+(`cheatLocked()`), so press those keys alone when testing a shortcut.
 
 **Bez node sa dá overiť aj vizuálne** (pozri Commands): `python3 -m http.server`
 + `chromium --headless=new --enable-unsafe-swiftshader`. Screenshoty sú v
