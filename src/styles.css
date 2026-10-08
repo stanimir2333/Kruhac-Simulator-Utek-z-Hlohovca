@@ -136,6 +136,14 @@
   #drift .dcombo{font-size:15px;font-weight:bold;color:#ffd97a;}
   #drift .dcombo.hot{color:#ff5a00;}
   #drift .dbest{color:#ffd97a;font-size:10px;}
+  /* ---------- Peter: zadávateľ misií ---------- */
+  #peter{position:absolute;bottom:66px;left:50%;transform:translateX(-50%);
+    width:min(560px,86vw);padding:8px 14px;font-size:12px;display:none;
+    border-color:#c26bff;text-shadow:0 0 6px rgba(194,107,255,.8);
+    pointer-events:auto;cursor:pointer;}
+  #peter.on{display:block;}
+  #peter .pname{color:#c26bff;font-weight:bold;font-size:11px;letter-spacing:2px;}
+  #peter .ptext{color:#ffd97a;margin-top:3px;line-height:1.6;white-space:pre-wrap;}
   #boost-badge{display:none;color:var(--green);}
   #boost-badge.on{display:inline;}
   #dmg{position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;

@@ -371,7 +371,8 @@ export function renderBigStatic(staticCvs, targetCvs, force){
 // ADAPTÁCIA legacy drawMap: trafficPool/incomingPool/ambientPool neexistujú —
 // autá cez cars ([{x,z,h,dir}]; dir<0 = protismer), polícia cez police
 // ({units:[{x,z}], roadblocks:[{x,z}]}). Hráč cez player ({x,z,h}).
-export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police){
+// Peter (zadávateľ misií) cez peter ({x,z}, fialová).
+export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police, peter){
   mapTrans(W, H, view);
   const sc = MO.sc, ox = MO.ox, oy = MO.oy;
   ctx.drawImage(staticCvs, 0, 0, W, H);
@@ -433,6 +434,13 @@ export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police){
     ctx.closePath(); ctx.fill();
     ctx.restore();
   }
+  // Peter (fialová — zadávateľ misií)
+  if(peter && typeof peter.x === "number"){
+    mapXY(peter.x, peter.z, ox, oy, sc);
+    ctx.fillStyle = "#c26bff";
+    const s = full ? 6 : 4;
+    ctx.fillRect(_mxy.x-s/2, _mxy.y-s/2, s, s);
+  }
   if(full){
     const osm = S.osm;
     // názvy ulíc + POI
@@ -465,6 +473,12 @@ export function drawMap(ctx, W, H, full, staticCvs, view, player, cars, police){
       ctx.font = "bold 15px Courier";
       mapXY(player.x, player.z, ox, oy, sc);
       ctx.fillText("TY", _mxy.x, _mxy.y-12);
+    }
+    if(peter && typeof peter.x === "number"){
+      ctx.fillStyle = "#c26bff";
+      ctx.font = "bold 13px Courier";
+      mapXY(peter.x, peter.z, ox, oy, sc);
+      ctx.fillText("PETER", _mxy.x, _mxy.y-10);
     }
   }
 }
@@ -584,10 +598,11 @@ export function createMinimap(state, api){
     if(api && api.police) return api.police;
     return state.police || null;
   };
+  const peterOf = function(){ return (api && api.peter && api.peter.built) ? api.peter : null; };
   const redrawBig = function(){
     renderBigStatic(bigStatic, bigCvs);
     if(bigCtx && bigCvs && MAP.ready){
-      drawMap(bigCtx, bigCvs.width, bigCvs.height, true, bigStatic, MV.big, state.player, carsOf(), policeOf());
+      drawMap(bigCtx, bigCvs.width, bigCvs.height, true, bigStatic, MV.big, state.player, carsOf(), policeOf(), peterOf());
     }
   };
   // Zoom/pan len na veľkej mape (minimapa bez zoomu, stále "fit" celého mesta).
@@ -607,14 +622,14 @@ export function createMinimap(state, api){
     // Minimapa sa prekresľuje každý frame (lacno: statika z cache + živé body).
     if(miniCtx && miniCvs){
       renderMiniStatic(miniStatic, miniCvs);
-      drawMap(miniCtx, miniCvs.width, miniCvs.height, false, miniStatic, MV.mini, state.player, carsOf(), policeOf());
+      drawMap(miniCtx, miniCvs.width, miniCvs.height, false, miniStatic, MV.mini, state.player, carsOf(), policeOf(), peterOf());
     }
     // Veľká mapa len keď je otvorená (+ pri zoom/pan cez redrawBig).
     const open = bigEl ? !bigEl.classList.contains("hidden") : false;
     if(open && bigCtx && bigCvs){
       if(!bigWasOpen) sizeBigMap(bigCvs, bigStatic);
       renderBigStatic(bigStatic, bigCvs);
-      drawMap(bigCtx, bigCvs.width, bigCvs.height, true, bigStatic, MV.big, state.player, carsOf(), policeOf());
+      drawMap(bigCtx, bigCvs.width, bigCvs.height, true, bigStatic, MV.big, state.player, carsOf(), policeOf(), peterOf());
     }
     bigWasOpen = open;
   }

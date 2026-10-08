@@ -14,6 +14,7 @@ const CHEAT_DEFS = [
   { code: 'WARPURBANEK', name: 'URBÁNEK VIEWPOINT' },
   { code: 'WARPBRIDGE', name: 'VÁH BRIDGE' },
   { code: 'WARPSTATION', name: 'RAILWAY STATION' },
+  { code: 'WARPPETER', name: 'PETER · MISIE' },
   { code: 'FIXCAR', name: 'REPAIR + RIGHT' },
   { code: 'HESOYAM', name: 'REPAIR + RIGHT' },
   { code: 'TURBO', name: 'TURBO BOOST' },
@@ -134,10 +135,16 @@ export function runCheat(i, api) {
       warpLandmark(car, LM_STATION.x, LM_STATION.z, nr0.x, nr0.z);
       break;
     }
-    case 5: case 6: fixCar(car, toast); break;
-    case 7: toggleTurbo(toast); break;
+    case 5: {
+      // Peter stojí pri štarte (s=8, +7 m vpravo) — warpni na cestu vedľa neho.
+      routePose(8, S._v1, S._hWrap, 0);
+      warpCar(car, S._v1.x, S._v1.z, S._hWrap.v);
+      break;
+    }
+    case 6: case 7: fixCar(car, toast); break;
+    case 8: toggleTurbo(toast); break;
   }
   cheatToast(d.name);
   // warp zmení pozíciu mimo slučku — daj vedieť main loopu
-  if (i >= 1 && i <= 4 && api?.onWarp) api.onWarp();
+  if (i >= 1 && i <= 5 && api?.onWarp) api.onWarp();
 }

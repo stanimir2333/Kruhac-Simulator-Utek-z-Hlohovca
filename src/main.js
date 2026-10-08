@@ -38,6 +38,7 @@ import {
   buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
   updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
 } from './game/missions.js';
+import { buildPeter, updatePeter, peterTalk, peterReset, PETER } from './game/peter.js';
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
@@ -116,7 +117,9 @@ async function boot() {
   await step(0.88, 'efekty + misie…');
   buildParticles(scene);
   buildCheckpoints();
+  buildPeter();
   missionReset();
+  peterReset();
   loadDriftBest();
   enableTiles();
   await step(0.90, 'obloha…');        const skyDome = buildSkyDome(scene, renderer);
@@ -140,7 +143,7 @@ async function boot() {
   setMuted(state.muted);
 
   state.police = null;
-  const minimap = createMinimap(state, { traffic });
+  const minimap = createMinimap(state, { traffic, peter: PETER });
 
   // Odraz Váhu až PO autách (mirror vrstva musí vidieť aj meshe áut, ako v monolitu).
   // + zosynchronizuj materiál s uloženou kvalitou (boot inak nechá shader aj pri VYP).
@@ -174,6 +177,9 @@ async function boot() {
     if (e.code === 'KeyH' && state.started && !typing) sfx.honk();
     if (e.code === 'KeyQ' && !typing) radio.prev();
     if (e.code === 'KeyE' && !typing && !isNoclip()) radio.next();
+    if (e.code === 'KeyF' && state.started && !typing) {
+      peterTalk({ car, toast: (m) => hud.toast(m) });
+    }
     if (e.code === 'KeyT' && state.started && !typing) toggleTurbo((m) => hud.toast(m));
     if (e.code === 'KeyX' && !typing) {
       const m = !state.muted; state.muted = m; sfx.setMuted(m); setMuted(m);
@@ -186,6 +192,7 @@ async function boot() {
       playerS = 8;
       resetDrift();
       missionReset();
+      peterReset();
       dash.selfTest();
       hud.toast('Reštart na štarte kolóny. Nádrž dotankovaná.');
     }
@@ -196,6 +203,10 @@ async function boot() {
     }
   });
   document.getElementById('btn-start')?.addEventListener('click', () => radio.play(0), { once: true });
+  // mobil / myš: klik na Petra = to isté ako [F]
+  document.getElementById('peter')?.addEventListener('click', () => {
+    if (state.started && !state.paused) peterTalk({ car, toast: (m) => hud.toast(m) });
+  });
   // skrytý tab = pauza (motor stíchne, svet nespadne do chaosu)
   document.addEventListener('visibilitychange', () => {
     if (!state.started) return;
@@ -276,7 +287,7 @@ async function boot() {
       }
     }
 
-    // — doprava + misie —
+    // — doprava + misie + Peter —
     updateTraffic(traffic, dt, state.player, playerS, S.routeLen);
     updateMissions(dt, {
       car, playerS, routeLen: S.routeLen,
@@ -284,6 +295,7 @@ async function boot() {
       onWin: (m) => hud.toast(m || 'MISIA SPLNENÁ ✔'),
       onFail: (m) => hud.toast(m || 'Misia zlyhala'),
     });
+    updatePeter(dt, t, car, { toast: (m) => hud.toast(m), started: state.started });
     sfx.engine((car.rpm - 900) / 7100, input.throttle());
 
     // — meshe —

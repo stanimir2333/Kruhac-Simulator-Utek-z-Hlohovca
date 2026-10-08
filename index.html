@@ -73,12 +73,16 @@
     <div class="dscore" id="d-score">0</div>
     <div class="dbest" id="d-best">REKORD 0</div>
   </div>
+  <div id="peter" class="panel">
+    <div class="pname">PETER · MISIE [F]</div>
+    <div class="ptext" id="peter-text">—</div>
+  </div>
   <div id="toast" class="panel"></div>
   <div id="progress" class="panel">
     <div id="hud-street">CESTA 513 → VON Z MESTA</div>
     <div class="bar" id="bar-route"><i></i></div>
   </div>
-  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · T turbo · F3 bloom · ESC nastavenia<br>CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · FIXCAR · TURBO</div>
+  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · T turbo · F3 bloom · ESC nastavenia<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO</div>
   <div id="fps" class="panel">60 FPS</div>
   <div id="ver" class="panel">B25 · LM</div>
 </div>
@@ -163,6 +167,7 @@
     <b>Námestie sv. Michala</b>, <b>Slov. nár. povstania</b>, <b>Nitrianska</b> a von z mesta.</p>
     <p>Pozor: státie varí motor. Ťukance varia motor aj nervy.
     Plynulo sa plížiť = chladenie zadarmo.</p>
+    <p style="font-size:12px;">Pri štarte kolóny máva <b>Peter</b> — zastav pri ňom a stlač <b>F</b>, zadá ti misie.</p>
     <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
     A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
     M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
@@ -176,7 +181,7 @@
     <div class="card panel">
       <h1 style="font-size:24px;">MAPA ÚTEKU (pauza)</h1>
       <canvas id="bigmap-canvas" width="700" height="420"></canvas>
-      <div id="bigmap-legend">ZELENÁ = ty · ČERVENÉ = kolóna · ORANŽOVÉ = protismer · ŽLTÉ = premávka v meste<br>
+      <div id="bigmap-legend">ZELENÁ = ty · ČERVENÉ = kolóna · ORANŽOVÉ = protismer · ŽLTÉ = premávka v meste · FIALOVÁ = Peter<br>
       ZELENÝ úsek = most Váh · M / klik mimo / Esc = zavrieť mapu a pokračovať<br>
       <b>Koliesko / dva prsty = priblíženie · ťahanie = posun · dvojklik = späť na celé mesto</b><br>
       <span class="mapcred" id="mapcred-big"></span></div>
