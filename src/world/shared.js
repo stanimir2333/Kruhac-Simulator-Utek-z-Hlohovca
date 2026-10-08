@@ -56,7 +56,7 @@ export const S = {
   GB: { x0:0, z0:0, x1:0, z1:0 }, // <- legacy @5094
   GQ: new Int32Array(160), // <- legacy @5127
   townRoads: [], // <- legacy @5494
-  BGRID: { cs:12, nx:0, nz:0, head:null, next:null }, // <- legacy @5876
+  BGRID: { cs:12, nx:0, nz:0, head:null, next:null, nid:null, nn:0 }, // <- legacy @5876 + nid pre široké bunky
   BX: { x:null, z:null, hw:null, hl:null, rot:null, by:null, bh:null, n:0 }, // <- legacy @5877
   BF: { p:null, o:null, n:null }, // <- legacy @5878
   CHUNKS: [], // <- legacy @5952

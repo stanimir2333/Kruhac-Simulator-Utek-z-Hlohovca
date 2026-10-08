@@ -66,15 +66,19 @@ export function gridAdd(g, x, z, id){
   g.head[c] = id;
 }
 
+// g.nid je nepovinné: mriežka budov (BGRID) má slot na (bunku,budovu), takže
+// slotové číslo treba preložiť na index budovy (`nid`). Ostatné mriežky
+// (cesty, voda) majú jeden slot na prvok a `nid` chýba - id je slot sám.
 export function gridQuery(g, x, z, ring){
   let n = 0;
+  const nid = g.nid;
   const ccx = Math.floor((x-S.GB.x0)/g.cs), ccz = Math.floor((z-S.GB.z0)/g.cs);
   for(let ax=-ring;ax<=ring;ax++){
     for(let az=-ring;az<=ring;az++){
       const cx = ccx+ax, cz = ccz+az;
       if(cx < 0 || cz < 0 || cx >= g.nx || cz >= g.nz) continue;
       let id = g.head[cz*g.nx+cx];
-      while(id >= 0 && n < 160){ S.GQ[n++] = id; id = g.next[id]; }
+      while(id >= 0 && n < 160){ S.GQ[n++] = nid ? nid[id] : id; id = g.next[id]; }
     }
   }
   return n;
@@ -252,6 +256,12 @@ export function buildGround(){
   S.scene.add(m);
   staticDone(m, false, true); // terén: len prijíma tiene
   S.terrainMesh = m; // cieľ pre Raycaster snapy objektov
+  // matrixWorld TREBA hneď: staticDone() nastavuje matrixAutoUpdate=false, takže
+  // do prvého renderu má mesh identity maticu a každý Raycaster po teréne
+  // (groundRayY: ostrovčeky kruháčov, pamätník, kontrola pät budov) by trafil
+  // terén posunutý o (cx,cz) - teda nesprávny bod mapy. mesh.updateMatrix()
+  // zavolá staticDone, matrixWorld zostáva stará; dopočítame ho tu.
+  m.updateMatrixWorld(true);
   S.groundHoleOK = true;
 }
 

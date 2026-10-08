@@ -6,16 +6,23 @@ import { regLabel } from './labels.js';
 import { getTerrainHeight } from './height.js';
 import { groundRayY, staticDone } from './ground.js';
 export const SEG = { map:null };
+// Široká mriežka: jedna budova patrí do VIACERÝCH buniek ( až 240 ), takže na
+// jednu budovicu nestačí jeden slot v `next` - predchádzajúca implementácia
+// ho prepisovala pri každej bunke a spojový zoznam sa rozpadol. Teraz je
+// slotu (uzlu) jeden na VKLADANIE (bunky,budovy); `nid[uzol]` = index budovy.
 export function gridAddRect(x, z, hw, hl, c, s, id){
   const ex = Math.abs(hw*c)+Math.abs(hl*s), ez = Math.abs(hw*s)+Math.abs(hl*c);
   let x0 = Math.floor((x-ex-S.GB.x0)/S.BGRID.cs), x1 = Math.floor((x+ex-S.GB.x0)/S.BGRID.cs);
   let z0 = Math.floor((z-ez-S.GB.z0)/S.BGRID.cs), z1 = Math.floor((z+ez-S.GB.z0)/S.BGRID.cs);
   if(x0<0)x0=0; if(z0<0)z0=0;
   if(x1>=S.BGRID.nx)x1=S.BGRID.nx-1; if(z1>=S.BGRID.nz)z1=S.BGRID.nz-1;
+  const next = S.BGRID.next, nid = S.BGRID.nid;
   for(let cx=x0;cx<=x1;cx++){ for(let cz=z0;cz<=z1;cz++){
     const cc = cz*S.BGRID.nx+cx;
-    S.BGRID.next[id] = S.BGRID.head[cc];
-    S.BGRID.head[cc] = id;
+    const node = S.BGRID.nn++;
+    nid[node] = id;
+    next[node] = S.BGRID.head[cc];
+    S.BGRID.head[cc] = node;
   }}
 }
 // segmentová mriežka ciest pre EXAKTNÝ filter budov (LEN v init, alokácie OK)
@@ -52,26 +59,64 @@ export function buildSegGrid(){
     }
   }
 }
-// stred + rohy vs. segmenty: hlavné cesty s dipadlom 0.6 m, dvorové len hlboké prieniky
-export function bldOnRoad(cor, hd){
-  const x = cor[0], z = cor[1];
-  const R = hd + 35;
-  const cx0 = Math.floor((x-R-S.GB.x0)/20), cx1 = Math.floor((x+R-S.GB.x0)/20);
-  const cz0 = Math.floor((z-R-S.GB.z0)/20), cz1 = Math.floor((z+R-S.GB.z0)/20);
+// ---------- PRESNÝ TEST "BUDOVA NA VOZOVKE" ----------
+// Pôvodný filter skústal LEN stred + 4 rohy OBB (orientovaného obdĺžnika
+// footprintu). To je nesprávne z dvoch dôvodov:
+//   1) rotácia do sveta mala prehodené znamienka, takže testované body neboli
+//      rohy OBB, ale akýsi zrkadlový/otočený útvar - pre 2599 z 2600 budov
+//      s nenulovou rotáciou boli "rohy" mimo obdĺžnika;
+//   2) aj pri opravenej rotácii je OBB pre L-tvaré, U-tvaré a zložité
+//      budovy väčší než skutočný obrys, takže roh OBB leží na ceste, kým
+//      samotná budova má 3 m voľnosti.
+// Výsledok: 258 budov zmizlo, hoci ich obrys sa cesty ani nedotýkal.
+// Teraz testujeme SKUTOČNÝ obrys: kažú hranu proti každému segmentu cesty.
+// Keďže cesta vstúpi dovnútra budovy, musí pretnúť niektorú jej hranu,
+// takže test hrán (a tým aj vrcholov) stačí a je presný.
+function ptSegD2(px, pz, ax, az, bx, bz){
+  const dx = bx-ax, dz = bz-az;
+  const L2 = dx*dx+dz*dz;
+  let t = L2 > 0 ? ((px-ax)*dx+(pz-az)*dz)/L2 : 0;
+  if(t < 0) t = 0; else if(t > 1) t = 1;
+  const ex = px-(ax+dx*t), ez = pz-(az+dz*t);
+  return ex*ex+ez*ez;
+}
+// vzdialenosť úsečiek (priesečník alebo najbližší koncový bod)
+function segSegD2(ax,az,bx,bz,cx,cz,dx2,dz2){
+  const d1x=bx-ax, d1z=bz-az, d2x=dx2-cx, d2z=dz2-cz;
+  const den = d1x*d2z-d1z*d2x;
+  if(den !== 0){
+    const t = ((cx-ax)*d2z-(cz-az)*d2x)/den;
+    if(t >= 0 && t <= 1){
+      const u = ((cx-ax)*d1z-(cz-az)*d1x)/den;
+      if(u >= 0 && u <= 1) return 0;   // pretínajú sa
+    }
+  }
+  return Math.min(ptSegD2(ax,az,cx,cz,dx2,dz2), ptSegD2(bx,bz,cx,cz,dx2,dz2),
+                  ptSegD2(cx,cz,ax,az,bx,bz), ptSegD2(dx2,dz2,ax,az,bx,bz));
+}
+// fp = plochý [x,z,...] obrys; hlavné cesty s rezervou 1.5 m, dvorové len hlboké prieniky
+export function bldOnRoad(fp){
+  const n = fp.length/2;
+  if(n < 3) return false;
+  let x0 = 1e18, x1 = -1e18, z0 = 1e18, z1 = -1e18;
+  for(let p=0;p<n;p++){
+    const px = fp[p*2], pz = fp[p*2+1];
+    if(px<x0)x0=px; if(px>x1)x1=px; if(pz<z0)z0=pz; if(pz>z1)z1=pz;
+  }
+  const cx0 = Math.floor((x0-S.GB.x0)/20), cx1 = Math.floor((x1-S.GB.x0)/20);
+  const cz0 = Math.floor((z0-S.GB.z0)/20), cz1 = Math.floor((z1-S.GB.z0)/20);
   for(let cx=cx0;cx<=cx1;cx++){
     for(let cz=cz0;cz<=cz1;cz++){
       const a = SEG.map.get((cx+500)*1000 + (cz+500));
       if(!a) continue;
       for(let s=0;s<a.length;s+=6){
-        const lim = a[s+5] ? 1.5 : -1.0;
-        for(let p=0;p<cor.length;p+=2){
-          const px = cor[p], pz = cor[p+1];
-          const dx = a[s+2]-a[s], dz = a[s+3]-a[s+1];
-          const L2 = dx*dx+dz*dz || 1;
-          let t = ((px-a[s])*dx+(pz-a[s+1])*dz)/L2;
-          if(t<0)t=0; else if(t>1)t=1;
-          const ddx = px-(a[s]+dx*t), ddz = pz-(a[s+1]+dz*t);
-          if(ddx*ddx+ddz*ddz < (a[s+4]+lim)*(a[s+4]+lim)) return true;
+        const lim = a[s+4] + (a[s+5] ? 1.5 : -1.0);
+        const lim2 = lim*lim;
+        const sax=a[s], saz=a[s+1], sbx=a[s+2], sbz=a[s+3];
+        for(let p=0;p<n;p++){
+          const ax = fp[p*2], az = fp[p*2+1];
+          const q = p+1 < n ? p+1 : 0;
+          if(segSegD2(ax,az,fp[q*2],fp[q*2+1],sax,saz,sbx,sbz) < lim2) return true;
         }
       }
     }
@@ -293,27 +338,31 @@ export function buildBuildings(){
         }
       }
     }
-    // 1) EXAKTNE: stred ani rohy nesmú na vozovku (landmarky pri ceste majú výnimku)
-    const cor = [ccx, ccz];
-    cor.push(ccx+(w/2)*ca+(d/2)*sa, ccz-(w/2)*sa+(d/2)*ca);
-    cor.push(ccx-(w/2)*ca+(d/2)*sa, ccz+(w/2)*sa+(d/2)*ca);
-    cor.push(ccx-(w/2)*ca-(d/2)*sa, ccz+(w/2)*sa-(d/2)*ca);
-    cor.push(ccx+(w/2)*ca-(d/2)*sa, ccz-(w/2)*sa-(d/2)*ca);
-    if(!isLM && bldOnRoad(cor, hd)) continue;
+    // 1) EXAKTNE: obrys budovy nesmie siahať na vozovku (landmarky pri ceste majú výnimku)
+    if(!isLM && bldOnRoad(b.slice(5))) continue;
     // 2) mimo plôch kruháčov
     for(let r=0;r<rbs.length;r++){
-      const dx = ccx-rbs[r][0], dz = ccz-rbs[r][1];
-      const rr = rbs[r][2]+4+hd;
-      if(dx*dx+dz*dz < rr*rr) continue bld;
+      const lim = rbs[r][2]+4;
+      let hit = false;
+      for(let p=0;!hit && p<b.length-5;p+=2){
+        const dx = b[5+p]-rbs[r][0], dz = b[5+p+1]-rbs[r][1];
+        if(dx*dx+dz*dz < lim*lim) hit = true;
+      }
+      if(hit) continue bld;
     }
-    // 3) mimo korýt vôd
+    // 3) mimo korýt vôd (PRESNE: obrys a VŠETKY body osi). Pôvodný krok k+=8
+    //    preskakoval 3 zo 4 bodov osi a porovnával len stred budovy, takže
+    //    budovy pri brehu Váhu občas prešli.
     const wl = S.osm.water;
     let wet = false;
     for(let wI=0;wI<wl.length && !wet;wI++){
-      const L = wl[wI], hw = L[0]+14+hd;
-      for(let k=1;k<L.length && !wet;k+=8){
-        const dx = ccx-L[k], dz = ccz-L[k+1];
-        if(dx*dx+dz*dz < hw*hw) wet = true;
+      const L = wl[wI], lim = (L[0]+14)*(L[0]+14);
+      for(let k=1;k<L.length && !wet;k+=2){
+        const dx0 = L[k], dz0 = L[k+1];
+        for(let p=5;p<b.length;p+=2){
+          const ddx = b[p]-dx0, ddz = b[p+1]-dz0;
+          if(ddx*ddx+ddz*ddz < lim){ wet = true; break; }
+        }
       }
     }
     if(wet) continue;
@@ -496,15 +545,31 @@ export function buildBuildings(){
   S.BGRID.nx = Math.ceil((S.GB.x1-S.GB.x0)/S.BGRID.cs);
   S.BGRID.nz = Math.ceil((S.GB.z1-S.GB.z0)/S.BGRID.cs);
   S.BGRID.head = new Int32Array(S.BGRID.nx*S.BGRID.nz).fill(-1);
-  S.BGRID.next = new Int32Array(n);
+  // sloty = SÚČET vložení (bunky,budovy), nie počet budov: jedna budova je
+  // vložená do všetkých buniek, ktoré zaberá, a jeden slot na budovicu by sa
+  // pri každej bunke prepísal. Počítame ho presne (bez odhadu), aby sa
+  // Int32Array nepretečil.
+  let slots = 0;
+  for(let i=0;i<n;i++){
+    const k = kept[i];
+    const c = Math.cos(k.a), s = Math.sin(k.a);
+    const ex = Math.abs(k.w/2*c)+Math.abs(k.d/2*s), ez = Math.abs(k.w/2*s)+Math.abs(k.d/2*c);
+    let x0 = Math.floor((k.x-ex-S.GB.x0)/S.BGRID.cs), x1 = Math.floor((k.x+ex-S.GB.x0)/S.BGRID.cs);
+    let z0 = Math.floor((k.z-ez-S.GB.z0)/S.BGRID.cs), z1 = Math.floor((k.z+ez-S.GB.z0)/S.BGRID.cs);
+    if(x0<0)x0=0; if(z0<0)z0=0;
+    if(x1>=S.BGRID.nx)x1=S.BGRID.nx-1; if(z1>=S.BGRID.nz)z1=S.BGRID.nz-1;
+    if(x1>=x0 && z1>=z0) slots += (x1-x0+1)*(z1-z0+1);
+  }
+  S.BGRID.next = new Int32Array(slots).fill(-1);
+  S.BGRID.nid = new Int32Array(slots).fill(-1);
+  S.BGRID.nn = 0;
   for(let i=0;i<n;i++){
     const k = kept[i];
     S.BX.x[i] = k.x; S.BX.z[i] = k.z;
     S.BX.hw[i] = k.w/2; S.BX.hl[i] = k.d/2; S.BX.rot[i] = k.a;
     S.BX.by[i] = k.baseY; S.BX.bh[i] = k.h+1;
     // (BoxCollider je nad základňou - zapustená časť je pod terénom)
-    const c = Math.cos(k.a), s = Math.sin(k.a);
-    gridAddRect(k.x, k.z, k.w/2, k.d/2, c, s, i);
+    gridAddRect(k.x, k.z, k.w/2, k.d/2, Math.cos(k.a), Math.sin(k.a), i);
     bfO.push(bfC);
     const nb = (k.fp.length-5)/2;
     bfN.push(nb);
