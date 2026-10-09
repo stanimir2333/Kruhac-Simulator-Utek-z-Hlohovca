@@ -13,6 +13,7 @@
 // v src/world/shared.js). Žiadne `game`/legacy pooly/input — pozície áut cez api.
 // Pri importe sa nič nevolá (žiadny DOM/fetch); všetko beží až vo factory/helproch.
 import { S } from '../world/shared.js';
+import { PERF } from '../core/config.js';
 
 // ---------- PODKLAD MAPY Z RASTROVÝCH DLAŽDÍC (minimapa + veľká mapa) ----------
 // Podklad je cache dlaždíc, nie jeden obrázok: zoom si sám vyberie úroveň podľa
@@ -612,7 +613,7 @@ export function createMinimap(state, api){
   // (drawImage 170×170 + ~120 fillRect), hoci mapa sa v zime mení len o pár
   // pixelov a HUD beží na 5 Hz. update() volá main loop každý tick.
   let miniAcc = 0;
-  const MINI_HZ = 0.05;
+  const MINI_INTERVAL = 1 / PERF.miniHz;
   const carsOf = function(){ return (api && api.traffic && api.traffic.cars) ? api.traffic.cars : []; };
   const policeOf = function(){
     if(api && api.police) return api.police;
@@ -637,7 +638,7 @@ export function createMinimap(state, api){
       enableTiles(function(){ MV.mini.dirty = true; MV.big.dirty = true; });
       renderMiniStatic(miniStatic, miniCvs, true);
       renderBigStatic(bigStatic, bigCvs, true);
-      miniAcc = MINI_HZ; // prvý kreslíme hneď, ďalšie po MINI_HZ
+      miniAcc = MINI_INTERVAL; // prvý kreslíme hneď, ďalšie podľa PERF.miniHz
     }
     if(!MAP.ready) return;
     // Veľká mapa len keď je otvorená (+ pri zoom/pan cez redrawBig).
@@ -648,8 +649,8 @@ export function createMinimap(state, api){
     }
     // 20 Hz throttle: mapa nemá zmysel obnovovať 60×/s, hráč sa v zime posunie
     // o centimeter. Otvorenie/zatvorenie veľkej mapy kreslí vždy hneď.
-    miniAcc += (typeof dt === "number") ? dt : MINI_HZ;
-    if(miniAcc < MINI_HZ) return;
+    miniAcc += (typeof dt === "number") ? dt : MINI_INTERVAL;
+    if(miniAcc < MINI_INTERVAL) return;
     miniAcc = 0;
     if(miniCtx && miniCvs){
       renderMiniStatic(miniStatic, miniCvs);

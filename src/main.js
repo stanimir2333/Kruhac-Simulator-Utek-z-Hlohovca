@@ -1,7 +1,7 @@
 // src/main.js — boot: preloader → mapa (async) → svet (legacy poradie) → slučka.
 // Ťažká práca až v krokoch init(), medzi krokmi yield → loading bar žije.
 import * as THREE from 'three';
-import { VERSION } from './core/config.js';
+import { VERSION, PERF } from './core/config.js';
 import { createState } from './core/state.js';
 import { createEngine } from './core/engine.js';
 import { createInput } from './core/input.js';
@@ -24,7 +24,10 @@ import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './w
 import { buildSkyDome, cullChunks } from './world/sky.js';
 import { cullLabels } from './world/labels.js';
 import { buildPlayerMesh, syncMesh } from './world/cars.js';
-import { createVehicle, updateVehicle, vehicleTelemetry, collideWorld } from './physics/vehicle.js';
+import {
+  createVehicle, updateVehicle, vehicleTelemetry, collideWorld, CAR_MAX_MPS, KMH_PER_MPS,
+  IDLE_RPM, RPM_RANGE,
+} from './physics/vehicle.js';
 import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshes, drawCars, setHorn, setMuted } from './ai/traffic.js';
 // Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
 import { loadRadioManifest, createRadio } from './audio/radio.js';
@@ -51,6 +54,9 @@ const pre = createPreloader();
 const state = createState();
 const _v3 = new THREE.Vector3();
 const _hWrap = { v: 0 };
+const ROUTE_PROJECTION_INTERVAL = 1 / PERF.routeProjectionHz;
+const HUD_INTERVAL = 1 / PERF.hudHz;
+const FPS_STATS_INTERVAL = 1 / PERF.fpsHz;
 
 async function boot() {
   pre.step(0.04, 'inicializujem renderer…');
@@ -301,10 +307,10 @@ async function boot() {
     }
 
     // — hráč (turbo dvíha limiter na 300 km/h; noclip lieta bez fyziky) —
-    car.vmax = turboActive() ? VMAX_TURBO : 250 / 3.6;
+    car.vmax = turboActive() ? VMAX_TURBO : CAR_MAX_MPS;
     updateTurbo(dt, toastFn);
     tel = vehicleTelemetry();
-    tel.kmh = Math.abs(car.speed) * 3.6;
+    tel.kmh = Math.abs(car.speed) * KMH_PER_MPS;
     tel.drifting = false;
     tel.accel = 0;
     let impact = 0;
@@ -337,7 +343,7 @@ async function boot() {
 
     // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —
     slowAcc += dt;
-    if (slowAcc > 0.1) {
+    if (slowAcc > ROUTE_PROJECTION_INTERVAL) {
       slowAcc = 0;
       const nr = nearestRoute(car.x, car.z);
       playerS = nr.s;
@@ -370,7 +376,7 @@ async function boot() {
     peterApi.started = state.started;
     updateMissions(dt, missionApi);
     updatePeter(dt, t, car, peterApi);
-    sfx.engine((car.rpm - 900) / 7100, input.throttle());
+    sfx.engine((car.rpm - IDLE_RPM) / RPM_RANGE, input.throttle());
 
     // — meshe —
     if (playerMesh.bodyMat.color.getHex() !== state.player.color) {
@@ -404,7 +410,7 @@ async function boot() {
 
     // — HUD (5 Hz) —
     hudAcc += dt;
-    if (hudAcc > 0.2) {
+    if (hudAcc > HUD_INTERVAL) {
       hudAcc = 0;
       hud.update(dt, t, playerS, S.routeLen, osm);
       dash.update(state.player, dt);
@@ -414,7 +420,7 @@ async function boot() {
     }
     minimap.update(dt); // 20 Hz throttle (pozri createMinimap.update)
     fpsAcc += dt; fpsN++;
-    if (fpsAcc > 0.5) {
+    if (fpsAcc > FPS_STATS_INTERVAL) {
       const el = document.getElementById('fps');
       // draw calls + trojuholníky: jediný spoľahlivý ukazov, kde sa reálne
       // stráca výkon (drawCars, bloom, odraz Váhu). Bez toho je každá ďalšia
