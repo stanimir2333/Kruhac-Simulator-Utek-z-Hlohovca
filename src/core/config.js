@@ -4,7 +4,7 @@
 // vlastné 6-kandidátové zoznamy, textures.js vlastný ASSET_ROOT) a HEAT patril
 // odstránenému heat/polícia systému. PERF drží aktívne frekvencie aktualizácií
 // a limity vzdialenosti AI; cesty k dátam a textúram zostávajú v ich moduloch.
-export const VERSION = 'B26-modular';
+export const VERSION = 'B27-modular'; // B27 = vypínač hudby [C]
 // HEAT + riverbankSlowdown zostávajú: src/ai/police.js je síka mŕtva (nikto ju
 // neimportuje), ale podľa AGENTS.md sa zámerne NEDÁVA maz — bez nich by bol
 // súbor s nevyriesenými importmi.
