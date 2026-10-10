@@ -97,8 +97,11 @@ async function boot() {
   const toggleMusic = () => {
     state.musicOn = !state.musicOn;
     settings.music = state.musicOn ? 1 : 0;
-    sfx.setMusicMuted(!state.musicOn);
-    if (musicCtl.radio) musicCtl.radio.setMusicOn(state.musicOn);
+    // Voliteľné reťazenie: pri namiešaní starých/new súborov z cache (Pages
+    // bez hashov) môže sfx/rádio ešte nemať nové metódy — vtedy sa prepne aspoň
+    // stav, label a toast a po čerstvom načítaní už všetko.
+    try { sfx.setMusicMuted?.(!state.musicOn); } catch (_e) { /* noop */ }
+    try { musicCtl.radio?.setMusicOn?.(state.musicOn); } catch (_e) { /* noop */ }
     try { saveSettings(); } catch (_e) { /* noop */ }
     try { syncSettingsUI(); } catch (_e) { /* noop */ }
     syncMusicBtn();
