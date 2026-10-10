@@ -3,9 +3,23 @@
 // takže náš mix je matematicky v strede; prípadnú asymetriu systému/slúchadiel
 // dorovná slider Vyváženie v nastaveniach (setBalance).
 export function createSfx() {
-  let ctx = null, engineOsc = null, engineGain = null;
+  // Stav motora: zapaľovacia frekvencia 4-valca (2 zážihy / otáčka),
+  // kľukový polovičný tón (lope na voľnobehu), sub-bas a šumový štrk výfuku.
+  // Straight pipe = ostré skreslenie + jasný filter podľa plynu + praskot pri ubratí.
+  let ctx = null;
+  let eng = null;
   let master = null, panner = null, radioSrc = null;
   let balance = 0, muted = false;
+  // Zdieľaný šumový buffer pre štrk + praskot (2 s bieleho šumu, vytvorí sa raz).
+  let noiseBuf = null;
+  function driveCurve(k) {
+    const n = 256, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      curve[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    return curve;
+  }
   function ensure() {
     if (ctx) return true;
     try {
@@ -20,22 +34,85 @@ export function createSfx() {
       } else {
         master.connect(ctx.destination);
       }
-      engineOsc = ctx.createOscillator(); engineOsc.type = 'sawtooth'; engineOsc.frequency.value = 60;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-      engineGain = ctx.createGain(); engineGain.gain.value = 0;
-      engineOsc.connect(lp);
-      lp.connect(engineGain);
+      // --- MOTOR: straight pipe 4-valec ---
+      // Základ: pílka na zapaľovacej frekvencii (ostré harmonické = rezavý výfuk),
+      // štvorec na polovičnej (kľuková nerovnomernosť, chop na voľnobehu),
+      // sínusový sub na tej istej polovičnej (telo/úder do hrude).
+      const oscFire = ctx.createOscillator(); oscFire.type = 'sawtooth'; oscFire.frequency.value = 30;
+      const oscCrank = ctx.createOscillator(); oscCrank.type = 'square'; oscCrank.frequency.value = 15;
+      const oscSub = ctx.createOscillator(); oscSub.type = 'sine'; oscSub.frequency.value = 15;
+      const gFire = ctx.createGain(); gFire.gain.value = 0.5;
+      const gCrank = ctx.createGain(); gCrank.gain.value = 0.32;
+      const gSub = ctx.createGain(); gSub.gain.value = 0.55;
+      // Štrk výfuku: slučkovaný šum cez pásmo (syčanie straight pipe pod plynom).
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuf; noiseSrc.loop = true;
+      const noiseBp = ctx.createBiquadFilter(); noiseBp.type = 'bandpass'; noiseBp.frequency.value = 1600; noiseBp.Q.value = 0.7;
+      const noiseG = ctx.createGain(); noiseG.gain.value = 0.03;
+      noiseSrc.connect(noiseBp); noiseBp.connect(noiseG);
+      // Skreslenie = odrezaný tlmič: ostrá tanh saturácia s prevahou.
+      const shaper = ctx.createWaveShaper(); shaper.curve = driveCurve(7); shaper.oversample = '2x';
+      // Jas podľa plynu: priľahnutý plyn otvorí klapku až k ~6 kHz (krik),
+      // voľnobeh ostane tmavší a bublavý. Highpass len režie DC/subsoniku.
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200; lp.Q.value = 1.1;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 45;
+      const engineGain = ctx.createGain(); engineGain.gain.value = 0;
+      oscFire.connect(gFire); gFire.connect(shaper);
+      oscCrank.connect(gCrank); gCrank.connect(shaper);
+      noiseG.connect(shaper);
+      shaper.connect(lp); lp.connect(hp); hp.connect(engineGain);
+      // Sub ide čisto mimo skreslenia, nech tlačí a nebabre.
+      oscSub.connect(gSub); gSub.connect(engineGain);
       engineGain.connect(master);
-      engineOsc.start();
+      oscFire.start(); oscCrank.start(); oscSub.start(); noiseSrc.start();
+      eng = { oscFire, oscCrank, oscSub, noiseBp, noiseG, lp, engineGain };
       return true;
     } catch { return false; }
+  }
+  // Krátky výstrel do výfuku (praskot pri ubratí plynu vo vysokých otáčkach).
+  // Volá sa len náhodne párkrát za sekundu, takže pár alokácií nevadí.
+  function pop(intensity) {
+    if (!ctx || !eng || !noiseBuf) return;
+    const t0 = ctx.currentTime;
+    const dur = 0.03 + Math.random() * 0.05;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf;
+    src.playbackRate.value = 0.7 + Math.random() * 0.8;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 400 + Math.random() * 2200; bp.Q.value = 1.2;
+    const g = ctx.createGain();
+    const peak = (0.15 + Math.random() * 0.25) * intensity;
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(t0, Math.random() * 1.5, dur + 0.02);
+    src.stop(t0 + dur + 0.03);
   }
   return {
     unlock() { if (ensure() && ctx.resume) ctx.resume(); },
     engine(rpm01, throttle) {
-      if (!ctx) return;
-      engineOsc.frequency.value = 50 + rpm01 * 160;
-      engineGain.gain.value = 0.02 + throttle * 0.05;
+      if (!ctx || !eng) return;
+      const r = Math.max(0, Math.min(1, Number(rpm01) || 0));
+      const th = Math.max(0, Math.min(1, Number(throttle) || 0));
+      // Skutočné otáčky → zapaľovacia frekvencia 4-taktu: ot/s × 2 zážihy.
+      // Voľnobeh 900 ≈ 30 Hz bublanie, obmedzovač 8000 ≈ 267 Hz rev.
+      const rpm = 900 + r * 7100;
+      const fire = (rpm / 60) * 2;
+      const crank = fire / 2;
+      eng.oscFire.frequency.value = fire;
+      // Mierne rozladenie kľuky proti zážihu = drsný, živý chod bez LFO.
+      eng.oscCrank.frequency.value = crank * 1.007;
+      eng.oscSub.frequency.value = crank;
+      // Klapka: plyn + otáčky otvárajú filter (straight pipe krik), Q pridá nos.
+      eng.lp.frequency.value = 1000 + th * 4200 + r * 1200;
+      // Štrk: pod plynom syčí pásmo 1–3,5 kHz, na voľnobeh len šepká.
+      eng.noiseBp.frequency.value = 1200 + th * 2000 + r * 400;
+      eng.noiseG.gain.value = 0.012 + th * 0.11 + r * 0.025;
+      // Hlasitosť: straight pipe je nahlas — voľnobeh počuť, plný plyn reve.
+      eng.engineGain.gain.value = 0.075 + th * 0.19 + r * 0.035;
+      // Praskot výfuku: ubratý plyn vo vysokých otáčkach strieľa.
+      if (th < 0.08 && r > 0.3 && Math.random() < r * 0.14) pop(0.5 + r * 0.5);
     },
     honk() {
       if (!ensure()) return;
