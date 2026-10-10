@@ -22,6 +22,7 @@ import { setShadowRangeScale } from '../fx/sunshadow.js';
 export const settings = {
   res: 1, fps: 60, dist: 220, bloom: 1, water: 2, bal: 0,
   rt: true, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
+  music: 1, // hudba (rádio) ZAP = 1 / VYP = 0; motor a zvuky idú vždy
 };
 
 // ---------- KVALITA TIENÍ (LOKÁLNE, verbatim monolit @3790–3799) ----------
@@ -197,6 +198,7 @@ export function saveSettings() {
       rtsh: settings.rtSh,
       rtli: settings.rtLi,
       rtql: settings.rtQl,
+      mus: settings.music, // hudba (rádio) 1/0; zvuky motora sa neukladajú
     }));
   } catch (_e) { /* noop: súkromný režim bez localStorage */ }
 }
@@ -227,6 +229,7 @@ if (s.rt === 1) settings.rt = true;
     if (s.rtsh >= 0 && s.rtsh <= 1.5) settings.rtSh = s.rtSh;
     if (s.rtli >= 0 && s.rtli <= 2) settings.rtLi = s.rtLi;
     if (s.rtql >= 0.3 && s.rtql <= 1) settings.rtQl = s.rtql;
+    if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
 }
@@ -288,6 +291,14 @@ export function syncSettingsUI(ctx) {
   $('set-bal') && ($('set-bal').value = Math.round(settings.bal * 50));
   const balV = $('set-bal-v');
   if (balV) balV.textContent = balLabel(settings.bal);
+  // --- hudba (rádio) ZAP/VYP — motor a zvuky idú vždy ---
+  const musT = $('set-music-toggle');
+  if (musT) {
+    musT.classList.toggle('on', settings.music === 1);
+    musT.textContent = settings.music === 1 ? 'HUDBA ZAPNUTÁ' : 'ZAPNÚŤ HUDBU';
+  }
+  const musV = $('set-music-v');
+  if (musV) musV.textContent = settings.music === 1 ? 'ZAP.' : 'VYP.';
   // --- ray tracing (engine v stage-3: len stav + labely, bez RT_SPLITPOROV.) ---
   const tg = $('set-rt-toggle');
   if (tg) {
@@ -400,9 +411,18 @@ export function wireSettingsUI(ctx, toast) {
     settings.bal = Math.max(-1, Math.min(1, parseInt(e.target.value, 10) / 50));
     const v = $('set-bal-v');
     if (v) v.textContent = balLabel(settings.bal);
-    try { c?.audio?.setBalance?.(settings.bal); } catch (_e) { /* noop */ }
+  try { c?.audio?.setBalance?.(settings.bal); } catch (_e) { /* noop */ }
+  try { c?.audio?.setMusicMuted?.(settings.music !== 1); } catch (_e) { /* noop */ }
   });
   $('set-bal')?.addEventListener('change', () => saveSettings());
+
+  // Hudba (rádio) ZAP/VYP — prepínač vlastní main.js (sfx + rádio + HUD),
+  // nastavenia len volajú voliteľné API a prekreslia label.
+  $('set-music-toggle')?.addEventListener('click', () => {
+    try { c?.audio?.toggleMusic?.(); } catch (_e) { /* noop */ }
+    syncSettingsUI(c);
+    saveSettings();
+  });
 
   $('set-bloom')?.addEventListener('click', (e) => {
     const b = e.target.closest ? e.target.closest('button') : null;

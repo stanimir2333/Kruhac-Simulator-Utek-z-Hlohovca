@@ -42,6 +42,8 @@
     <span>|</span>
     <span id="snd-btn">ZVUK: ON [X]</span>
     <span>|</span>
+    <span id="music-btn">HUDBA: ON [C]</span>
+    <span>|</span>
     <span id="boost-badge">TURBO</span>
   </div>
 
@@ -94,7 +96,7 @@
     <div id="hud-street">CESTA 513 → VON Z MESTA</div>
     <div class="bar" id="bar-route"><i></i></div>
   </div>
-  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · R reštart · T turbo · F3 bloom · ESC nastavenia<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO</div>
+  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · C hudba · R reštart · T turbo · F3 bloom · ESC nastavenia<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO</div>
   <div id="fps" class="panel">60 FPS</div>
   <div id="ver" class="panel">B26 · LM</div>
 </div>
@@ -134,6 +136,8 @@
       </div></div>
     <div class="srow"><label><span>ZVUK · VYVÁŽENIE</span><span id="set-bal-v">STRED</span></label>
       <input id="set-bal" type="range" min="-50" max="50" step="1" value="0"></div>
+    <div class="srow"><label><span>HUDBA · RÁDIO [C]</span><span id="set-music-v">ZAP.</span></label>
+      <button id="set-music-toggle">HUDBA ZAPNUTÁ</button></div>
     <div class="srow"><label><span>DYNAMICKÉ TIENE + SLNKO</span><span id="set-rt-v">VYP.</span></label>
       <button id="set-rt-toggle">ZAPNÚŤ TIENE</button></div>
     <div class="srow rt-only"><label><span>TIENE · MAPA</span><span id="set-rtq-v">STANDARD</span></label>
@@ -182,7 +186,7 @@
     <p style="font-size:12px;">Pri štarte kolóny máva <b>Peter</b> — zastav pri ňom a stlač <b>F</b>, zadá ti misie.</p>
     <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
     A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
-    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
+    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
     <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
     <br>
     <button class="btn" id="btn-start">ŠTARTOVAŤ ÚTEK</button>

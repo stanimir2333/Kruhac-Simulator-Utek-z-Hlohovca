@@ -34,7 +34,7 @@ import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
 import { createBloom } from './fx/bloom.js';
 import { updateSunShadow } from './fx/sunshadow.js';
-import { settings, shadowTierR, setShadowDiag } from './ui/settings.js';
+import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift, DR } from './game/drift.js';
@@ -86,6 +86,24 @@ async function boot() {
   const dash = createDashboard();
   const engineViz = createEngineViz();
   const sfx = createSfx();
+  // Prepínač hudby [C] — len rádio ticho, motor/trúbenie/nárazy hrajú ďalej.
+  // Zdieľaný medzi klávesou, #music-btn v topbare a tlačidlom v nastaveniach
+  // (to volá ctx.audio.toggleMusic). Rádio sa dopĺňa až v kroku 4.
+  const musicCtl = { radio: null };
+  const syncMusicBtn = () => {
+    const b = document.getElementById('music-btn');
+    if (b) b.textContent = state.musicOn ? 'HUDBA: ON [C]' : 'HUDBA: OFF [C]';
+  };
+  const toggleMusic = () => {
+    state.musicOn = !state.musicOn;
+    settings.music = state.musicOn ? 1 : 0;
+    sfx.setMusicMuted(!state.musicOn);
+    if (musicCtl.radio) musicCtl.radio.setMusicOn(state.musicOn);
+    try { saveSettings(); } catch (_e) { /* noop */ }
+    try { syncSettingsUI(); } catch (_e) { /* noop */ }
+    syncMusicBtn();
+    hud.toast(state.musicOn ? 'Hudba: ZAP. (Q/E prepína stanicu)' : 'Hudba: VYP. (motor a zvuky hrajú)');
+  };
   wireMenus(state, engine, hud);
   // bloom composer + nastavenia (ešte pred svetom — pixelRatio ovplyvňuje build textúr)
   const bloom = createBloom(renderer, scene, camera);
@@ -95,7 +113,11 @@ async function boot() {
     renderer, scene, camera, sun, engine,
     bloom: { setMode: (m) => bloom.setMode(m) },
     water: { setQuality: (q) => setWaterQuality(q) },
-    audio: { setBalance: (v) => sfx.setBalance(v) },
+    audio: {
+      setBalance: (v) => sfx.setBalance(v),
+      setMusicMuted: (m) => sfx.setMusicMuted(m),
+      toggleMusic: () => toggleMusic(),
+    },
   };
   wireSettingsUI(settingsCtx, (m) => hud.toast(m));
 
@@ -186,7 +208,14 @@ async function boot() {
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
   const radio = createRadio(document.getElementById('bgm'));
+  musicCtl.radio = radio;
   sfx.attachRadio(document.getElementById('bgm'));
+  // Uložená voľba hudby (settings.music z localStorage) sa uplatní na obe
+  // vrstvy: zisk rádia v sfx aj pauza <audio> elementu.
+  state.musicOn = settings.music !== 0;
+  sfx.setMusicMuted(!state.musicOn);
+  radio.setMusicOn(state.musicOn);
+  syncMusicBtn();
   loadRadioManifest().then(({ list, base }) => radio.setList(list, base));
   const unlock = () => { sfx.unlock(); };
   addEventListener('pointerdown', unlock, { once: true });
@@ -207,6 +236,8 @@ async function boot() {
   };
   document.getElementById('snd-btn')?.addEventListener('click', toggleMute);
   syncSndBtn();
+  // Hudba [C] — rovnaký vzor ako zvuk: klávesa aj klikateľný topbar.
+  document.getElementById('music-btn')?.addEventListener('click', () => toggleMusic());
 
   // klávesové skratky mimo input.js + cheat-kódy (GTA štýl: písanie hocikde)
   const cheatApi = {
@@ -233,6 +264,7 @@ async function boot() {
       hud.toast(engineViz.toggle() ? 'Motor: SLOW-MO vizualizácia ×0,08' : 'Motor: vizualizácia v reálnych otáčkach');
     }
     if (e.code === 'KeyX' && !typing) toggleMute();
+    if (e.code === 'KeyC' && !typing) toggleMusic();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });

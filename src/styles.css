@@ -27,6 +27,7 @@
     white-space:nowrap;}
   #topbar b{font-size:18px;}
   #snd-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
+  #music-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
   /* ---------- Rádio widget ---------- */
   #radio-wrap{position:absolute;top:64px;left:50%;transform:translateX(-50%);
     display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px 14px;font-size:13px;}

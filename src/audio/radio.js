@@ -15,10 +15,13 @@ export async function loadRadioManifest() {
 
 export function createRadio(audioEl) {
   let list = [], idx = 0, base = '';
+  // Vypnutá hudba = element pauznutý (nežerie dáta ani baterku), motor a zvuky
+  // idú ďalej. Q/E pri vypnutej hudbe len prepne stanicu potichu (src + label).
+  let musicOn = true;
   async function setList(manifest, manifestBase) { list = manifest; base = manifestBase; updateLabel(); }
   function updateLabel() {
     const el = document.getElementById('radio-name');
-    if (el) el.textContent = list[idx]?.name ?? 'RÁDIO HLOHOVEC (offline)';
+    if (el) el.textContent = (list[idx]?.name ?? 'RÁDIO HLOHOVEC (offline)') + (musicOn ? '' : ' · VYP.');
   }
   function play(i) {
     if (!list.length) return false;
@@ -26,10 +29,19 @@ export function createRadio(audioEl) {
     const st = list[idx];
     try {
       audioEl.src = base + st.file.replace(/^audio\//, '');
-      audioEl.play().catch(() => {});
+      if (musicOn) audioEl.play().catch(() => {});
+      else audioEl.pause();
       updateLabel();
       return true;
     } catch { return false; }
   }
-  return { setList, next: () => play(idx + 1), prev: () => play(idx - 1), play, updateLabel };
+  function setMusicOn(v) {
+    musicOn = !!v;
+    try {
+      if (!musicOn) audioEl.pause();
+      else if (list.length && audioEl.src) audioEl.play().catch(() => {});
+    } catch { /* noop: element bez src */ }
+    updateLabel();
+  }
+  return { setList, next: () => play(idx + 1), prev: () => play(idx - 1), play, updateLabel, setMusicOn, isMusicOn: () => musicOn };
 }

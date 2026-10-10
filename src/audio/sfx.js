@@ -8,8 +8,8 @@ export function createSfx() {
   // Straight pipe = ostré skreslenie + jasný filter podľa plynu + praskot pri ubratí.
   let ctx = null;
   let eng = null;
-  let master = null, panner = null, radioSrc = null;
-  let balance = 0, muted = false;
+  let master = null, panner = null, radioSrc = null, radioGain = null;
+  let balance = 0, muted = false, musicMuted = false;
   // Zdieľaný šumový buffer pre štrk + praskot (2 s bieleho šumu, vytvorí sa raz).
   let noiseBuf = null;
   function driveCurve(k) {
@@ -159,15 +159,22 @@ export function createSfx() {
       });
     },
     // Rádio (<audio>) cez ten istý master → rovnaká hlasitosť, mute aj balance.
+    // Má vlastný radioGain, takže hudba sa dá stíšiť bez motora/trúbenia/nárazov.
     // Volaj raz po vytvorení sfx; pri zlyhaní hrá element priamo (bez grafu).
     attachRadio(el) {
       if (!el || radioSrc || !ensure()) return false;
       try {
         radioSrc = ctx.createMediaElementSource(el);
-        const rg = ctx.createGain(); rg.gain.value = 1;
-        radioSrc.connect(rg); rg.connect(master);
+        radioGain = ctx.createGain(); radioGain.gain.value = musicMuted ? 0 : 1;
+        radioSrc.connect(radioGain); radioGain.connect(master);
         return true;
-      } catch { radioSrc = null; return false; }
+      } catch { radioSrc = null; radioGain = null; return false; }
+    },
+    // Len hudba (rádio) ticho — motor, trúbenie aj nárazy hrajú ďalej.
+    // Funguje aj pred attachRadio (príznak sa uplatní pri vytvorení radioGain).
+    setMusicMuted(m) {
+      musicMuted = !!m;
+      if (radioGain) radioGain.gain.value = musicMuted ? 0 : 1;
     },
     // -1 = plne vľavo, 0 = stred, +1 = plne vpravo.
     setBalance(v) {

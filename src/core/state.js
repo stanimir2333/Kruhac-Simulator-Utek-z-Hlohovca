@@ -5,7 +5,8 @@ export function createState() {
     time: 0,
     started: false,
     paused: false,      // bigmap / settings
-    muted: false,
+    muted: false,       // všetko ticho [X]
+    musicOn: true,      // len hudba (rádio) [C] — motor a zvuky hrajú ďalej
     // hráč (minimalistický kanonický tvar — detailná fyzika v src/physics/vehicle.js)
     player: {
       x: 0, y: 0, z: 0, h: 0, speed: 0, // m/s
