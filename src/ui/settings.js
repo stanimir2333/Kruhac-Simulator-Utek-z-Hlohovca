@@ -23,7 +23,10 @@ export const settings = {
   res: 1, fps: 60, dist: 220, bloom: 1, water: 2, bal: 0,
   rt: true, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
   music: 1, // hudba (rádio) ZAP = 1 / VYP = 0; motor a zvuky idú vždy
+  engine: 'tdi', // motor: 'tdi' (1.9 TDI) | 'wankel' (4-rotor)
 };
+// Mená motorov pre label (bez importu fyziky — settings nesmie ťahať vehicle).
+const ENGINE_NAME = { tdi: '1.9 TDI', wankel: '4-ROTOR' };
 
 // ---------- KVALITA TIENÍ (LOKÁLNE, verbatim monolit @3790–3799) ----------
 // [mapSize, strop pre orto polomer v m]. Polomer rastie s mapSize tak, aby hrana
@@ -199,6 +202,7 @@ export function saveSettings() {
       rtli: settings.rtLi,
       rtql: settings.rtQl,
       mus: settings.music, // hudba (rádio) 1/0; zvuky motora sa neukladajú
+      eng: settings.engine, // motor 'tdi' | 'wankel'
     }));
   } catch (_e) { /* noop: súkromný režim bez localStorage */ }
 }
@@ -230,6 +234,7 @@ if (s.rt === 1) settings.rt = true;
     if (s.rtli >= 0 && s.rtli <= 2) settings.rtLi = s.rtLi;
     if (s.rtql >= 0.3 && s.rtql <= 1) settings.rtQl = s.rtql;
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
+    if (s.eng === 'tdi' || s.eng === 'wankel') settings.engine = s.eng;
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
 }
@@ -299,6 +304,16 @@ export function syncSettingsUI(ctx) {
   }
   const musV = $('set-music-v');
   if (musV) musV.textContent = settings.music === 1 ? 'ZAP.' : 'VYP.';
+  // --- motor (prepínač vlastní main.js: fyzika + zvuk + vizualizácia + budíky) ---
+  const engV = $('set-engine-v');
+  if (engV) engV.textContent = ENGINE_NAME[settings.engine] || ENGINE_NAME.tdi;
+  const esegs = $('set-engine')?.children;
+  if (esegs) {
+    for (let i = 0; i < esegs.length; i++) {
+      const b = esegs[i];
+      b.classList.toggle('on', b.getAttribute('data-e') === settings.engine);
+    }
+  }
   // --- ray tracing (engine v stage-3: len stav + labely, bez RT_SPLITPOROV.) ---
   const tg = $('set-rt-toggle');
   if (tg) {
@@ -420,6 +435,17 @@ export function wireSettingsUI(ctx, toast) {
   // nastavenia len volajú voliteľné API a prekreslia label.
   $('set-music-toggle')?.addEventListener('click', () => {
     try { c?.audio?.toggleMusic?.(); } catch (_e) { /* noop */ }
+    syncSettingsUI(c);
+    saveSettings();
+  });
+
+  // Motor: segmenty 1.9 TDI / 4-ROTOR — main prepne fyziku, zvuk, vizualizáciu aj budíky.
+  $('set-engine')?.addEventListener('click', (e) => {
+    const b = e.target.closest ? e.target.closest('button') : null;
+    if (!b) return;
+    const id = b.getAttribute('data-e');
+    if (id !== 'tdi' && id !== 'wankel') return;
+    try { c?.motor?.setEngine?.(id); } catch (_e) { /* noop */ }
     syncSettingsUI(c);
     saveSettings();
   });

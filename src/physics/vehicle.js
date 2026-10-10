@@ -3,12 +3,25 @@
 import { S } from '../world/shared.js';
 import { gridQuery, GQ_MAX } from '../world/ground.js';
 
+// ---------- MOTORY: 1.9 TDI vs 4-ROTOR WANKEL ----------
+// Jeden zdroj pravdy pre voľnobeh, pásmo aj zážihy/otáčku (TDI 4-takt = 2,
+// wankel = 1 zážih na rotor a otáčku × 4 rotory). Prevodovka aj 250 km/h
+// limitér sú spoločné — mení sa len otáčkové pásmo a zvukový profil.
+export const ENGINES = {
+  tdi: { id: 'tdi', name: '1.9 TDI', idle: 900, range: 7100, firePerRev: 2, tachoMax: 7000, tachoRed: 60 },
+  wankel: { id: 'wankel', name: '4-ROTOR WANKEL', idle: 1100, range: 13900, firePerRev: 4, tachoMax: 15000, tachoRed: 120 },
+};
+let ENG = ENGINES.tdi;
+export function setEngine(id) {
+  if (ENGINES[id]) ENG = ENGINES[id];
+  return ENG;
+}
+export function engineDef() { return ENG; }
+
 // ---------- FYZIKA HRÁČA: LADITEĽNÉ KONŠTANTY ----------
 export const KMH_PER_MPS = 3.6;
 const CAR_MAX_KMH = 250;
 export const CAR_MAX_MPS = CAR_MAX_KMH / KMH_PER_MPS;
-export const IDLE_RPM = 900;
-export const RPM_RANGE = 7100;
 const EMPTY_FUEL_MAX_KMH = 50;
 const MIN_REVERSE_SPEED_MPS = -12;
 const BRAKE_DECEL_MPS2 = 16;
@@ -50,7 +63,7 @@ const SOFT_IMPACT_SPEED_RETAIN = 0.82;
 export function createVehicle(opts = {}) {
   return {
     x: opts.x ?? 0, y: opts.y ?? 0, z: opts.z ?? 0, h: 0,
-    vx: 0, vz: 0, speed: 0, gear: 1, rpm: IDLE_RPM,
+    vx: 0, vz: 0, speed: 0, gear: 1, rpm: ENG.idle,
     steer: 0, yawRate: 0, temp: 0.2, stress: 0,
     fuel: 1, trip: 0, odo: 0, oilT: 0, // palivo 0–1, trip/odo v metroch, olejka-timer
     vmax: CAR_MAX_MPS, // m/s
@@ -90,7 +103,7 @@ export function updateVehicle(v, input, dt, terrainY) {
   v.gear = kmh < GEAR_SHIFT_KMH[0] ? 1 : kmh < GEAR_SHIFT_KMH[1] ? 2 :
     kmh < GEAR_SHIFT_KMH[2] ? 3 : kmh < GEAR_SHIFT_KMH[3] ? 4 :
     kmh < GEAR_SHIFT_KMH[4] ? 5 : GEAR_COUNT;
-  v.rpm = IDLE_RPM + (kmh % RPM_CYCLE_KMH) / RPM_CYCLE_KMH * RPM_RANGE;
+  v.rpm = ENG.idle + (kmh % RPM_CYCLE_KMH) / RPM_CYCLE_KMH * ENG.range;
   // palivo + počítadlá: plná nádrž ≈ 30 min zmiešanej jazdy
   v.fuel = Math.max(0, v.fuel - (FUEL_IDLE_PER_SEC + th * FUEL_THROTTLE_PER_SEC) * dt);
   const dist = Math.abs(v.speed) * dt;

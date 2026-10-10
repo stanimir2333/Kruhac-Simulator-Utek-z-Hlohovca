@@ -44,9 +44,10 @@ export function createDashboard() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#23262c';
     ctx.beginPath(); ctx.arc(C, C, R + 6, 0, Math.PI * 2); ctx.stroke();
   }
-  // oktávkový tick-prstenec: biele dieliky, čísla biele, v červenom pásme dieliky červené
-  function ticksTacho(ctx) {
-    const max = 70, redFrom = 60;
+  // oktávkový tick-prstenec: biele dieliky, čísla biele, v červenom pásme dieliky červené.
+  // Stupnica sa dá pretáčať (wankel 0–150 = 15000 ot) — podklad sa prepečie raz
+  // pri prepnutí motora, nie každý snímok. Popis ×100 platí pre obe (70/150).
+  function ticksTacho(ctx, max = 70, redFrom = 60) {
     for (let i = 0; i <= max; i++) {
       const f = i / max, a = ang(f), major = i % 5 === 0;
       const isRed = i >= redFrom;
@@ -113,9 +114,17 @@ export function createDashboard() {
   }
   // Predkreslené podklady. build() beží raz pri vytvorení dashboardu.
   let tachoBg = null, speedoBg = null;
+  let tachoMax = 7000, tachoTop = 70, tachoRedN = 60;
   function build() {
-    tachoBg = bakeFace((g) => { face(g); ticksTacho(g); textOf(g, '1/min × 100'); });
+    tachoBg = bakeFace((g) => { face(g); ticksTacho(g, tachoTop, tachoRedN); textOf(g, '1/min × 100'); });
     speedoBg = bakeFace((g) => { face(g); ticksSpeedo(g); textOf(g, 'km/h'); });
+  }
+  // Pretáčanie otáčkomera pri výmene motora (volá main): nová stupnica + mierka ihly.
+  function setTachoMax(max, top, redN) {
+    tachoMax = max > 0 ? max : 7000;
+    tachoTop = top > 0 ? top : 70;
+    tachoRedN = redN >= 0 ? redN : 60;
+    if (tctx) tachoBg = bakeFace((g) => { face(g); ticksTacho(g, tachoTop, tachoRedN); textOf(g, '1/min × 100'); });
   }
   function textOf(g, s) {
     g.save(); g.shadowBlur = 0;
@@ -228,6 +237,7 @@ export function createDashboard() {
   return {
     getOdo() { return odo0; },
     selfTest() { testUntil = performance.now() + 2500; },
+    setTachoMax(max, top, redN) { setTachoMax(max, top, redN); },
     update(player, dt = 0.0167) {
       const now = performance.now();
       const kmh = Math.abs(player.speed) * 3.6;
@@ -243,10 +253,10 @@ export function createDashboard() {
       const fuelBlink = fuel < 0.05 && !test ? (now / 300 | 0) % 2 === 0 : true;
       const oil = test || (player.oilT || 0) > 0;
       const batt = test || fuel <= 0;
-      // otáčkomer 0–70 (×100) — čísla po 5 ako na Octavii II z fotky
+      // otáčkomer 0–70 (×100) TDI / 0–150 (×100) wankel — čísla po 5 ako na Octavii II z fotky
       if (tctx) {
         gauge(tctx, tachoBg);
-        needle(tctx, dRpm / 7000);
+        needle(tctx, dRpm / tachoMax);
         lampEPC(tctx, C - 19, C + 49, epc);
         lampEngine(tctx, C + 19, C + 49, check); // CHECK ENGINE ponechaný
       }

@@ -2,6 +2,14 @@
 // Všetko (vrátane rádia) ide cez master gain → StereoPanner(pan=0) → výstup,
 // takže náš mix je matematicky v strede; prípadnú asymetriu systému/slúchadiel
 // dorovná slider Vyváženie v nastaveniach (setBalance).
+import { engineDef } from '../physics/vehicle.js';
+// Zvukový profil motora: skreslenie, jas filtra, štrk a hlasitosť.
+// TDI = dusný straight-pipe diesel; wankel = vreskot + ikonický brap na voľnobehu
+// (sekaná amplitúda ~11 Hz, s otáčkami mizne).
+const SND = {
+  tdi: { drive: 7, lpBase: 1000, lpTh: 4200, lpR: 1200, nzBase: 0.012, nzTh: 0.11, nzR: 0.025, gBase: 0.075, gTh: 0.19, gR: 0.035, popCh: 0.14, popLo: 0.15, popHi: 0.25 },
+  wankel: { drive: 10, lpBase: 1500, lpTh: 5000, lpR: 2000, nzBase: 0.02, nzTh: 0.14, nzR: 0.03, gBase: 0.085, gTh: 0.21, gR: 0.04, popCh: 0.2, popLo: 0.2, popHi: 0.3 },
+};
 export function createSfx() {
   // Stav motora: zapaľovacia frekvencia 4-valca (2 zážihy / otáčka),
   // kľukový polovičný tón (lope na voľnobehu), sub-bas a šumový štrk výfuku.
@@ -10,6 +18,11 @@ export function createSfx() {
   let eng = null;
   let master = null, panner = null, radioSrc = null, radioGain = null;
   let balance = 0, muted = false, musicMuted = false;
+  // Aktívny zvukový profil (prepína setEngine; krivky skreslenia predpečené obe).
+  let sndId = 'tdi';
+  let curves = null;
+  // Fáza brap-sekania wanklu na voľnobehu (uhlová, inkrementuje engine()).
+  let brapPhase = 0;
   // Zdieľaný šumový buffer pre štrk + praskot (2 s bieleho šumu, vytvorí sa raz).
   let noiseBuf = null;
   function driveCurve(k) {
@@ -53,7 +66,11 @@ export function createSfx() {
       const noiseG = ctx.createGain(); noiseG.gain.value = 0.03;
       noiseSrc.connect(noiseBp); noiseBp.connect(noiseG);
       // Skreslenie = odrezaný tlmič: ostrá tanh saturácia s prevahou.
-      const shaper = ctx.createWaveShaper(); shaper.curve = driveCurve(7); shaper.oversample = '2x';
+      // Krivky oboch motorov predpečené — prepnutie je len výmena poľa, bez chrupnutia.
+      const shaper = ctx.createWaveShaper();
+      if (!curves) curves = { tdi: driveCurve(SND.tdi.drive), wankel: driveCurve(SND.wankel.drive) };
+      shaper.curve = curves[sndId] || curves.tdi;
+      shaper.oversample = '2x';
       // Jas podľa plynu: priľahnutý plyn otvorí klapku až k ~6 kHz (krik),
       // voľnobeh ostane tmavší a bublavý. Highpass len režie DC/subsoniku.
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200; lp.Q.value = 1.1;
@@ -67,7 +84,7 @@ export function createSfx() {
       oscSub.connect(gSub); gSub.connect(engineGain);
       engineGain.connect(master);
       oscFire.start(); oscCrank.start(); oscSub.start(); noiseSrc.start();
-      eng = { oscFire, oscCrank, oscSub, noiseBp, noiseG, lp, engineGain };
+      eng = { oscFire, oscCrank, oscSub, noiseBp, noiseG, lp, engineGain, shaper };
       return true;
     } catch { return false; }
   }
@@ -82,7 +99,8 @@ export function createSfx() {
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
     bp.frequency.value = 400 + Math.random() * 2200; bp.Q.value = 1.2;
     const g = ctx.createGain();
-    const peak = (0.15 + Math.random() * 0.25) * intensity;
+    const P = SND[sndId] || SND.tdi;
+    const peak = (P.popLo + Math.random() * P.popHi) * intensity;
     g.gain.setValueAtTime(peak, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
     src.connect(bp); bp.connect(g); g.connect(master);
@@ -91,28 +109,46 @@ export function createSfx() {
   }
   return {
     unlock() { if (ensure() && ctx.resume) ctx.resume(); },
-    engine(rpm01, throttle) {
+    // Prepnutie zvukového profilu (volá main pri výbere motora).
+    // Funguje aj pred unlockom — uplatní sa pri vytvorení grafu.
+    setEngine(id) {
+      if (SND[id]) sndId = id;
+      if (eng && curves) eng.shaper.curve = curves[sndId];
+    },
+    engine(rpm01, throttle, dt = 0.0167) {
       if (!ctx || !eng) return;
       const r = Math.max(0, Math.min(1, Number(rpm01) || 0));
       const th = Math.max(0, Math.min(1, Number(throttle) || 0));
-      // Skutočné otáčky → zapaľovacia frekvencia 4-taktu: ot/s × 2 zážihy.
-      // Voľnobeh 900 ≈ 30 Hz bublanie, obmedzovač 8000 ≈ 267 Hz rev.
-      const rpm = 900 + r * 7100;
-      const fire = (rpm / 60) * 2;
+      const E = engineDef();
+      const P = SND[sndId] || SND.tdi;
+      // Skutočné otáčky → zapaľovacia frekvencia: ot/s × zážihy na otáčku.
+      // TDI voľnobeh 900 ≈ 30 Hz bublanie, limit 8000 ≈ 267 Hz rev;
+      // wankel voľnobeh 1100 ≈ 73 Hz, 15000 ≈ 1000 Hz vreskot.
+      const rpm = E.idle + r * E.range;
+      const fire = (rpm / 60) * E.firePerRev;
       const crank = fire / 2;
       eng.oscFire.frequency.value = fire;
       // Mierne rozladenie kľuky proti zážihu = drsný, živý chod bez LFO.
       eng.oscCrank.frequency.value = crank * 1.007;
       eng.oscSub.frequency.value = crank;
-      // Klapka: plyn + otáčky otvárajú filter (straight pipe krik), Q pridá nos.
-      eng.lp.frequency.value = 1000 + th * 4200 + r * 1200;
-      // Štrk: pod plynom syčí pásmo 1–3,5 kHz, na voľnobeh len šepká.
+      // Klapka: plyn + otáčky otvárajú filter (wankel kričí až k ~8,5 kHz).
+      eng.lp.frequency.value = P.lpBase + th * P.lpTh + r * P.lpR;
+      // Štrk: pod plynom syčí pásmo, na voľnobeh len šepká.
       eng.noiseBp.frequency.value = 1200 + th * 2000 + r * 400;
-      eng.noiseG.gain.value = 0.012 + th * 0.11 + r * 0.025;
-      // Hlasitosť: straight pipe je nahlas — voľnobeh počuť, plný plyn reve.
-      eng.engineGain.gain.value = 0.075 + th * 0.19 + r * 0.035;
-      // Praskot výfuku: ubratý plyn vo vysokých otáčkach strieľa.
-      if (th < 0.08 && r > 0.3 && Math.random() < r * 0.14) pop(0.5 + r * 0.5);
+      eng.noiseG.gain.value = P.nzBase + th * P.nzTh + r * P.nzR;
+      let g = P.gBase + th * P.gTh + r * P.gR;
+      // Ikonický wankel-brap: sekaná amplitúda na voľnobehu, s otáčkami mizne.
+      if (sndId === 'wankel') {
+        brapPhase += (10 + r * 10) * dt * 6.2832;
+        const depth = Math.max(0, 1 - r * 2.2);
+        if (depth > 0) {
+          const s = Math.sin(brapPhase);
+          g *= 1 - depth * 0.55 * s * s;
+        }
+      }
+      eng.engineGain.gain.value = g;
+      // Praskot výfuku: ubratý plyn vo vysokých otáčkach strieľa (wankel viac).
+      if (th < 0.08 && r > 0.3 && Math.random() < r * P.popCh) pop(0.5 + r * 0.5);
     },
     honk() {
       if (!ensure()) return;

@@ -345,8 +345,9 @@ function emitFlame(x, y, z, vx, vy, vz) {
 }
 
 // Volá main loop každý snímok (len hráč, nie noclip): throttle 0/1 z inputu,
-// rpm01 = (rpm − IDLE) / RANGE ako pre sfx.engine.
-export function updateExhaustFlames(dt, car = {}, throttle = 0, rpm01 = 0) {
+// rpm01 = (rpm − idle) / range ako pre sfx.engine. boost > 1 = výraznejšie
+// šľahy (wankel strieľa väčšie ohne).
+export function updateExhaustFlames(dt, car = {}, throttle = 0, rpm01 = 0, boost = 1) {
   if (!PS.n) return;
   const th = throttle > 1 ? 1 : (throttle < 0 ? 0 : throttle);
   const r = rpm01 > 1 ? 1 : (rpm01 < 0 ? 0 : rpm01);
@@ -367,8 +368,9 @@ export function updateExhaustFlames(dt, car = {}, throttle = 0, rpm01 = 0) {
   const tx = cx + EXH_X * fz + EXH_Z * fx;
   const tz = cz - EXH_X * fx + EXH_Z * fz;
   const ty = cy + EXH_Y;
-  const power = 0.7 + r * 0.6;
-  const n = S.IS_MOBILE ? 2 : (bursting ? 3 + ((psRnd() * 2) | 0) : 2);
+  const power = (0.7 + r * 0.6) * (boost > 0 ? boost : 1);
+  const burstN = S.IS_MOBILE ? 2 : (bursting ? 3 + ((psRnd() * 2) | 0) : 2);
+  const n = Math.max(1, Math.round(burstN * (boost > 0 ? boost : 1)));
   for (let k = 0; k < n; k++) {
     const sp = (5 + psRnd() * 6) * power;
     emitFlame(

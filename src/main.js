@@ -26,7 +26,7 @@ import { cullLabels } from './world/labels.js';
 import { buildPlayerMesh, syncMesh } from './world/cars.js';
 import {
   createVehicle, updateVehicle, vehicleTelemetry, collideWorld, CAR_MAX_MPS, KMH_PER_MPS,
-  IDLE_RPM, RPM_RANGE,
+  setEngine as setPhysEngine, engineDef,
 } from './physics/vehicle.js';
 import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshes, drawCars, setHorn, setMuted } from './ai/traffic.js';
 // Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
@@ -86,6 +86,34 @@ async function boot() {
   const dash = createDashboard();
   const engineViz = createEngineViz();
   const sfx = createSfx();
+  // Prepínač motora [G] — 1.9 TDI vs 4-rotor wankel (15000 ot, brap na voľnobehu).
+  // Prepne naraz fyziku, zvuk, vizualizáciu aj otáčkomer; otáčky auta sa premapujú
+  // pomero (r01), takže pri výmene za jazdy nepadnú na voľnobeh. Auto sa dopĺňa
+  // až v kroku 3 (motorCtl.car), dovtedy sa prepína len profil.
+  const motorCtl = { car: null };
+  const setEngineAll = (id, silent) => {
+    const next = id === 'wankel' ? 'wankel' : 'tdi';
+    const prev = engineDef();
+    let r01 = 0;
+    if (motorCtl.car) {
+      r01 = Math.max(0, Math.min(1, (motorCtl.car.rpm - prev.idle) / prev.range));
+    }
+    setPhysEngine(next);
+    const E = engineDef();
+    if (motorCtl.car) motorCtl.car.rpm = E.idle + r01 * E.range;
+    try { sfx.setEngine?.(next); } catch (_e) { /* noop */ }
+    try { engineViz.setEngine(next); } catch (_e) { /* noop */ }
+    try { dash.setTachoMax(E.tachoMax, E.tachoMax / 100, E.tachoRed); } catch (_e) { /* noop */ }
+    settings.engine = next;
+    try { saveSettings(); } catch (_e) { /* noop */ }
+    try { syncSettingsUI(); } catch (_e) { /* noop */ }
+    if (!silent) {
+      hud.toast(next === 'wankel'
+        ? 'Motor: 4-ROTOR WANKEL · 15000 ot · brap-brap'
+        : 'Motor: 1.9 TDI');
+    }
+  };
+  const toggleEngine = () => setEngineAll(engineDef().id === 'wankel' ? 'tdi' : 'wankel', false);
   // Prepínač hudby [C] — len rádio ticho, motor/trúbenie/nárazy hrajú ďalej.
   // Zdieľaný medzi klávesou, #music-btn v topbare a tlačidlom v nastaveniach
   // (to volá ctx.audio.toggleMusic). Rádio sa dopĺňa až v kroku 4.
@@ -121,8 +149,12 @@ async function boot() {
       setMusicMuted: (m) => sfx.setMusicMuted(m),
       toggleMusic: () => toggleMusic(),
     },
+    motor: { setEngine: (id) => setEngineAll(id, false) },
   };
   wireSettingsUI(settingsCtx, (m) => hud.toast(m));
+  // Uložený motor z localStorage (settings.engine) na všetky vrstvy ešte pred
+  // tvorbou auta — createVehicle potom štartuje na správnom voľnobehu.
+  setEngineAll(settings.engine, true);
 
   // Dotykové ovládanie: #touch má v CSS display:none a objaví sa len cez .on,
   // ktoré nikto nepridával — pedále aj šípky teda nikdy neboli viditeľné.
@@ -186,6 +218,7 @@ async function boot() {
   await step(0.92, 'autá…');
   routePose(8, _v3, _hWrap, LANE_OFF);
   const car = createVehicle({ x: _v3.x, z: _v3.z });
+  motorCtl.car = car; // pre pomerné premapovanie otáčok pri výmene motora [G]
   car.h = _hWrap.v;
   car.y = driveY(car.x, car.z, 8, LANE_OFF);
   let playerS = 8;
@@ -268,6 +301,7 @@ async function boot() {
     }
     if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyC' && !typing) toggleMusic();
+    if (e.code === 'KeyG' && !typing) toggleEngine();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });
@@ -418,9 +452,14 @@ async function boot() {
     peterApi.started = state.started;
     updateMissions(dt, missionApi);
     updatePeter(dt, t, car, peterApi);
-    sfx.engine((car.rpm - IDLE_RPM) / RPM_RANGE, input.throttle());
-    // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam).
-    if (!isNoclip()) updateExhaustFlames(dt, car, input.throttle(), (car.rpm - IDLE_RPM) / RPM_RANGE);
+    // Otáčkový pomer z aktívneho profilu (TDI 900–8000 / wankel 1100–15000).
+    const rpm01 = (car.rpm - engineDef().idle) / engineDef().range;
+    sfx.engine(rpm01, input.throttle(), dt);
+    // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam;
+    // wankel strieľa výraznejšie).
+    if (!isNoclip()) {
+      updateExhaustFlames(dt, car, input.throttle(), rpm01, engineDef().id === 'wankel' ? 1.7 : 1);
+    }
 
     // — meshe —
     if (playerMesh.bodyMat.color.getHex() !== state.player.color) {
