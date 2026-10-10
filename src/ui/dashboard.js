@@ -1,5 +1,6 @@
 // src/ui/dashboard.js — prístrojovka v štýle Škoda Octavia (canvas 2D).
-// Vľavo otáčkomer 0–70 (×100 ot/min), vpravo rýchlostník 0–260 km/h,
+// Vľavo otáčkomer 0–70 (×100 ot/min) TDI / 0–150 wankel,
+// vpravo rýchlostník 0–260 km/h TDI / 0–340 wankel,
 // stred MFA: hodiny + auto + km/trip + mini palivo/teplota.
 // Kontrolky: EPC + CHECK ENGINE (teplota), FUEL (nádrž), OIL (náraz), BATTERY (test/prázdno).
 const ODO_KEY = 'kruhac-odo';
@@ -68,11 +69,13 @@ export function createDashboard() {
     ctx.lineWidth = 4.5; ctx.strokeStyle = '#e0342b'; ctx.lineCap = 'butt';
     ctx.beginPath(); ctx.arc(C, C, R - 4, ang(redFrom / max), ang(1)); ctx.stroke();
   }
-  function ticksSpeedo(ctx) {
-    // 0–260 po 5 km/h = 52 dielikov, popísané každých 20 ako na Octavii
-    const minor = 52;
+  function ticksSpeedo(ctx, top = 260, step = 20) {
+    // Stupnica po 5 km/h, popísané každých `step` (TDI 0–260/20, wankel 0–340/40).
+    // Podklad sa prepečie raz pri výmene motora, nie každý snímok.
+    const minor = Math.max(1, Math.round(top / 5));
+    const every = Math.max(1, Math.round(step / 5));
     for (let i = 0; i <= minor; i++) {
-      const kmh = i * 5, f = i / minor, a = ang(f), major = i % 4 === 0;
+      const kmh = i * 5, f = i / minor, a = ang(f), major = i % every === 0;
       const r1 = R - (major ? 13 : 7), r2 = R - 1;
       ctx.lineWidth = major ? 2.4 : 1;
       ctx.strokeStyle = '#e8eaee';
@@ -115,16 +118,23 @@ export function createDashboard() {
   // Predkreslené podklady. build() beží raz pri vytvorení dashboardu.
   let tachoBg = null, speedoBg = null;
   let tachoMax = 7000, tachoTop = 70, tachoRedN = 60;
+  let speedoMax = 260, speedoTop = 260, speedoStep = 20;
   function build() {
     tachoBg = bakeFace((g) => { face(g); ticksTacho(g, tachoTop, tachoRedN); textOf(g, '1/min × 100'); });
-    speedoBg = bakeFace((g) => { face(g); ticksSpeedo(g); textOf(g, 'km/h'); });
+    speedoBg = bakeFace((g) => { face(g); ticksSpeedo(g, speedoTop, speedoStep); textOf(g, 'km/h'); });
   }
-  // Pretáčanie otáčkomera pri výmene motora (volá main): nová stupnica + mierka ihly.
+  // Pretáčanie budíkov pri výmene motora (volá main): nová stupnica + mierka ihly.
   function setTachoMax(max, top, redN) {
     tachoMax = max > 0 ? max : 7000;
     tachoTop = top > 0 ? top : 70;
     tachoRedN = redN >= 0 ? redN : 60;
     if (tctx) tachoBg = bakeFace((g) => { face(g); ticksTacho(g, tachoTop, tachoRedN); textOf(g, '1/min × 100'); });
+  }
+  function setSpeedoMax(max, top, step) {
+    speedoMax = max > 0 ? max : 260;
+    speedoTop = top > 0 ? top : 260;
+    speedoStep = step > 0 ? step : 20;
+    if (sctx) speedoBg = bakeFace((g) => { face(g); ticksSpeedo(g, speedoTop, speedoStep); textOf(g, 'km/h'); });
   }
   function textOf(g, s) {
     g.save(); g.shadowBlur = 0;
@@ -238,6 +248,7 @@ export function createDashboard() {
     getOdo() { return odo0; },
     selfTest() { testUntil = performance.now() + 2500; },
     setTachoMax(max, top, redN) { setTachoMax(max, top, redN); },
+    setSpeedoMax(max, top, step) { setSpeedoMax(max, top, step); },
     update(player, dt = 0.0167) {
       const now = performance.now();
       const kmh = Math.abs(player.speed) * 3.6;
@@ -260,10 +271,10 @@ export function createDashboard() {
         lampEPC(tctx, C - 19, C + 49, epc);
         lampEngine(tctx, C + 19, C + 49, check); // CHECK ENGINE ponechaný
       }
-      // rýchlostník 0–260 — popisy po 20 ako na fotke
+      // rýchlostník 0–260 TDI / 0–340 wankel — popisy po 20/40 ako na fotke
       if (sctx) {
         gauge(sctx, speedoBg);
-        needle(sctx, dKmh / 260);
+        needle(sctx, dKmh / speedoMax);
         lampBattery(sctx, C - 30, C + 49, batt);
         lampOil(sctx, C, C + 49, oil);
         lampFuel(sctx, C + 30, C + 49, fuelLow && fuelBlink);

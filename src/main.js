@@ -25,7 +25,7 @@ import { buildSkyDome, cullChunks } from './world/sky.js';
 import { cullLabels } from './world/labels.js';
 import { buildPlayerMesh, syncMesh } from './world/cars.js';
 import {
-  createVehicle, updateVehicle, vehicleTelemetry, collideWorld, CAR_MAX_MPS, KMH_PER_MPS,
+  createVehicle, updateVehicle, vehicleTelemetry, collideWorld, KMH_PER_MPS,
   setEngine as setPhysEngine, engineDef,
 } from './physics/vehicle.js';
 import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshes, drawCars, setHorn, setMuted } from './ai/traffic.js';
@@ -40,7 +40,7 @@ import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, updateExhaustFlames, loadDriftBest, resetDrift, DR } from './game/drift.js';
 import {
   buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
-  updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
+  updateBoostHUD, updateTurbo, toggleTurbo, turboActive, TURBO_TQ,
 } from './game/missions.js';
 import { buildPeter, updatePeter, peterTalk, peterReset, PETER } from './game/peter.js';
 import { createPreloader } from './ui/preloader.js';
@@ -104,13 +104,14 @@ async function boot() {
     try { sfx.setEngine?.(next); } catch (_e) { /* noop */ }
     try { engineViz.setEngine(next); } catch (_e) { /* noop */ }
     try { dash.setTachoMax(E.tachoMax, E.tachoMax / 100, E.tachoRed); } catch (_e) { /* noop */ }
+    try { dash.setSpeedoMax(E.speedoMax, E.speedoTop, E.speedoStep); } catch (_e) { /* noop */ }
     settings.engine = next;
     try { saveSettings(); } catch (_e) { /* noop */ }
     try { syncSettingsUI(); } catch (_e) { /* noop */ }
     if (!silent) {
       hud.toast(next === 'wankel'
-        ? 'Motor: 4-ROTOR WANKEL · 15000 ot · brap-brap'
-        : 'Motor: 1.9 TDI');
+        ? 'Motor: 4-ROTOR WANKEL · 15000 ot · 325 km/h'
+        : 'Motor: 1.9 TDI · 250 km/h');
     }
   };
   const toggleEngine = () => setEngineAll(engineDef().id === 'wankel' ? 'tdi' : 'wankel', false);
@@ -381,8 +382,8 @@ async function boot() {
       return;
     }
 
-    // — hráč (turbo dvíha limiter na 300 km/h; noclip lieta bez fyziky) —
-    car.vmax = turboActive() ? VMAX_TURBO : CAR_MAX_MPS;
+    // — hráč (turbo dvíha limiter na profilový turbo-strop; noclip lieta bez fyziky) —
+    car.vmax = turboActive() ? engineDef().turboVmax : engineDef().vmax;
     updateTurbo(dt, toastFn);
     tel = vehicleTelemetry();
     tel.kmh = Math.abs(car.speed) * KMH_PER_MPS;
@@ -395,7 +396,7 @@ async function boot() {
       // Skutočná priečna odchýlka od trasy: mostovka platí len ±7 m od osi
       // (s lat=0 by deckBlend dvíhal auto do nekonečna do strán).
       const gy = driveY(car.x, car.z, playerS, playerLat);
-      tel = updateVehicle(car, input, dt, gy);
+      tel = updateVehicle(car, input, dt, gy, turboActive() ? TURBO_TQ : 1);
       impact = collideWorld(car, traffic.cars);
     }
     car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));

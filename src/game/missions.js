@@ -47,7 +47,8 @@ export function turboActive() {
 export function toggleTurbo(toast) {
   turboT = TURBO_T;
   // pôvodne aj beep(520, 0.1, 0) — audio rieši sfx v main, tu vynechané.
-  if (typeof toast === 'function') toast('TURBO: 300 km/h, ' + TURBO_T.toFixed(0) + ' s', 2.4);
+  // Bez natvrdej rýchlosti: strop turba závisí od motora (TDI 300 / wankel 360).
+  if (typeof toast === 'function') toast('TURBO: plný boost, ' + TURBO_T.toFixed(0) + ' s', 2.4);
 }
 
 // Odpočet boostu (pôvodne updateCheatState z monolitu).
@@ -57,7 +58,7 @@ export function updateTurbo(dt, notify) {
     turboT -= dt;
     if (turboT <= 0) {
       turboT = 0;
-      if (typeof notify === 'function') notify('TURBO došiel. Späť na 250 km/h.', 2.0);
+      if (typeof notify === 'function') notify('TURBO došiel.', 2.0);
     }
   }
   return turboT;

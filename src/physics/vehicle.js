@@ -1,15 +1,28 @@
-// src/physics/vehicle.js — arkádová fyzika (6-stupňová prevodovka, 250 km/h limitér,
-// OBB SAT kolízie, odpruženie) + kolízie s OSM budovami (exactBldAt, verbatim logika).
+// src/physics/vehicle.js — arkádová fyzika (6-stupňová prevodovka, profilový
+// rýchlostný strop, OBB SAT kolízie, odpruženie) + kolízie s OSM budovami
+// (exactBldAt, verbatim logika).
 import { S } from '../world/shared.js';
 import { gridQuery, GQ_MAX } from '../world/ground.js';
 
 // ---------- MOTORY: 1.9 TDI vs 4-ROTOR WANKEL ----------
-// Jeden zdroj pravdy pre voľnobeh, pásmo aj zážihy/otáčku (TDI 4-takt = 2,
-// wankel = 1 zážih na rotor a otáčku × 4 rotory). Prevodovka aj 250 km/h
-// limitér sú spoločné — mení sa len otáčkové pásmo a zvukový profil.
+// Jeden zdroj pravdy pre voľnobeh, pásmo, zážihy/otáčku (TDI 4-takt = 2,
+// wankel = 1 zážih na rotor a otáčku × 4 rotory), strop rýchlosti, turbo-strop
+// aj prevodovku. TDI: 250 km/h pracant; wankel: 325 km/h bestia s dlhšími
+// kvaltmi a väčším ťahom. Šestka je schválne dlhšia než turbo-strop (95/110):
+// vädnutie ťahu k stropu kvaltu by inak turbo zadusilo skôr, než sa rozbehne
+// (predtým 72 < 83.33, takže sľubovaných 300 nešlo dosiahnuť nikdy). Bez turba
+// drží nižší profilový strop cez jemnú motorovú brzdu.
 export const ENGINES = {
-  tdi: { id: 'tdi', name: '1.9 TDI', idle: 900, range: 7100, firePerRev: 2, tachoMax: 7000, tachoRed: 60 },
-  wankel: { id: 'wankel', name: '4-ROTOR WANKEL', idle: 1100, range: 13900, firePerRev: 4, tachoMax: 15000, tachoRed: 120 },
+  tdi: { id: 'tdi', name: '1.9 TDI', idle: 900, range: 7100, firePerRev: 2,
+    vmax: 69.444, turboVmax: 83.333,
+    gearVmax: [0, 15, 25, 38, 52, 63, 95], gearAcc: [0, 17, 13, 10, 8, 7, 7],
+    tachoMax: 7000, tachoTop: 70, tachoRed: 60,
+    speedoMax: 260, speedoTop: 260, speedoStep: 20 },
+  wankel: { id: 'wankel', name: '4-ROTOR WANKEL', idle: 1100, range: 13900, firePerRev: 4,
+    vmax: 90.278, turboVmax: 100,
+    gearVmax: [0, 17, 29, 44, 60, 76, 110], gearAcc: [0, 22, 18, 15, 12, 10, 9],
+    tachoMax: 15000, tachoTop: 150, tachoRed: 120,
+    speedoMax: 340, speedoTop: 340, speedoStep: 40 },
 };
 let ENG = ENGINES.tdi;
 export function setEngine(id) {
@@ -20,10 +33,11 @@ export function engineDef() { return ENG; }
 
 // ---------- FYZIKA HRÁČA: LADITEĽNÉ KONŠTANTY ----------
 export const KMH_PER_MPS = 3.6;
-const CAR_MAX_KMH = 250;
-export const CAR_MAX_MPS = CAR_MAX_KMH / KMH_PER_MPS;
 const EMPTY_FUEL_MAX_KMH = 50;
 const MIN_REVERSE_SPEED_MPS = -12;
+// Pád stropu (výmena motora za jazdy, koniec turba, prázdna nádrž) nie je múr:
+// auto motorovo dobrzdí 14 m/s², nie teleport na limitér.
+const OVERSPEED_DECAY_MPS2 = 14;
 const BRAKE_DECEL_MPS2 = 16;
 const ROLLING_DRAG = 0.004;
 const HANDBRAKE_DECEL = 3;
@@ -66,17 +80,15 @@ export function createVehicle(opts = {}) {
     vx: 0, vz: 0, speed: 0, gear: 1, rpm: ENG.idle,
     steer: 0, yawRate: 0, temp: 0.2, stress: 0,
     fuel: 1, trip: 0, odo: 0, oilT: 0, // palivo 0–1, trip/odo v metroch, olejka-timer
-    vmax: CAR_MAX_MPS, // m/s
+    vmax: ENG.vmax, // m/s (profilový strop, main ho prepína aj pre turbo)
   };
 }
 
-// (gearRatio odstránená: tabuľka pomerov sa nepoužívala — GEAR_VMAX/GEAR_ACC
-//  v updateVehicle definujú strop a Ťah priamo pre 6 kvaltov.)
+// (gearRatio odstránená: tabuľka pomerov sa nepoužívala — gearVmax/gearAcc
+//  v profile definujú strop a ťah priamo pre 6 kvaltov.)
 
-// Strop rýchlosti a záťah po kvaltoch (m/s, m/s²) — šestka dá plných 250 km/h.
-const GEAR_VMAX = [0, 15, 25, 38, 52, 63, 72];
-const GEAR_ACC = [0, 17, 13, 10, 8, 7, 7];
-const GEAR_COUNT = GEAR_VMAX.length - 1;
+// Strop rýchlosti a záťah po kvaltoch berie updateVehicle z profilu (TDI končí
+// na 250 km/h, wankel ťahá šestkou až k 325).
 
 // Telemetria pre HUD/misie. Modulový scratch, NIE nový objekt: updateVehicle
 // beží každý snímok a `return {…}` by hodil na smetisko ~6 objektov/s (pri 150 FPS
@@ -84,25 +96,29 @@ const GEAR_COUNT = GEAR_VMAX.length - 1;
 // jediný caller je main.js, ktorý ho hneď spotrebuje.
 const TEL = { kmh: 0, drifting: false, accel: 0 };
 
-/** Krok fyziky — volá sa z main loopu s pevným dt (clamp 0.1). Vracia telemetriu pre HUD/police. */
-export function updateVehicle(v, input, dt, terrainY) {
+/** Krok fyziky — volá sa z main loopu s pevným dt (clamp 0.1). Vracia telemetriu pre HUD/police.
+ * boost = násobok ťahu počas turba (TURBO_TQ z missions.js, inak 1). */
+export function updateVehicle(v, input, dt, terrainY, boost = 1) {
   const th = input.throttle(), br = input.brake(), steer = input.axis();
   const hand = input.handbrake();
-  // Ťah na kolesách s prevodovým stropom: každý kvalt má vlastné vmax,
-  // sila lineárne vädne k nemu (plný plyn na šestke = 250 km/h limiter).
-  const g = Math.max(1, Math.min(GEAR_COUNT, v.gear | 0));
-  const vg = GEAR_VMAX[g];
-  const drive = th * GEAR_ACC[g] * Math.max(0, 1 - Math.max(0, v.speed) / vg);
+  // Ťah na kolesách s prevodovým stropom z profilu: každý kvalt má vlastné
+  // vmax, sila lineárne vädne k nemu (plný plyn na šestke = limiter profilu).
+  const gears = ENG.gearVmax.length - 1;
+  const g = Math.max(1, Math.min(gears, v.gear | 0));
+  const vg = ENG.gearVmax[g];
+  const drive = th * ENG.gearAcc[g] * boost * Math.max(0, 1 - Math.max(0, v.speed) / vg);
   const accel = drive - br * BRAKE_DECEL_MPS2 - v.speed * ROLLING_DRAG;
   // prázdna nádrž = núdzový režim do 50 km/h (palivo dotankuje R / FIXCAR)
   const vmaxEff = v.fuel <= 0 ? EMPTY_FUEL_MAX_KMH / KMH_PER_MPS : v.vmax;
-  v.speed = Math.max(MIN_REVERSE_SPEED_MPS, Math.min(vmaxEff, v.speed + accel * dt));
+  v.speed = Math.max(MIN_REVERSE_SPEED_MPS, v.speed + accel * dt);
+  // Nad stropom (výmena motora, koniec turba) brzdi motorom, nie teleportom.
+  if (v.speed > vmaxEff) v.speed = Math.max(vmaxEff, v.speed - OVERSPEED_DECAY_MPS2 * dt);
   if (hand) v.speed *= 1 - Math.min(1, HANDBRAKE_DECEL * dt);
   // radenie 1–6
   const kmh = Math.abs(v.speed) * KMH_PER_MPS;
   v.gear = kmh < GEAR_SHIFT_KMH[0] ? 1 : kmh < GEAR_SHIFT_KMH[1] ? 2 :
     kmh < GEAR_SHIFT_KMH[2] ? 3 : kmh < GEAR_SHIFT_KMH[3] ? 4 :
-    kmh < GEAR_SHIFT_KMH[4] ? 5 : GEAR_COUNT;
+    kmh < GEAR_SHIFT_KMH[4] ? 5 : gears;
   v.rpm = ENG.idle + (kmh % RPM_CYCLE_KMH) / RPM_CYCLE_KMH * ENG.range;
   // palivo + počítadlá: plná nádrž ≈ 30 min zmiešanej jazdy
   v.fuel = Math.max(0, v.fuel - (FUEL_IDLE_PER_SEC + th * FUEL_THROTTLE_PER_SEC) * dt);
