@@ -669,9 +669,9 @@ export function buildShared(){
   S.GEO.bodyP = S.GEO.body.clone(); // klon LEN pre hráča (deformácia damage, AI zdieľa GEO.body)
   S.GEO.bodyP.userData.base = S.GEO.bodyP.attributes.position.array.slice(); // panenský stav pre reset
   S.GEO.cabin = new THREE.BoxGeometry(1.6, 0.55, 2.0);
-  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 10);
+  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 16);
   S.GEO.light = new THREE.BoxGeometry(0.42, 0.22, 0.12);
-  S.GEO.blob  = new THREE.CircleGeometry(1.2, 10);
+  S.GEO.blob  = new THREE.CircleGeometry(1.2, 16);
   S.GEO.blob.rotateX(-Math.PI/2); // tieňová elipsa naležato
 
   // VOZOVKA: difúzia + normálová mapa (zrno/trhliny reálne menia smer svetla) +

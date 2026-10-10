@@ -2,7 +2,7 @@
 // ZDROJ: index.monolith.legacy.html, riadky RELATÍVNE od `<script type="module">`.
 // Verbatim (telá bezo zmien, len S.* sed + mená zo shared.js):
 //   updateSuspension, snapSuspension (js 3547–3581; updateBodySpring NEPORTOVANÁ — je hráčova),
-//   makeCar, buildCarMeshes, drawCars (js 6686–6791),
+//   makeCar, buildCarMeshes, drawCars (js 6686–6791; drawCars: kabína 1,15→1,2 — menej utopená),
 //   buildTraffic — len pool-inicializácia (js 6872–6896; buildPlayer NEPORTOVANÝ),
 //   ambientPlace PLNÁ signatúra (c, ri, t, dt, snap, nosus) (js 6981–7008),
 //   safePlace + AI_* consty (js 10669–10695),
@@ -207,7 +207,8 @@ export function drawCars() {
       dummy.rotation.set(c.pitch, c.h, c.roll);
       dummy.updateMatrix();
       IM.body.setMatrixAt(bi, dummy.matrix);
-      dummy.position.set(c.x + (-0.3) * fx, 1.15 + c.y, c.z + (-0.3) * fz);
+      dummy.position.set(c.x + (-0.3) * fx, 1.2 + c.y, c.z + (-0.3) * fz); // kabína sedí 2 cm
+      // v karosérii (čelo tela 0,945, spodok kabíny 0,925) — pôvodne 1,15 = 7 cm utopená
       dummy.rotation.set(c.pitch, c.h, c.roll);
       dummy.updateMatrix();
       IM.cabin.setMatrixAt(bi, dummy.matrix);

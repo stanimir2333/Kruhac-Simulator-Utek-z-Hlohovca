@@ -43,6 +43,7 @@ import { buildPeter, updatePeter, peterTalk, peterReset, PETER } from './game/pe
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
+import { createEngineViz } from './ui/engineViz.js';
 import { createMinimap, enableTiles } from './ui/minimap.js';
 import { wireMenus } from './ui/menus.js';
 // Štýly ťahá <link> v index.html (Vite ich zbalí; natívny ESM by import CSS odmietol).
@@ -77,6 +78,7 @@ async function boot() {
   const input = createInput();
   const hud = createHUD(state);
   const dash = createDashboard();
+  const engineViz = createEngineViz();
   const sfx = createSfx();
   wireMenus(state, engine, hud);
   // bloom composer + nastavenia (ešte pred svetom — pixelRatio ovplyvňuje build textúr)
@@ -221,6 +223,9 @@ async function boot() {
       peterTalk({ car, toast: (m) => hud.toast(m) });
     }
     if (e.code === 'KeyT' && state.started && !typing) toggleTurbo((m) => hud.toast(m));
+    if (e.code === 'KeyV' && state.started && !typing) {
+      hud.toast(engineViz.toggle() ? 'Motor: SLOW-MO vizualizácia ×0,08' : 'Motor: vizualizácia v reálnych otáčkach');
+    }
     if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
@@ -297,6 +302,7 @@ async function boot() {
       camera.position.set(car.x + Math.sin(a) * 26, car.y + 10, car.z + Math.cos(a) * 26);
       camera.lookAt(car.x, car.y + 2, car.z);
       syncMesh(playerMesh, car.x, car.y, car.z, car.h, 0, 0);
+      engineViz.update(car.rpm, dt);
       return;
     }
 
@@ -334,6 +340,7 @@ async function boot() {
       temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
       fuel: car.fuel, trip: car.trip, odo: car.odo, oilT: car.oilT,
     });
+    engineViz.update(car.rpm, dt);
 
     // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —
     slowAcc += dt;
