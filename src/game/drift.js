@@ -319,6 +319,70 @@ export function emitDriftSmoke(car = {}) {
   }
 }
 
+// ---------- PLAMENE Z VÝFUKU: straight pipe strieľa pri pustení plynu ----------
+// Špička výfuku v lokále auta (0.55, 0.32, −2.1) → svet cez rotáciu Y:
+//   wx = x·cos h + z·sin h, wz = −x·sin h + z·cos h (three.js rotation.y).
+// Pozor: (rx, rz) z vehicle.js je prevrátený trojčlen (−cos, +sin), sedí len pre
+// symetrické emity (dym ±0.85) — výfuk je jednostranný, takže tu priamo cos/sin.
+const EXH_X = 0.55, EXH_Y = 0.32, EXH_Z = -2.1;
+// Dávka po ubratí: plný plyn → pustený vo vysokých otáčkach = zášľah 0.3–0.65 s.
+// Modulový stav (hráč je jeden, žiadna alokácia).
+let FLAME_T = 0;
+let FLAME_PREV_TH = 0;
+
+// Jeden jazyk plameňa: rýchly šľah dozadu (+ unášanie rýchlosťou auta, inak by
+// pri 200 km/h oheň opticky teleportoval 4 m za auto), krátky život, grav=1
+// (padá ako iskra, nestúpa ako dym). Farba: žltobiele jadro / oranž / modrý lem.
+function emitFlame(x, y, z, vx, vy, vz) {
+  const pick = psRnd();
+  if (pick < 0.45) {
+    psEmit(x, y, z, vx, vy, vz, 0.1 + psRnd() * 0.1, 1.0, 0.85, 0.35, 1);
+  } else if (pick < 0.85) {
+    psEmit(x, y, z, vx, vy, vz, 0.12 + psRnd() * 0.13, 1.0, 0.42 + psRnd() * 0.2, 0.08, 1);
+  } else {
+    psEmit(x, y, z, vx, vy, vz, 0.08 + psRnd() * 0.08, 0.35, 0.55, 1.0, 1);
+  }
+}
+
+// Volá main loop každý snímok (len hráč, nie noclip): throttle 0/1 z inputu,
+// rpm01 = (rpm − IDLE) / RANGE ako pre sfx.engine.
+export function updateExhaustFlames(dt, car = {}, throttle = 0, rpm01 = 0) {
+  if (!PS.n) return;
+  const th = throttle > 1 ? 1 : (throttle < 0 ? 0 : throttle);
+  const r = rpm01 > 1 ? 1 : (rpm01 < 0 ? 0 : rpm01);
+  // Nástupná hrana plného plynu → pustený vo vysokých otáčkach: spusti dávku.
+  if (FLAME_PREV_TH > 0.5 && th < 0.15 && r > 0.25) FLAME_T = 0.3 + r * 0.35;
+  FLAME_PREV_TH = th;
+  const bursting = FLAME_T > 0;
+  // Mimo dávky len občasný praskot pri plachtení vo vysokých otáčkach
+  // (vizuálny partner k audio-popom v sfx.js).
+  if (!bursting && !(th < 0.08 && r > 0.4 && psRnd() < r * 0.25)) return;
+  if (bursting) FLAME_T -= dt;
+  const h = typeof car?.h === 'number' ? car.h : 0;
+  const cx = car?.x ?? 0;
+  const cy = car?.y ?? 0;
+  const cz = car?.z ?? 0;
+  const spd = typeof car?.speed === 'number' ? car.speed : 0;
+  const fx = Math.sin(h), fz = Math.cos(h);
+  const tx = cx + EXH_X * fz + EXH_Z * fx;
+  const tz = cz - EXH_X * fx + EXH_Z * fz;
+  const ty = cy + EXH_Y;
+  const power = 0.7 + r * 0.6;
+  const n = S.IS_MOBILE ? 2 : (bursting ? 3 + ((psRnd() * 2) | 0) : 2);
+  for (let k = 0; k < n; k++) {
+    const sp = (5 + psRnd() * 6) * power;
+    emitFlame(
+      tx + (psRnd() - 0.5) * 0.15,
+      ty + (psRnd() - 0.5) * 0.1,
+      tz + (psRnd() - 0.5) * 0.15,
+      // unášanie + šľah dozadu + rozptyl + mierne hore
+      fx * spd - fx * sp + (psRnd() - 0.5) * 2.2,
+      1.0 + psRnd() * 2.0,
+      fz * spd - fz * sp + (psRnd() - 0.5) * 2.2,
+    );
+  }
+}
+
 export function emitSparks(x, y, z, n) {
   for (let k = 0; k < n; k++) {
     const a = psRnd() * 6.2832;

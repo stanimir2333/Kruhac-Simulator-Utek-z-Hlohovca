@@ -37,7 +37,7 @@ import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { wireSettingsUI } from './ui/settings.js';
-import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, loadDriftBest, resetDrift, DR } from './game/drift.js';
+import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, updateExhaustFlames, loadDriftBest, resetDrift, DR } from './game/drift.js';
 import {
   buildCheckpoints, missionReset, updateMissions, updateMissionHUD,
   updateBoostHUD, updateTurbo, toggleTurbo, turboActive, VMAX_TURBO,
@@ -419,6 +419,8 @@ async function boot() {
     updateMissions(dt, missionApi);
     updatePeter(dt, t, car, peterApi);
     sfx.engine((car.rpm - IDLE_RPM) / RPM_RANGE, input.throttle());
+    // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam).
+    if (!isNoclip()) updateExhaustFlames(dt, car, input.throttle(), (car.rpm - IDLE_RPM) / RPM_RANGE);
 
     // — meshe —
     if (playerMesh.bodyMat.color.getHex() !== state.player.color) {
