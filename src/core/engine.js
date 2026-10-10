@@ -1,9 +1,12 @@
 // src/core/engine.js — renderer + scéna + hlavná slučka (nulové alokácie v loope).
 import * as THREE from 'three';
 
+const DEFAULT_FPS_CAP = 60;
+const MAX_DEVICE_PIXEL_RATIO = 2;
+
 export function createEngine(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DEVICE_PIXEL_RATIO));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -29,7 +32,7 @@ export function createEngine(container) {
   };
   addEventListener('resize', onResize);
 
-  let raf = 0, last = performance.now(), fpsCap = 60, acc = 0;
+  let raf = 0, last = performance.now(), fpsCap = DEFAULT_FPS_CAP, acc = 0;
   let renderOverride = null; // bloom composer (src/fx/bloom.js) sa sem zapojí
   const listeners = { tick: [] };
   const resizeExtra = [];    // callbacky z onResizeExtra (na odstránenie v dispose)

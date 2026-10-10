@@ -3,15 +3,20 @@
 // Vlastní: LBLN/LBLF. Importuje: makeLabel z textures.js, S.scene zo shared.js.
 import { S } from './shared.js';
 import { makeLabel } from './textures.js';
+import { PERF } from '../core/config.js';
 
 export const LBLN = [];     // {sp,x,z} blízke štítky (culling 400 m)
 export const LBLF = [];     // {sp,x,z} ďaleké štítky (vždy vidieť)
 
 // Vzdialenosť, za ktorou sa blízky štítok vypne. Ďaleké (POI, ulice, Peter)
 // majú culling vypnutý — musia byť čitateľné cez hmlu.
-const NEAR_CULL2 = 400 * 400;
-let cullAt = 1e9;   // ďalší čas, kedy má zmysel prepočítať (sekundy od štartu)
-let cullX = 1e18, cullZ = 1e18;
+const NEAR_CULL_DISTANCE_M = 400;
+const NEAR_CULL_DISTANCE2 = NEAR_CULL_DISTANCE_M * NEAR_CULL_DISTANCE_M;
+const CULL_RECHECK_DISTANCE_M = 25;
+const CULL_RECHECK_DISTANCE2 = CULL_RECHECK_DISTANCE_M * CULL_RECHECK_DISTANCE_M;
+const LABEL_CULL_INTERVAL = 1 / PERF.cullHz;
+let cullAt = 0;     // prvý culling prebehne hneď pri prvom ticku
+let cullX = Infinity, cullZ = Infinity;
 
 /**
  * 2 Hz distance culling blízkych štítkov (popis v S.SHARED kým boli LBLN/LBLF
@@ -21,13 +26,13 @@ let cullX = 1e18, cullZ = 1e18;
 export function cullLabels(x, z, now) {
   if (now < cullAt) return;
   const dx = x - cullX, dz = z - cullZ;
-  if (dx * dx + dz * dz < 625) return;   // <25 m od poslednej kontroly
-  cullAt = now + 0.5;
+  if (dx * dx + dz * dz < CULL_RECHECK_DISTANCE2) return;
+  cullAt = now + LABEL_CULL_INTERVAL;
   cullX = x; cullZ = z;
   for (let i = 0; i < LBLN.length; i++) {
     const l = LBLN[i];
     const ex = l.x - x, ez = l.z - z;
-    l.sp.visible = (ex * ex + ez * ez) < NEAR_CULL2;
+    l.sp.visible = (ex * ex + ez * ez) < NEAR_CULL_DISTANCE2;
   }
 }
 

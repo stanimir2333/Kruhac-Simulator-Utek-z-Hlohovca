@@ -1,6 +1,7 @@
 // src/world/sky.js — gradientová kupola + PMREM prostredie pre PBR (vlastný kód,
 // paleta z monolitu S.SKY_*; legacy buildSky s RT/bloom väzbami sem nepatrí).
 import * as THREE from 'three';
+import { PERF } from '../core/config.js';
 import { S } from './shared.js';
 
 // ---------- DISTANCE CULLING CHUNKOV (budovy + vegetácia, 2 Hz) ----------
@@ -8,21 +9,24 @@ import { S } from './shared.js';
 // komentáre sľubovali "distance culling (2 Hz)" a neexistoval. Chunk sa vypne,
 // keď je hráč ďalej než (polomer + dosah); vracia počet prepnutých chunkov
 // (0 = nič sa nemenilo), aby main vedel, či treba niečo hlásiť.
-const CHUNK_REACH = 700;   // 700 m nad polomer chunku: budovy aj stromy ostávajú vidieť
-let cullAt = 0, cullX = 1e18, cullZ = 1e18;
+const CHUNK_REACH_M = 700; // m nad polomer chunku: budovy aj stromy ostávajú vidieť
+const CHUNK_CULL_INTERVAL = 1 / PERF.cullHz;
+const CULL_RECHECK_DISTANCE_M = 20;
+const CULL_RECHECK_DISTANCE2 = CULL_RECHECK_DISTANCE_M * CULL_RECHECK_DISTANCE_M;
+let cullAt = 0, cullX = Infinity, cullZ = Infinity;
 
 export function cullChunks(x, z, now) {
   if (now < cullAt) return 0;
   const dx = x - cullX, dz = z - cullZ;
-  if (dx * dx + dz * dz < 400) return 0;   // <20 m od poslednej kontroly
-  cullAt = now + 0.5;
+  if (dx * dx + dz * dz < CULL_RECHECK_DISTANCE2) return 0;
+  cullAt = now + CHUNK_CULL_INTERVAL;
   cullX = x; cullZ = z;
   let n = 0;
   const list = S.CHUNKS;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     const ex = c.x - x, ez = c.z - z;
-    const lim = c.r + CHUNK_REACH;
+    const lim = c.r + CHUNK_REACH_M;
     const vis = (ex * ex + ez * ez) < lim * lim;
     if (c.vis === vis) continue;
     c.vis = vis;

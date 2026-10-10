@@ -17,6 +17,7 @@
 //   DYN_GEO→S.DYN_GEO, DYN_IM→S.DYN_IM, routeLen/roundS/bridgeS0/bridgeS1/townRoads→S.*.
 //   (tools/need.txt v repe NEEXISTUJE — overené; sednuté sú všetky mená, ktoré má shared.js.)
 import * as THREE from 'three';
+import { PERF } from '../core/config.js';
 import { S } from '../world/shared.js';
 import { routePose } from '../world/roads.js';
 // wheelGroundY: updateSuspension ho volá priamo (legacy globál; dnes žije v height.js).
@@ -32,7 +33,9 @@ export const PARKED_N = 10; // zaparkované z townRoads blízko štartu (modulá
 export const MAXC = TRAFFIC_N + INCOMING_N + AMBIENT_N + PARKED_N;
 
 // ---------- AI DOPRAVA: Distance LOD pásma (legacy js 10695) ----------
-export const AI_NEAR2 = 22500, AI_MID2 = 122500, AI_POOL2 = 160000, AI_MAX_FULL = 32;
+export const AI_NEAR2 = PERF.aiNear2, AI_MID2 = PERF.aiMid2;
+export const AI_POOL2 = PERF.aiPool2, AI_MAX_FULL = PERF.aiMaxFull;
+const AI_HORN_RADIUS2 = PERF.aiHornRadius2;
 
 // ---------- INSTANCOVANIE ÁUT (lokálne consty; legacy js 6691–6699) ----------
 // IM ako lokál `let IM = null` (plní ho buildCarMeshes); DYN_IM je S.DYN_IM.
@@ -524,7 +527,7 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
     // AI klaksón: náhodne blízko hráča (1 %/s) alebo kolóna pred mostom >3 s bez pohybu
     if (!mut) {
       c.hornCd -= step;
-      if (c.d2 < 3600 && c.hornCd <= 0 && Math.random() < step * 0.01) {
+      if (c.d2 < AI_HORN_RADIUS2 && c.hornCd <= 0 && Math.random() < step * 0.01) {
         if (aiHonk(c)) c.hornCd = 8 + Math.random() * 12;
       } else if (c.s > S.bridgeS0 - 150 && c.s < S.bridgeS0 && Math.abs(c.speed) < 0.5) {
         c.hornT += step;
@@ -564,7 +567,7 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
     }
     c.spin += c.speed * step * 2.2;
     c.braking = true;
-    if (!mut && c.hornCd <= 0 && c.d2 < 3600 && Math.random() < step * 0.01) {
+    if (!mut && c.hornCd <= 0 && c.d2 < AI_HORN_RADIUS2 && Math.random() < step * 0.01) {
       if (aiHonk(c)) c.hornCd = 8 + Math.random() * 12;
     } else c.hornCd -= step;
   }
@@ -574,14 +577,14 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
     c = ambientPool[i];
     if (c.lod === 2) { c.hidden = true; continue; } // >350 m: zmrazené + skryté (pool-recycle prebehol v 1. passe)
     c.hidden = false;
-    if (i === ambientRR && (c.road < 0 || c.d2 > 160000)) {
+    if (i === ambientRR && (c.road < 0 || c.d2 > AI_POOL2)) {
       // presun blízko hráča (max 6 pokusov, bez alokácií)
       for (let k = 0; k < 6; k++) {
         const ri = Math.abs((i * 37 + aiTick * 13 + k * 101) % S.townRoads.length);
         const R = S.townRoads[ri];
         const mx = (R.pts[0] + R.pts[R.n * 2 - 2]) / 2, mz = (R.pts[1] + R.pts[R.n * 2 - 1]) / 2;
         const mdx = mx - player.x, mdz = mz - player.z;
-        if (mdx * mdx + mdz * mdz < 122500) {
+        if (mdx * mdx + mdz * mdz < AI_MID2) {
           c.road = ri; c.dir = (k % 2 === 0) ? 1 : -1;
           c.t = R.len * (0.2 + 0.6 * ((k * 29) % 10) / 10); c.seg = 0; c.speed = 0;
           ambientPlace(c, ri, c.t, dt, true, c.lod !== 0);
@@ -664,7 +667,7 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
     ambientPlace(c, c.road, nt, step, false, c.lod !== 0);
     c.spin += c.speed * step * 2.2;
     c.braking = (target < 0.5);
-    if (!mut && c.hornCd <= 0 && c.d2 < 3600 && Math.random() < step * 0.01) {
+    if (!mut && c.hornCd <= 0 && c.d2 < AI_HORN_RADIUS2 && Math.random() < step * 0.01) {
       if (aiHonk(c)) c.hornCd = 8 + Math.random() * 12;
     } else c.hornCd -= step;
   }
@@ -674,7 +677,7 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
 // Legacy hral pozičný hornPool sample; v modulárnej architektúre zvuk vlastní audio/sfx.js
 // (ai/ nesmie siahať na audio/DOM). main.js injektuje `setHorn((x, y, z) => sfx.honkAt(...))`.
 export function aiHonk(c) {
-  if (!c || c.d2 > 3600) return false; // blízko = do 60 m (d2 < 3600, ako legacy triggery)
+  if (!c || c.d2 > AI_HORN_RADIUS2) return false; // blízko = do 60 m (ako legacy triggery)
   // POISTKA z legacy: neposielať NaN do pannera (zabil by každý frame renderu).
   if (!isFinite(c.x) || !isFinite(c.y) || !isFinite(c.z)) return false;
   if (!hornFn) return false;
