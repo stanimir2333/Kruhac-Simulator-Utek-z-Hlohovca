@@ -20,7 +20,7 @@ export const ENGINES = {
     speedoMax: 260, speedoTop: 260, speedoStep: 20 },
   wankel: { id: 'wankel', name: '4-ROTOR WANKEL', idle: 1100, range: 13900, firePerRev: 4,
     vmax: 90.278, turboVmax: 100,
-    gearVmax: [0, 17, 29, 44, 60, 76, 110], gearAcc: [0, 22, 18, 15, 12, 10, 9],
+    gearVmax: [0, 17, 29, 44, 60, 76, 110], gearAcc: [0, 26, 21, 17, 14, 12, 10.5],
     tachoMax: 15000, tachoTop: 150, tachoRed: 120,
     speedoMax: 340, speedoTop: 340, speedoStep: 40 },
 };

@@ -50,13 +50,15 @@ export function updateSunShadow(sun, x, y, z, viewDist, tierR) {
   sun.target.position.set(x, y, z);
   sun.target.updateMatrixWorld();
   let r = Math.min(viewDist, tierR) * rangeScale;
-  if (r < 40) r = 40;
+  if (!Number.isFinite(r) || r < 40) r = 40;
   shadowLocalRange(x, z, r);
   // Opsažná guľa: vodorovne r, zvisle (lokálny prevýšok/2 + veža).
   const hHalf = (SHADOW_LOCAL.max - SHADOW_LOCAL.min) * 0.5 + SHADOW_TALL;
+  if (!Number.isFinite(hHalf)) return null; // deravá výšková mriežka — kameru neotráviť
   const R = Math.sqrt(r * r + hHalf * hHalf);
   const near = Math.max(0.5, SHADOW_SUN_LEN - R);
   const far = SHADOW_SUN_LEN + R;
+  if (!Number.isFinite(near) || !Number.isFinite(far) || far <= near) return null;
   const res = sun.shadow.mapSize.width || 2048;
   const key = r.toFixed(1) + '|' + near.toFixed(1) + '|' + far.toFixed(1) + '|' + res;
   if (key === lastKey) return null;

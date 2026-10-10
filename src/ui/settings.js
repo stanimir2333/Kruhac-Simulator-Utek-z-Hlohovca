@@ -208,31 +208,41 @@ export function saveSettings() {
 }
 
 // <- legacy @9425 (rovnaké rozsahy ako monolit)
+// Číslo z úložiska prejde normalizáciou: string/boolean/null z ručných zásahov,
+// starých verzií aj starého cache sa premení alebo zahodí na predvolené.
+// Bez toho vie jediná pokazená hodnota vyrobiť NaN v labeloch aj v intenzite
+// slnka (2.4 × NaN = čierna scéna) alebo zhodiť syncSettingsUI na .toFixed().
+function storedNum(v, lo, hi, dflt) {
+  if (v === null || v === undefined) return dflt;
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n < lo || n > hi) return dflt;
+  return n;
+}
+
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('kruhac-set') || 'null');
-    if (!s) return;
-    if (s.res >= 0.5 && s.res <= 2) settings.res = s.res;
-    if (s.fps >= 15 && s.fps <= 150) settings.fps = s.fps;
-    if (s.dist >= 100 && s.dist <= 2000) settings.dist = s.dist;
+    if (!s || typeof s !== 'object') return;
+    settings.res = storedNum(s.res, 0.5, 2, settings.res);
+    settings.fps = Math.round(storedNum(s.fps, 15, 150, settings.fps));
+    settings.dist = Math.round(storedNum(s.dist, 100, 2000, settings.dist));
     // `sh` (tieňový tier) je jediný uložený zdroj pravdy. `rtq` sa už nečíta
     // — bol to druhý zápis do tej istej premennej a spôsobil, že uložený stav
     // závisel od poradia kliknutí. syncSettingsUI ho odviedie z shadowTier.
-    if (s.sh >= 0 && s.sh <= SHADOW_TIERS.length - 1) {
-      shadowTier = s.sh;
-      settings.shq = s.sh;
-    }
+    shadowTier = Math.round(storedNum(s.sh, 0, SHADOW_TIERS.length - 1, shadowTier));
+    settings.shq = shadowTier;
     settings.rtQ = RT_TIER_FROM_SHADOW[Math.max(0, Math.min(SHADOW_TIERS.length - 1, shadowTier))];
-    if (s.bl >= 0 && s.bl <= 2) settings.bloom = s.bl;
-    if (s.wq >= 0 && s.wq <= 2) settings.water = s.wq;
-    if (typeof s.bal === 'number' && s.bal >= -1 && s.bal <= 1) settings.bal = s.bal;
+    settings.bloom = Math.round(storedNum(s.bl, 0, 2, settings.bloom));
+    settings.water = Math.round(storedNum(s.wq, 0, 2, settings.water));
+    settings.bal = storedNum(s.bal, -1, 1, settings.bal);
     // Monolit: URL prepínače (?rt=/?rtq=/?rts=) mali prednosť pred uloženým
     // nastavením — VYNECHANÉ (neportuje sa; uložené RT sa vždy prevezme).
-if (s.rt === 1) settings.rt = true;
+    // (Opravené: staré `if (s.rt === 1)` nikdy nevedelo VYP., uložená 0 sa ignorovala.)
+    settings.rt = !(s.rt === 0 || s.rt === false);
     // s.rtq sa už NEČÍTA — pozri komentár vyššie.
-    if (s.rtsh >= 0 && s.rtsh <= 1.5) settings.rtSh = s.rtSh;
-    if (s.rtli >= 0 && s.rtli <= 2) settings.rtLi = s.rtLi;
-    if (s.rtql >= 0.3 && s.rtql <= 1) settings.rtQl = s.rtql;
+    settings.rtSh = storedNum(s.rtsh, 0, 1.5, settings.rtSh);
+    settings.rtLi = storedNum(s.rtli, 0, 2, settings.rtLi);
+    settings.rtQl = storedNum(s.rtQl, 0.3, 1, settings.rtQl);
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     if (s.eng === 'tdi' || s.eng === 'wankel') settings.engine = s.eng;
     settings.shq = shadowTier;
@@ -496,7 +506,9 @@ export function wireSettingsUI(ctx, toast) {
   });
   const rtRange = (id, labelId, key) => {
     $(id)?.addEventListener('input', (e) => {
-      settings[key] = parseFloat(e.target.value);
+      const raw = parseFloat(e.target.value);
+      if (!Number.isFinite(raw)) return; // prázdny slider nikdy neprepíše store NaNkom
+      settings[key] = raw;
       const v = $(labelId);
       if (v) v.textContent = Math.round(settings[key] * 100) + '%';
       applyRTLive(c);
