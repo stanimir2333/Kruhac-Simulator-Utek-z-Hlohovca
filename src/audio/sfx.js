@@ -5,7 +5,7 @@
 import { engineDef } from '../physics/vehicle.js';
 // Zvukový profil motora: skreslenie, jas filtra, štrk a hlasitosť.
 // TDI = dusný straight-pipe diesel; wankel = vreskot + ikonický brap na voľnobehu
-// (sekaná amplitúda ~11 Hz, s otáčkami mizne).
+// (namerané z RX-7: sekanie ~29 Hz do ~10 % amplitúdy, s otáčkami mizne).
 const SND = {
   tdi: { drive: 7, lpBase: 1000, lpTh: 4200, lpR: 1200, nzBase: 0.012, nzTh: 0.11, nzR: 0.025, gBase: 0.075, gTh: 0.19, gR: 0.035, popCh: 0.14, popLo: 0.15, popHi: 0.25 },
   wankel: { drive: 10, lpBase: 1500, lpTh: 5000, lpR: 2000, nzBase: 0.02, nzTh: 0.14, nzR: 0.03, gBase: 0.085, gTh: 0.21, gR: 0.04, popCh: 0.2, popLo: 0.2, popHi: 0.3 },
@@ -21,8 +21,6 @@ export function createSfx() {
   // Aktívny zvukový profil (prepína setEngine; krivky skreslenia predpečené obe).
   let sndId = 'tdi';
   let curves = null;
-  // Fáza brap-sekania wanklu na voľnobehu (uhlová, inkrementuje engine()).
-  let brapPhase = 0;
   // Zdieľaný šumový buffer pre štrk + praskot (2 s bieleho šumu, vytvorí sa raz).
   let noiseBuf = null;
   function driveCurve(k) {
@@ -76,6 +74,13 @@ export function createSfx() {
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200; lp.Q.value = 1.1;
       const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 45;
       const engineGain = ctx.createGain(); engineGain.gain.value = 0;
+      // Brap-LFO wanklu: sekanie ~29 Hz sa musí modulovať vzorkovo presne
+      // (audio-rate), nie po snímkoch — 28 Hz pri 60 FPS dáva len ~2 vzorky
+      // na periódu a namiesto brapu vzniká nepravidelné chrčanie. LFO beží
+      // vždy, hĺbka 0 ho pre TDI úplne vypne.
+      const brapOsc = ctx.createOscillator(); brapOsc.type = 'sine'; brapOsc.frequency.value = 28;
+      const brapDepth = ctx.createGain(); brapDepth.gain.value = 0;
+      brapOsc.connect(brapDepth); brapDepth.connect(engineGain.gain);
       oscFire.connect(gFire); gFire.connect(shaper);
       oscCrank.connect(gCrank); gCrank.connect(shaper);
       noiseG.connect(shaper);
@@ -83,8 +88,8 @@ export function createSfx() {
       // Sub ide čisto mimo skreslenia, nech tlačí a nebabre.
       oscSub.connect(gSub); gSub.connect(engineGain);
       engineGain.connect(master);
-      oscFire.start(); oscCrank.start(); oscSub.start(); noiseSrc.start();
-      eng = { oscFire, oscCrank, oscSub, noiseBp, noiseG, lp, engineGain, shaper };
+      oscFire.start(); oscCrank.start(); oscSub.start(); noiseSrc.start(); brapOsc.start();
+      eng = { oscFire, oscCrank, oscSub, noiseBp, noiseG, lp, engineGain, shaper, brapOsc, brapDepth };
       return true;
     } catch { return false; }
   }
@@ -115,7 +120,7 @@ export function createSfx() {
       if (SND[id]) sndId = id;
       if (eng && curves) eng.shaper.curve = curves[sndId];
     },
-    engine(rpm01, throttle, dt = 0.0167) {
+    engine(rpm01, throttle) {
       if (!ctx || !eng) return;
       const r = Math.max(0, Math.min(1, Number(rpm01) || 0));
       const th = Math.max(0, Math.min(1, Number(throttle) || 0));
@@ -136,17 +141,19 @@ export function createSfx() {
       // Štrk: pod plynom syčí pásmo, na voľnobeh len šepká.
       eng.noiseBp.frequency.value = 1200 + th * 2000 + r * 400;
       eng.noiseG.gain.value = P.nzBase + th * P.nzTh + r * P.nzR;
-      let g = P.gBase + th * P.gTh + r * P.gR;
-      // Ikonický wankel-brap: sekaná amplitúda na voľnobehu, s otáčkami mizne.
+      const g = P.gBase + th * P.gTh + r * P.gR;
+      // Ikonický wankel-brap (namerané z RX-7: ~29 Hz sekanie, hĺbka ~90 %,
+      // s otáčkami mizne). Celok kmitá g·(1−d) … g — pri voľnobehu takmer
+      // úplné výpadky medzi pulzmi.
       if (sndId === 'wankel') {
-        brapPhase += (10 + r * 10) * dt * 6.2832;
-        const depth = Math.max(0, 1 - r * 2.2);
-        if (depth > 0) {
-          const s = Math.sin(brapPhase);
-          g *= 1 - depth * 0.55 * s * s;
-        }
+        const depth = 0.9 * Math.max(0, 1 - r * 1.8);
+        eng.brapOsc.frequency.value = 28 + r * 10;
+        eng.brapDepth.gain.value = g * depth * 0.5;
+        eng.engineGain.gain.value = g * (1 - depth * 0.5);
+      } else {
+        eng.brapDepth.gain.value = 0;
+        eng.engineGain.gain.value = g;
       }
-      eng.engineGain.gain.value = g;
       // Praskot výfuku: ubratý plyn vo vysokých otáčkach strieľa (wankel viac).
       if (th < 0.08 && r > 0.3 && Math.random() < r * P.popCh) pop(0.5 + r * 0.5);
     },

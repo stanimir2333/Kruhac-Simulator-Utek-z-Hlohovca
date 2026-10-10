@@ -454,7 +454,7 @@ async function boot() {
     updatePeter(dt, t, car, peterApi);
     // Otáčkový pomer z aktívneho profilu (TDI 900–8000 / wankel 1100–15000).
     const rpm01 = (car.rpm - engineDef().idle) / engineDef().range;
-    sfx.engine(rpm01, input.throttle(), dt);
+    sfx.engine(rpm01, input.throttle());
     // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam;
     // wankel strieľa výraznejšie).
     if (!isNoclip()) {
