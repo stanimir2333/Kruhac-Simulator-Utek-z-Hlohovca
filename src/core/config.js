@@ -24,5 +24,5 @@ export const PERF = {
   aiMid2: 122500,           // dosah 350 m, vzdialenosť²
   aiPool2: 160000,          // dosah 400 m, vzdialenosť²
   aiHornRadius2: 3600,      // klaksón do 60 m, vzdialenosť²
-  aiMaxFull: 32,
+  aiMaxFull: 40,           // full-rate áut (kinematika je lacná; LOD-1 ide na 5 Hz)
 };

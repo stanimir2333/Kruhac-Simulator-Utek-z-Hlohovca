@@ -7,6 +7,10 @@
 //   ambientPlace PLNÁ signatúra (c, ri, t, dt, snap, nosus) (js 6981–7008),
 //   safePlace + AI_* consty (js 10669–10695),
 //   updateTraffic CELÁ (js 10696–10916) vrátane wave/stop-go, horn, blockT, LOD, recyklácie,
+//   ODCHÝLKY 2026-10 (cukanie): gap sa meria k najbližšiemu autu vpredu scanom
+//   (legacy `(i+1) % n` bralo náhodné auto, lebo pool ≠ poradie na ceste),
+//   kolóna má vlastné vmax (9,5–11,5, nie lockstep 11), decelerácia 9→5,5,
+//   protismer drží rozostupy a točí kolesami podľa skutočnej rýchlosti.
 //   aiHonk (js 4071–4095) — TELO NAHRADENÉ delegáciou na injektovaný `hornFn` (signatúra zachovaná).
 // ADAPTÁCIE: `player` globál → parameter P/player; `playerS` globál → parameter playerS;
 //   `game.aiTick` → modulový `aiTick`; `game.muted` → modulový `aiMuted` (setMuted) + 5-presná
@@ -24,10 +28,12 @@ import { routePose } from '../world/roads.js';
 import { driveY, LANE_OFF, getTerrainHeight, wheelGroundY } from '../world/height.js';
 
 // ---------- POČTY ÁUT (lokálne consty; legacy js 3775–3777: IS_MOBILE→S.IS_MOBILE) ----------
-export const TRAFFIC_N = S.IS_MOBILE ? 18 : 30;
-export const INCOMING_N = S.IS_MOBILE ? 6 : 8;
-export const AMBIENT_N = S.IS_MOBILE ? 8 : 12;
-export const PARKED_N = 10; // zaparkované z townRoads blízko štartu (modulárna extenzia; legacy ich nemal)
+// Zvýšené (2026-10): instancie = 1 draw call na diel, takže GPU to necíti;
+// CPU update je O(n) s lacným early-outom (collideWorld, LOD pásma).
+export const TRAFFIC_N = S.IS_MOBILE ? 26 : 44;
+export const INCOMING_N = S.IS_MOBILE ? 8 : 12;
+export const AMBIENT_N = S.IS_MOBILE ? 12 : 18;
+export const PARKED_N = 14; // zaparkované z townRoads blízko štartu (modulárna extenzia; legacy ich nemal)
 // Legacy MAXC = 51 (30+8+12+1); rozšírené o PARKED_N, aby sa ALL_CARS vrátane
 // zaparkovaných vošlo do InstancedMesh (inak OOB zápis matíc = neviditeľné autá).
 export const MAXC = TRAFFIC_N + INCOMING_N + AMBIENT_N + PARKED_N;
@@ -274,6 +280,7 @@ export function buildTraffic() {
     const car = makeCar(i % 7);
     car.s = 42 + i * 13.5 + rnd() * 4;
     car.speed = 0; car.lane = LANE_OFF; car.hOff = 0; car.braking = true;
+    car.vmax = 9.5 + rnd() * 2; // vlastná cestovná rýchlosť: kolóna nejde v lockstepe
     routePose(car.s, S._v1, S._hWrap, LANE_OFF);
     car.x = S._v1.x; car.z = S._v1.z; car.h = S._hWrap.v;
     car.y = driveY(car.x, car.z, car.s, LANE_OFF);
@@ -491,10 +498,18 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
       step = c.lodT; c.lodT = 0;
       if (!(step > 0)) step = dt; else if (step > 0.25) step = 0.25;
     }
-    const next = trafficPool[(i + 1) % trafficPool.length];
-    let gap = next.s - c.s;
-    if (gap < 0) gap += routeLen;
-    let cap = 11; // voľný úsek 513-ky
+    // Medzera k NAJBLIŽŠIEMU autu vpredu v tom istom pruhu. Pool poradie NIE JE
+    // poradie na ceste (recyklácia/safePlace ho premieša), takže `(i+1) % n`
+    // meralo náhodné auto → falošné `gap < 7` → cukavé núdzové brzdenia.
+    // Scan je O(n), ~2k lacných odčítaní/snímok pri 44 autách — zanedbateľné.
+    let gap = routeLen;
+    for (let j = 0; j < trafficPool.length; j++) {
+      if (j === i) continue;
+      let g = trafficPool[j].s - c.s;
+      if (g < 0) g += routeLen;
+      if (g < gap) gap = g;
+    }
+    let cap = c.vmax || 11; // vlastná cestovná rýchlosť (nie lockstep 11)
     for (let r = 0; r < S.roundS.length; r++) {
       if (c.s > S.roundS[r] - 50 && c.s < S.roundS[r] + 50) { cap = 2.5 + wave * 2.0; break; } // špunt kruháč
     }
@@ -512,7 +527,7 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
       c.blockT = (lon > 0 && lon < 11 && latv > -2.6 && latv < 2.6) ? 0.3 : 0;
     } else c.blockT -= step;
     if (c.blockT > 0) { target = 0; }
-    if (target > c.speed) { c.speed += 3.2 * step; if (c.speed > target) c.speed = target; } else { c.speed -= 9.0 * step; if (c.speed < target) c.speed = target; }
+    if (target > c.speed) { c.speed += 3.2 * step; if (c.speed > target) c.speed = target; } else { c.speed -= 5.5 * step; if (c.speed < target) c.speed = target; }
     if (c.speed < 0) c.speed = 0;
     c.s += c.speed * step;
     if (c.s > routeLen - 6) { safePlace(c, 8, 1, player); c.speed = 0; } // recyklácia na začiatok
@@ -558,14 +573,24 @@ export function updateTraffic(t, dt, player, playerS, routeLen) {
       step = c.lodT; c.lodT = 0;
       if (!(step > 0)) step = dt; else if (step > 0.25) step = 0.25;
     }
-    c.s -= c.vmax * step;
+    // Rozostupy aj v protismere: rôzne vmax (9/10/11) by sa inak dobiehali
+    // a prechádzali skrz seba. Vpredu = menšie s (ide sa proti staničeniu).
+    let iv = c.vmax, igap = routeLen;
+    for (let j = 0; j < incomingPool.length; j++) {
+      if (j === i) continue;
+      const g2 = c.s - incomingPool[j].s;
+      if (g2 > 0 && g2 < igap) igap = g2;
+    }
+    if (igap < 8) iv = 0;
+    else if (igap < 16) iv = Math.min(iv, 4);
+    c.s -= iv * step;
     if (c.s < 5) { c.lane = -LANE_OFF; c.hOff = Math.PI; safePlace(c, routeLen - 10, -1, player); } else {
       routePose(c.s, S._v1, S._hWrap, -LANE_OFF);
       c.x = S._v1.x; c.z = S._v1.z; c.h = S._hWrap.v + Math.PI;
       c.y = driveY(c.x, c.z, c.s, -LANE_OFF);
       if (c.lod === 0) updateSuspension(c, step, c.s, -LANE_OFF);
     }
-    c.spin += c.speed * step * 2.2;
+    c.spin += iv * step * 2.2; // kolesá podľa skutočnej rýchlosti (speed je 0)
     c.braking = true;
     if (!mut && c.hornCd <= 0 && c.d2 < AI_HORN_RADIUS2 && Math.random() < step * 0.01) {
       if (aiHonk(c)) c.hornCd = 8 + Math.random() * 12;
