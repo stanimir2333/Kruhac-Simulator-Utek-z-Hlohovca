@@ -18,6 +18,7 @@ const CHEAT_DEFS = [
   { code: 'FIXCAR', name: 'REPAIR + RIGHT' },
   { code: 'HESOYAM', name: 'REPAIR + RIGHT' },
   { code: 'TURBO', name: 'TURBO BOOST' },
+  { code: 'BURKA', name: 'BÚRKA' },
 ];
 let CHEAT_MAX = 6;
 for (const d of CHEAT_DEFS) {
@@ -143,6 +144,7 @@ export function runCheat(i, api) {
     }
     case 6: case 7: fixCar(car, toast); break;
     case 8: toggleTurbo(toast); break;
+    case 9: api?.toggleStorm?.(); break;
   }
   cheatToast(d.name);
   // warp zmení pozíciu mimo slučku — daj vedieť main loopu

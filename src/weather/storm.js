@@ -39,6 +39,14 @@ const WET_MATS = [
 const THUNDER_MASTER = 0.9;
 const THUNDER_CRACK_PEAK = 1.0;
 const THUNDER_SUB_PEAK = 1.0;
+// Skutočné údery (public/audio/thunder-*.mp3 — strih z ~/thunder, len praskot +
+// blízke echo, mono 22050 Hz, ~140 kB celkom). Rovnaký 6-kandidátový vzor ciest
+// ako rádio (Vite dev / dist / python http.server / Pages / file://).
+const THUNDER_FILES = ['thunder-1.mp3', 'thunder-2.mp3', 'thunder-3.mp3', 'thunder-4.mp3'];
+const THUNDER_CANDS = [
+  '/audio/', './audio/', 'audio/',
+  '/public/audio/', './public/audio/', 'public/audio/',
+];
 
 export function createStormManager() {
   // ---------- STAV (všetko v closure, žiadne globály) ----------
@@ -66,6 +74,9 @@ export function createStormManager() {
   // Zvuk (vlastný kontext, lenivé — vznikne až pri prvom start() po geste).
   let actx = null, stormMaster = null, rainGain = null, noiseBuf = null;
   let echoBus = null;
+  // Dekódované údery (variácie 1–4); prázdne = offline/file:// bez súborov,
+  // vtedy hrá čisto procedurálny fallback v thunder().
+  let sampleBufs = [], samplesLoading = false;
   const pendingTimers = [];
 
   // Pôvodné drsnosti ciest na obnovu po stop().
@@ -273,9 +284,51 @@ export function createStormManager() {
     }
   }
 
+  // Vzorky úderov: stiahnu sa raz pri prvom štarte búrky (po geste, takže
+  // fetch aj decodeAudioData sú povolené). 404 kandidát = skúsi ďalšieho.
+  async function loadSamples() {
+    if (!actx || samplesLoading || sampleBufs.length) return;
+    samplesLoading = true;
+    for (const f of THUNDER_FILES) {
+      for (const base of THUNDER_CANDS) {
+        try {
+          const r = await fetch(base + f);
+          if (!r.ok) continue;
+          const buf = await actx.decodeAudioData(await r.arrayBuffer());
+          sampleBufs.push(buf);
+          break;
+        } catch { /* ďalší kandidát */ }
+      }
+    }
+    samplesLoading = false;
+    if (sampleBufs.length) console.info('[búrka] hromy: ' + sampleBufs.length + '/4 vzoriek');
+  }
+
+  // Náhodná variácia úderu: blízky = hlasný + jasný, vzdialený = tichší + tmavší
+  // (dolná priepusť). Vracia false, keď niet čo hrať (fallback procedúra).
+  function playSample(loud) {
+    if (!actx || !sampleBufs.length) return false;
+    const k = Math.max(0.3, Math.min(1, loud));
+    try {
+      const src = actx.createBufferSource();
+      src.buffer = sampleBufs[(Math.random() * sampleBufs.length) | 0];
+      src.playbackRate.value = rnd(0.9, 1.08);
+      const lp = actx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.Q.value = 0.5;
+      lp.frequency.value = 600 + k * 7400;
+      const g = actx.createGain();
+      g.gain.value = k; // vzorky majú peak ~1.0 — hlasitosť riadi táto obálka
+      src.connect(lp); lp.connect(g); g.connect(stormMaster); g.connect(echoBus);
+      src.start();
+      return true;
+    } catch { return false; }
+  }
+
   // Hlasný hrom: praskot (šum zhora nadol) + dunivý sub-basový pokles s echom.
   function thunder(loud) {
     if (!ensureAudio() || !actx) return;
+    // Najprv skutočná vzorka (variácie 1–4); bez súborov duní syntéza.
+    if (playSample(loud)) return;
     const t0 = actx.currentTime + 0.01;
     const k = Math.max(0.3, Math.min(1, loud));
     // (a) PRASKOT — úder blízko práskne: šum 0,5 s cez padajúcu priepusť 4 kHz → 150 Hz.
@@ -358,6 +411,7 @@ export function createStormManager() {
     active = true;
     gen++;
     ensureAudio();
+    loadSamples(); // fire-and-forget: údery medzitým hrajú zo syntézy
     setRainLevel(0.16);
     setWet(true);
     strikeT = rnd(0.5, 1.5); // prvý blesk príde rýchlo (efekt hneď vidno)
@@ -445,6 +499,7 @@ export function createStormManager() {
     }
     try { actx?.close?.(); } catch { /* noop */ }
     actx = null; stormMaster = null; rainGain = null; echoBus = null; noiseBuf = null;
+    sampleBufs = []; samplesLoading = false;
     ready = false;
   }
 

@@ -79,6 +79,13 @@ manifest (mená staníc svietia) ale 8 chýbajúcich mp3 → 404 spustený
 bez akejkoľvek chyby na obrazovke. Git LFS tu nepoužívame (Pages by servíroval
 pointery).
 
+`public/audio/thunder-*.mp3` (4 údery, ~140 kB) sú tiež VERZOVANÉ: strih
+z `~/thunder/*.wav` (len praskot + blízke echo, mono 22050 Hz, peak ~1.0;
+`ffmpeg -ss/-t` + `volume` + `alimiter` + `lame -V 4 -m m`). Búrka
+(`src/weather/storm.js`) ich ťahá vlastným 6-kandidátovým zoznamom, NIE cez
+`manifest.json` — `extract:check` ich teda neprepíše. Bez súborov (file://)
+hrá procedurálny fallback zo syntézy.
+
 There is **no deploy config at all**: no `.github/workflows`, no CNAME/.nojekyll,
 `dist/` is gitignored. Pages slúži **koreň repa** (z `main`/root), takže
 `index.html` beží bez buildu a `three` rieši importmap na unpkg

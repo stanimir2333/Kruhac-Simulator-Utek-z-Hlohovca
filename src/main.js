@@ -284,11 +284,18 @@ async function boot() {
   // Hudba [C] — rovnaký vzor ako zvuk: klávesa aj klikateľný topbar.
   document.getElementById('music-btn')?.addEventListener('click', () => toggleMusic());
 
+  // Búrka [B] aj cheat BURKA — jedna cesta, nech sa stav hlási vždy rovnako.
+  const toggleStorm = () => {
+    storm.toggle();
+    hud.toast(storm.isActive() ? 'BÚRKA: ZAP. [B] — blesky, dážď, mokrá vozovka' : 'BÚRKA: VYP. [B] — cesty schnú');
+  };
+
   // klávesové skratky mimo input.js + cheat-kódy (GTA štýl: písanie hocikde)
   const cheatApi = {
     car, toast: (m) => hud.toast(m),
     playing: () => state.started && !state.paused,
     onWarp: () => { playerS = nearestRoute(car.x, car.z).s; },
+    toggleStorm,
   };
   addEventListener('keydown', (e) => {
     // cheat buffer: písmená a–z (WASD šliapu ďalej, pohyb sa nikdy nefiltruje)
@@ -311,10 +318,7 @@ async function boot() {
     if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyC' && !typing) toggleMusic();
     if (e.code === 'KeyG' && !typing) toggleEngine();
-    if (e.code === 'KeyB' && !typing) {
-      storm.toggle();
-      hud.toast(storm.isActive() ? 'BÚRKA: ZAP. [B] — blesky, dážď, mokrá vozovka' : 'BÚRKA: VYP. [B] — cesty schnú');
-    }
+    if (e.code === 'KeyB' && !typing) toggleStorm();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });
