@@ -32,6 +32,7 @@ import { createTraffic, placeTraffic, updateTraffic, nearestRoute, buildCarMeshe
 // Polícia odstránená na želanie (bola len otravná): žiadne hliadky, heat ani ping.
 import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
+import { createStormManager } from './weather/storm.js';
 import { createBloom } from './fx/bloom.js';
 import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI } from './ui/settings.js';
@@ -242,6 +243,12 @@ async function boot() {
   initWater(renderer, scene, camera, skyDome, settings.water);
   setWaterQuality(settings.water);
 
+  // Búrka (blesky + dážď + hromy + mokré cesty) — štartuje sa klávesou [B].
+  const storm = createStormManager();
+  storm.init({ scene, camera, sun });
+  storm.setMuted(state.muted);
+  engine.onResizeExtra(() => storm.resize());
+
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
   const radio = createRadio(document.getElementById('bgm'));
@@ -269,6 +276,7 @@ async function boot() {
     state.muted = !state.muted;
     sfx.setMuted(state.muted);
     setMuted(state.muted);
+    storm.setMuted(state.muted);
     syncSndBtn();
   };
   document.getElementById('snd-btn')?.addEventListener('click', toggleMute);
@@ -303,6 +311,10 @@ async function boot() {
     if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyC' && !typing) toggleMusic();
     if (e.code === 'KeyG' && !typing) toggleEngine();
+    if (e.code === 'KeyB' && !typing) {
+      storm.toggle();
+      hud.toast(storm.isActive() ? 'BÚRKA: ZAP. [B] — blesky, dážď, mokrá vozovka' : 'BÚRKA: VYP. [B] — cesty schnú');
+    }
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
       Object.assign(car, { x: _v3.x, z: _v3.z, h: _hWrap.v, speed: 0, temp: 0.2, stress: 0, fuel: 1, trip: 0 });
@@ -471,6 +483,10 @@ async function boot() {
 
     // voda: vlny + fade odrazu + throttlovaný plánový odraz (pred renderom)
     updateWater(dt, settings.dist);
+
+    // búrka: dážď okolo auta + blesky + hromy + prítmie (za pauzou sa nevolá —
+    // tick sa vrátil skôr, takže dážď pri pauze stojí rovnako ako zvyšok sveta)
+    storm.update(dt, car);
 
     // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
     if (settings.rt) {
