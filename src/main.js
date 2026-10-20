@@ -247,6 +247,10 @@ async function boot() {
     scene, camera, car, input, renderer, sfx,
     // Citlivosť pohľadu z nastavení (settings.sens) — živá hodnota.
     sens: () => settings.sens,
+    // pauza = nastavenia / veľká mapa / skrytý tab: myš smie otáčať pohľadom
+    // len počas hry (inak sa pohľad zmení pod prekrytím a po zavretí menu je
+    // posunutý, "ako keby išiel opačne").
+    paused: () => state.paused,
     toast: (m) => hud.toast(m),
   });
 

@@ -14,10 +14,18 @@ const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
-// Citlivosť pohľadu: rad/px. 0.0032 → 18°/100px, 0.0020 → 11,5°, 0.0014 → 8° —
-// po každom znížení stále "hnala". Teraz 100 px myse = ~5°; rýchly pocit
-// nedosiahneš znova cez slider (settings.sens až 250 %).
-const LOOK_SENS = 0.0009;
+// Citlivosť pohľadu: rad/px. 0.0009 (~5°/100 px) bola ešte stále príliš —
+// s unadjustedMovement sú delty RAW counts a pri 1600 DPI myši išiel celý
+// nábeh 2–3× citlivejšie ako štandard CS; trh tak pritlačil pitch na doraz
+// clampu ("zamknuté na oblohu/telo"). 0.00045 ≈ 0.026°/px; slider nastavení
+// (0.3–2.5×) zostáva k dispozícii.
+const LOOK_SENS = 0.00045;
+// Mäkký strop rýchlosti pohľadu: rozpočet dopĺňa REÁLNY ČAS (px/ms), takže
+// je nezávislý od FPS aj od počtu mousemove eventov (125 Hz aj 1000 Hz myš
+// otáča rovnako rýchlo). Normálny pohyb (≤ ~20 px/ms pri 1600 DPI) ide 1:1;
+// strop chytí len obrieventy z akcelerácie OS v fallback režime.
+const LOOK_RATE = 30;   // dopĺňané px za ms
+const LOOK_BUDGET = 60; // max delta použitá na jeden event (px)
 const TOUCH_SENS = 0.0022; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
 
@@ -153,8 +161,9 @@ export function createOnFoot(opts = {}) {
   };
   let touchLook = -1;
   let touchX = 0, touchY = 0;
-  // Raw delty myši za aktuálny snímok (súčítané cez všetky mousemove eventy).
-  let accDX = 0, accDY = 0;
+  // Časový rozpočet rýchlosti myši (pozri LOOK_RATE vyžšie). Čas posledného
+  // mousemove a nenaplnený rozpočet px; používajú sa v handleri nižšie.
+  let lastMoveT = 0, budgetPx = 0;
   // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
   let lockFailed = false;
 
@@ -279,8 +288,8 @@ export function createOnFoot(opts = {}) {
     foot.grounded = true;
     foot.phase = 0;
     foot.moveSpeed = 0;
-    accDX = 0;
-    accDY = 0;
+    lastMoveT = 0;
+    budgetPx = 0;
     car.speed = 0;
     car.steer = 0;
     root.visible = true;
@@ -335,24 +344,6 @@ export function createOnFoot(opts = {}) {
   function updateActive(dt) {
     const k = input?.keys || {};
     const locked = document.pointerLockElement === canvas;
-    // Raw delty z mousemove aplikované raz za snímok. tanh dáva malému
-    // pohybu 1:1, mäkký strop ~100 px/snímok znamená, že trh (~400 px raw)
-    // netočí viac ako ~5° — pitch sa viac nepichne na doraz clampu
-    // ("zamknuté na telo/oblohu") — nezávisí od toho, koľkými eventmi myš
-    // daný snímok pohla.
-    if (accDX !== 0 || accDY !== 0) {
-      const s = LOOK_SENS * sensFactor();
-      const CAP = 100;
-      const dx = CAP * Math.tanh(accDX / CAP);
-      const dy = CAP * Math.tanh(accDY / CAP);
-      // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
-      // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
-      // obrátená (pohyb vpravo otáčal pohľad doľava).
-      foot.yaw -= dx * s;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
-      accDX = 0;
-      accDY = 0;
-    }
     const left = !!(k.KeyA || k.ArrowLeft || input?.touch?.left);
     const right = !!(k.KeyD || k.ArrowRight || input?.touch?.right);
     const fwd = (k.KeyW || k.ArrowUp || input?.touch?.gas ? 1 : 0) - (k.KeyS || k.ArrowDown || input?.touch?.brake ? 1 : 0);
@@ -447,18 +438,30 @@ export function createOnFoot(opts = {}) {
       if (foot.active && e.button === 0) weapons.releaseTrigger();
     });
     addEventListener('mousemove', (e) => {
-      if (!foot.active) return;
+      // Priemyselný čas: rozpočet sa dopĺňa od posledného eventu (px/ms),
+      // takže strop je nezávislý od FPS aj od hustoty eventov.
+      const ts = typeof e.timeStamp === 'number' && e.timeStamp > 0 ? e.timeStamp : performance.now();
+      const gap = lastMoveT ? Math.max(0, ts - lastMoveT) : 16;
+      lastMoveT = ts;
+      // Pauza (nastavenia/veľká mapa/skrytý tab): pohľad NESMIE rotovať — inak
+      // sa pohľad zmení pod prekrytím a po zavretí menu je posunutý.
+      if (!foot.active || (opts.paused && opts.paused())) { budgetPx = 0; return; }
       const locked = document.pointerLockElement === canvas;
       // Bez pointer locku myš neotáča (A/D otáčajú), kým sa lock nepodarí.
       // Ak ho prehliadač zablokuje (lockFailed), funguje relatívny pohyb
       // myši ako fallback — hráč sa aspoň dá otočiť.
-      if (!locked && !lockFailed) return;
-      // Delty sa TU IBA SČÍTAJÚ — aplikuje ich updateActive() raz za snímok.
-      // Doteraz rotoval handler po KAŽDOM evente: 1000 Hz myš pošle na jediný
-      // snímok aj ~8 eventov a delty sa násobili ich počtom, takže jeden trh
-      // pritlačil pitch na doraz clampu ("zamknuté na telo/oblohu").
-      accDX += e.movementX || 0;
-      accDY += e.movementY || 0;
+      if (!locked && !lockFailed) { budgetPx = 0; return; }
+      // Aplikácia HNEĎ v handleri (žiadna latencia na ďalší snímok).
+      budgetPx = Math.min(LOOK_BUDGET, budgetPx + gap * LOOK_RATE);
+      const s = LOOK_SENS * sensFactor();
+      const tx = Math.max(-budgetPx, Math.min(budgetPx, e.movementX || 0));
+      const ty = Math.max(-budgetPx, Math.min(budgetPx, e.movementY || 0));
+      budgetPx -= Math.abs(tx) + Math.abs(ty);
+      // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
+      // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
+      // obrátená (pohyb vpravo otáčal pohľad doľava).
+      foot.yaw -= tx * s;
+      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - ty * s));
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
