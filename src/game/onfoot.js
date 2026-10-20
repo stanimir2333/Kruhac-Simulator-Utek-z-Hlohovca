@@ -170,6 +170,7 @@ export function createOnFoot(opts = {}) {
   let lastMoveT = 0, budgetPx = 0;
   // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
   let lockFailed = false;
+  let lockFails = 0;
 
   // Násobka citlivosti z nastavení (settings.sens). Bez locku myši je to
   // jediný spôsob, ako pohyb myši vplýva na pohľad.
@@ -266,6 +267,7 @@ export function createOnFoot(opts = {}) {
     setTimeout(() => {
       if (foot.active && document.pointerLockElement !== canvas && !lockFailed) {
         lockFailed = true;
+        console.warn('[onfoot] pointer lock nenastal bez odpovede — request zamietnutý ticho (často file:// alebo oddialený rám)');
         toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu, skúsi to znova.', 3600);
       }
     }, 600);
@@ -274,9 +276,12 @@ export function createOnFoot(opts = {}) {
     // Firefox/Chrome chránia re-lock krátodobým cooldownom po ESC — chyba
     // musí o sebe dať vedieť, inak hráč beží vo fallbacke (myš po obrazovke,
     // okraje pohľad zastavia) a myslí si, že je citlivosť rozbitá.
+    lockFails++;
+    console.warn('[onfoot] pointer lock odmietnutý (pokus', lockFails,
+      ') — pravdepodobný cooldown po ESC, alebo zamietnuté povolenie stránky (Firefox: ikona v adresnom riadku)');
     if (foot.active && !lockFailed) {
       lockFailed = true;
-      toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu, skúsi to znova. Pokiaľ nie je zamknutý, pohľad ohraničujú okraje obrazovky.', 4200);
+      toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu o chvíľu. Firefox: ak sa opakuje, povoľ „Skryť kurzor“ v ikone v adresnom riadku.', 6000);
     } else {
       lockFailed = true;
     }
