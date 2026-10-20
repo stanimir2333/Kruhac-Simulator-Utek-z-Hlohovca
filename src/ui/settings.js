@@ -25,7 +25,7 @@ export const settings = {
   rt: true, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
   music: 1, // hudba (rádio) ZAP = 1 / VYP = 0; motor a zvuky idú vždy
   engine: 'tdi', // motor: 'tdi' (1.9 TDI) | 'wankel' (4-rotor)
-  sens: 1, // citlivosť pohľadu pešo (násobka, 0.3–2.5)
+  sens: 1, // citlivosť pohľadu pešo (násobka, 0.05–4)
 };
 // Mená motorov pre label (bez importu fyziky — settings nesmie ťahať vehicle).
 const ENGINE_NAME = { tdi: '1.9 TDI', wankel: '4-ROTOR' };
@@ -248,7 +248,7 @@ export function loadSettings() {
     settings.rtQl = storedNum(s.rtQl, 0.3, 1, settings.rtQl);
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     if (s.eng === 'tdi' || s.eng === 'wankel') settings.engine = s.eng;
-    settings.sens = storedNum(s.sen, 0.3, 2.5, settings.sens);
+    settings.sens = storedNum(s.sen, 0.05, 4, settings.sens);
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
 }

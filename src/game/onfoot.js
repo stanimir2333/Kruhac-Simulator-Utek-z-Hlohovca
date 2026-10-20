@@ -14,12 +14,12 @@ const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
-// Citlivosť pohľadu: rad/px. 0.0009 (~5°/100 px) bola ešte stále príliš —
-// s unadjustedMovement sú delty RAW counts a pri 1600 DPI myši išiel celý
-// nábeh 2–3× citlivejšie ako štandard CS; trh tak pritlačil pitch na doraz
-// clampu ("zamknuté na oblohu/telo"). 0.00045 ≈ 0.026°/px; slider nastavení
-// (0.3–2.5×) zostáva k dispozícii.
-const LOOK_SENS = 0.00045;
+// Citlivosť pohľadu: rad/px. S unadjustedMovement sú delty RAW counts, takže
+// pocit závisí od DPI myši (800/1600/3200 DPI = 2×/4× rozdiel). História
+// 0.0032 → … → 0.0009 → 0.00045 bola vždy "stále hnalá", lebo sa hádalo DPI.
+// 0.00018 ≈ 0.0103°/px = CS-pocit pri 1600 DPI (360° ≈ 55 cm nábeh);
+// pri 800 DPI si zámaľ otáčaš hore sliderom — rozsah je 5–400 %.
+const LOOK_SENS = 0.00018;
 // Mäkký strop rýchlosti pohľadu: rozpočet dopĺňa REÁLNY ČAS (px/ms), takže
 // je nezávislý od FPS aj od počtu mousemove eventov (125 Hz aj 1000 Hz myš
 // otáča rovnako rýchlo). Normálny pohyb (≤ ~20 px/ms pri 1600 DPI) ide 1:1;
