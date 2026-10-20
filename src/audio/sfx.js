@@ -10,6 +10,15 @@ const SND = {
   tdi: { drive: 7, lpBase: 1000, lpTh: 4200, lpR: 1200, nzBase: 0.012, nzTh: 0.11, nzR: 0.025, gBase: 0.075, gTh: 0.19, gR: 0.035, popCh: 0.14, popLo: 0.15, popHi: 0.25 },
   wankel: { drive: 10, lpBase: 1500, lpTh: 5000, lpR: 2000, nzBase: 0.02, nzTh: 0.14, nzR: 0.03, gBase: 0.085, gTh: 0.21, gR: 0.04, popCh: 0.2, popLo: 0.2, popHi: 0.3 },
 };
+// Výstrel pešo: krátky šumový tresk (pásmo podľa kalibru) + nízky "tlak" do hrude.
+// Bez vzoriek — syntéza z toho istého noiseBuf ako štrk výfuku.
+const GUN = {
+  '9mm': { f: 1900, q: 0.9, rate: 1.5, dur: 0.11, peak: 0.30, thump: 150, thumpGain: 0.22 },
+  mp5: { f: 2300, q: 1.0, rate: 1.6, dur: 0.13, peak: 0.26, thump: 130, thumpGain: 0.18 },
+  bmg: { f: 850, q: 0.6, rate: 0.7, dur: 0.30, peak: 0.55, thump: 62, thumpGain: 0.40 },
+  tec9: { f: 2500, q: 1.2, rate: 1.8, dur: 0.10, peak: 0.22, thump: 165, thumpGain: 0.14 },
+  ak47: { f: 1500, q: 0.8, rate: 1.1, dur: 0.17, peak: 0.40, thump: 100, thumpGain: 0.28 },
+};
 export function createSfx() {
   // Stav motora: zapaľovacia frekvencia 4-valca (2 zážihy / otáčka),
   // kľukový polovičný tón (lope na voľnobehu), sub-bas a šumový štrk výfuku.
@@ -21,6 +30,9 @@ export function createSfx() {
   // Aktívny zvukový profil (prepína setEngine; krivky skreslenia predpečené obe).
   let sndId = 'tdi';
   let curves = null;
+  // Pešo motor stíchne (nie je to len vynechaný `engine()` call — graf by ostal
+  // visieť na posledných otáčkach a hučal by ďalej).
+  let engineOn = true;
   // Zdieľaný šumový buffer pre štrk + praskot (2 s bieleho šumu, vytvorí sa raz).
   let noiseBuf = null;
   function driveCurve(k) {
@@ -120,8 +132,14 @@ export function createSfx() {
       if (SND[id]) sndId = id;
       if (eng && curves) eng.shaper.curve = curves[sndId];
     },
+    // Zapnutie/vypnutie zvuku motora (vystúpenie z auta / nastúpenie).
+    setEngineActive(on) {
+      engineOn = !!on;
+      if (eng && !engineOn) eng.engineGain.gain.value = 0;
+    },
     engine(rpm01, throttle) {
       if (!ctx || !eng) return;
+      if (!engineOn) { eng.engineGain.gain.value = 0; return; }
       const r = Math.max(0, Math.min(1, Number(rpm01) || 0));
       const th = Math.max(0, Math.min(1, Number(throttle) || 0));
       const E = engineDef();
@@ -164,6 +182,30 @@ export function createSfx() {
       g.gain.setValueAtTime(0.08, ctx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
       o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime + 0.5);
+    },
+    // Výstrel pešo — jeden šumový tresk + nízky tlak (GUN tabuľka podľa id zbrane).
+    gunshot(id = '9mm') {
+      if (!ensure() || !noiseBuf || !master) return;
+      const P = GUN[id] || GUN['9mm'];
+      const t0 = ctx.currentTime;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      src.playbackRate.value = P.rate;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = P.f; bp.Q.value = P.q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(P.peak, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + P.dur);
+      src.connect(bp); bp.connect(g); g.connect(master);
+      src.start(t0, Math.random() * 1.5, P.dur + 0.02);
+      src.stop(t0 + P.dur + 0.03);
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(P.thump, t0);
+      o.frequency.exponentialRampToValueAtTime(Math.max(40, P.thump * 0.45), t0 + 0.09);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(P.thumpGain, t0);
+      og.gain.exponentialRampToValueAtTime(0.001, t0 + 0.11);
+      o.connect(og); og.connect(master);
+      o.start(t0); o.stop(t0 + 0.13);
     },
     crash(v = 1) {
       if (!ensure()) return;

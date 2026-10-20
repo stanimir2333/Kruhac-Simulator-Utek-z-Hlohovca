@@ -44,6 +44,7 @@ import {
   updateBoostHUD, updateTurbo, toggleTurbo, turboActive, TURBO_TQ,
 } from './game/missions.js';
 import { buildPeter, updatePeter, peterTalk, peterReset, PETER } from './game/peter.js';
+import { createOnFoot } from './game/onfoot.js';
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
@@ -237,6 +238,14 @@ async function boot() {
   state.police = null;
   const minimap = createMinimap(state, { traffic, peter: PETER });
 
+  // PEŠO (vystúpenie z auta): chôdza kolíziou s budovami/autami, kamera, zbrane
+  // a chodci. Až tu — potrebuje S.BX/S.BGRID (budovy), S.townRoads (chodci)
+  // aj ALL_CARS (zásahy do áut), ktoré vznikajú vyššie.
+  const onfoot = createOnFoot({
+    scene, camera, car, input, renderer, sfx,
+    toast: (m) => hud.toast(m),
+  });
+
   // Odraz Váhu až PO autách (mirror vrstva musí vidieť aj meshe áut, ako v monolitu).
   // + zosynchronizuj materiál s uloženou kvalitou (boot inak nechá shader aj pri VYP).
   await step(0.93, 'odraz Váhu…');
@@ -305,6 +314,10 @@ async function boot() {
       cheatCancel(); // iná klávesa zruší písanie kódu
     }
     const typing = cheatLocked();
+    // Pešo: 1–5 zbraň, R prebiť, ENTER vystúpiť/nastúpiť — pred ostatnými
+    // skratkami (inak by R reštartoval hru a Enter nič nerobil). Enter v aute
+    // vystúpi; ENTER pešo pri aute nastúpi.
+    if (!typing && state.started && !state.paused && onfoot.handleKey(e.code)) return;
     if (e.code === 'KeyH' && state.started && !typing) sfx.honk();
     if (e.code === 'KeyQ' && !typing) radio.prev();
     if (e.code === 'KeyE' && !typing && !isNoclip()) radio.next();
@@ -398,52 +411,71 @@ async function boot() {
       return;
     }
 
-    // — hráč (turbo dvíha limiter na profilový turbo-strop; noclip lieta bez fyziky) —
-    car.vmax = turboActive() ? engineDef().turboVmax : engineDef().vmax;
-    updateTurbo(dt, toastFn);
-    tel = vehicleTelemetry();
-    tel.kmh = Math.abs(car.speed) * KMH_PER_MPS;
-    tel.drifting = false;
-    tel.accel = 0;
+    // — hráč: pešo (chôdza + zbrane, auto stojí) alebo za volantom (fyzika,
+    //   turbo, noclip). Pešia vetva beží PRED dopravou, tá ide s foot pozíciou.
+    const walking = onfoot.active;
     let impact = 0;
-    if (isNoclip()) {
-      updateNoclip(dt, car, input);
+    if (walking) {
+      onfoot.updateActive(dt);
+      Object.assign(state.player, {
+        x: onfoot.foot.x, y: onfoot.foot.y, z: onfoot.foot.z, h: onfoot.foot.h,
+        speed: 0, temp: car.temp, stress: car.stress, rpm: 0, gear: 0,
+        fuel: car.fuel, trip: car.trip, odo: car.odo, oilT: car.oilT,
+      });
+      engineViz.update(0, dt);
     } else {
-      // Skutočná priečna odchýlka od trasy: mostovka platí len ±7 m od osi
-      // (s lat=0 by deckBlend dvíhal auto do nekonečna do strán).
-      const gy = driveY(car.x, car.z, playerS, playerLat);
-      tel = updateVehicle(car, input, dt, gy, turboActive() ? TURBO_TQ : 1);
-      impact = collideWorld(car, traffic.cars);
-    }
-    car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
-    if (impact > 0.15) {
-      sfx.crash(Math.min(1, impact / 6));
-      if (impact > 1.2) {
-        emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
-        car.oilT = 2.5; // olejka bliká po tvrdej rane
+      car.vmax = turboActive() ? engineDef().turboVmax : engineDef().vmax;
+      updateTurbo(dt, toastFn);
+      tel = vehicleTelemetry();
+      tel.kmh = Math.abs(car.speed) * KMH_PER_MPS;
+      tel.drifting = false;
+      tel.accel = 0;
+      if (isNoclip()) {
+        updateNoclip(dt, car, input);
+      } else {
+        // Skutočná priečna odchýlka od trasy: mostovka platí len ±7 m od osi
+        // (s lat=0 by deckBlend dvíhal auto do nekonečna do strán).
+        const gy = driveY(car.x, car.z, playerS, playerLat);
+        tel = updateVehicle(car, input, dt, gy, turboActive() ? TURBO_TQ : 1);
+        impact = collideWorld(car, traffic.cars);
       }
+      car.stress = Math.max(0, Math.min(1, car.stress + impact * 0.03 - dt * 0.02));
+      if (impact > 0.15) {
+        sfx.crash(Math.min(1, impact / 6));
+        if (impact > 1.2) {
+          emitSparks(car.x, car.y + 0.6, car.z, Math.min(24, (impact * 2) | 0));
+          car.oilT = 2.5; // olejka bliká po tvrdej rane
+        }
+      }
+      // — drift + častice —
+      updateDrift(dt, car, input);
+      if (tel.drifting) emitDriftSmoke(car);
+      Object.assign(state.player, {
+        x: car.x, y: car.y, z: car.z, h: car.h, speed: car.speed,
+        temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
+        fuel: car.fuel, trip: car.trip, odo: car.odo, oilT: car.oilT,
+      });
+      engineViz.update(car.rpm, dt);
+      // Chodci žijú aj za volantom (chôdza po chodníkoch okolo áut).
+      onfoot.updateAmbient(dt, car.x, car.z);
     }
-    // — drift + častice —
-    updateDrift(dt, car, input);
-    if (tel.drifting) emitDriftSmoke(car);
     updateParticles(dt);
-    Object.assign(state.player, {
-      x: car.x, y: car.y, z: car.z, h: car.h, speed: car.speed,
-      temp: car.temp, stress: car.stress, rpm: car.rpm, gear: car.gear,
-      fuel: car.fuel, trip: car.trip, odo: car.odo, oilT: car.oilT,
-    });
-    engineViz.update(car.rpm, dt);
+
+    // Pešo je ohniskom sveta chodec, inak auto (dážď, tiene, culling, kamera).
+    const focusX = walking ? onfoot.foot.x : car.x;
+    const focusY = walking ? onfoot.foot.y : car.y;
+    const focusZ = walking ? onfoot.foot.z : car.z;
 
     // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —
     slowAcc += dt;
     if (slowAcc > ROUTE_PROJECTION_INTERVAL) {
       slowAcc = 0;
-      const nr = nearestRoute(car.x, car.z);
+      const nr = nearestRoute(focusX, focusZ);
       playerS = nr.s;
       // lat = priemet do pravého smeru trasy (routePose: posun = (-cos h, +sin h) * L)
-      playerLat = -(car.x - nr.x) * Math.cos(nr.h) + (car.z - nr.z) * Math.sin(nr.h);
-      // ciel misie: koniec trasy
-      if (playerS > S.routeLen - 25 && !state.finished) {
+      playerLat = -(focusX - nr.x) * Math.cos(nr.h) + (focusZ - nr.z) * Math.sin(nr.h);
+      // ciel misie: koniec trasy (pešo sa misia neplní — auto stojí)
+      if (!walking && playerS > S.routeLen - 25 && !state.finished) {
         state.finished = true; state.started = false;
         sfx.win();
         const mins = Math.floor(state.time / 60), secs = Math.floor(state.time % 60);
@@ -467,15 +499,19 @@ async function boot() {
     updateTraffic(traffic, dt, state.player, playerS, S.routeLen);
     missionApi.playerS = playerS;      // playerS je `let` — poloha beží
     peterApi.started = state.started;
-    updateMissions(dt, missionApi);
+    // Pešo sa misie nehodnotia (auto stojí, únik pokračuje až za volantom).
+    if (!walking) updateMissions(dt, missionApi);
     updatePeter(dt, t, car, peterApi);
     // Otáčkový pomer z aktívneho profilu (TDI 900–8000 / wankel 1100–15000).
+    // Pešo motor mlčí (setEngineActive ho stlmil pri vystúpení).
     const rpm01 = (car.rpm - engineDef().idle) / engineDef().range;
-    sfx.engine(rpm01, input.throttle());
-    // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam;
-    // wankel strieľa výraznejšie).
-    if (!isNoclip()) {
-      updateExhaustFlames(dt, car, input.throttle(), rpm01, engineDef().id === 'wankel' ? 1.7 : 1);
+    if (!walking) {
+      sfx.engine(rpm01, input.throttle());
+      // Plamene z výfuku pri pustení plynu (len hráč, nie ghost-cam;
+      // wankel strieľa výraznejšie).
+      if (!isNoclip()) {
+        updateExhaustFlames(dt, car, input.throttle(), rpm01, engineDef().id === 'wankel' ? 1.7 : 1);
+      }
     }
 
     // — meshe —
@@ -490,27 +526,29 @@ async function boot() {
 
     // búrka: dážď okolo auta + blesky + hromy + prítmie (za pauzou sa nevolá —
     // tick sa vrátil skôr, takže dážď pri pauze stojí rovnako ako zvyšok sveta)
-    storm.update(dt, car);
+    storm.update(dt, walking ? onfoot.foot : car);
 
     // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
     if (settings.rt) {
-      const diag = updateSunShadow(sun, car.x, car.y, car.z, settings.dist, shadowTierR());
+      const diag = updateSunShadow(sun, focusX, focusY, focusZ, settings.dist, shadowTierR());
       if (diag) setShadowDiag(diag.texel, diag.depth);
     }
     // distance culling: chunky (budovy + vegetácia) a blízke štítky, oboje 2 Hz.
     // Obe boli naplnené, ale nikdy neprefiltrované — mení len .visible, teda
     // frustum culling aj fyzika (S.BX/S.BF) ostávajú nedotknuté.
-    cullChunks(car.x, car.z, t);
-    cullLabels(car.x, car.z, t);
+    cullChunks(focusX, focusZ, t);
+    cullLabels(focusX, focusZ, t);
 
-    // — kamera (naháňačka s vyhladením) —
-    const fx = Math.sin(car.h), fz = Math.cos(car.h);
-    const k = Math.min(1, 4.5 * dt);
-    camPos.x += (car.x - fx * 9 - camPos.x) * k;
-    camPos.y += (car.y + 3.6 - camPos.y) * k;
-    camPos.z += (car.z - fz * 9 - camPos.z) * k;
-    camera.position.copy(camPos);
-    camera.lookAt(car.x + fx * 7, car.y + 1.6, car.z + fz * 7);
+    // — kamera (naháňačka s vyhladením); pešo si kameru riadi onfoot sám —
+    if (!walking) {
+      const fx = Math.sin(car.h), fz = Math.cos(car.h);
+      const k = Math.min(1, 4.5 * dt);
+      camPos.x += (car.x - fx * 9 - camPos.x) * k;
+      camPos.y += (car.y + 3.6 - camPos.y) * k;
+      camPos.z += (car.z - fz * 9 - camPos.z) * k;
+      camera.position.copy(camPos);
+      camera.lookAt(car.x + fx * 7, car.y + 1.6, car.z + fz * 7);
+    }
 
     // — HUD (5 Hz) —
     hudAcc += dt;

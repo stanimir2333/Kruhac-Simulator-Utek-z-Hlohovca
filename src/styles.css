@@ -160,6 +160,37 @@
   #peter .ptext{color:#ffd97a;margin-top:3px;line-height:1.6;white-space:pre-wrap;}
   #boost-badge{display:none;color:var(--green);}
   #boost-badge.on{display:inline;}
+  /* ---------- PEŠO: zameriavač + panel zbrane ---------- */
+  #crosshair{position:fixed;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;
+    z-index:52;pointer-events:none;display:none;}
+  #crosshair.on{display:block;}
+  #crosshair::before,#crosshair::after{content:"";position:absolute;
+    background:#39ff6a;box-shadow:0 0 6px rgba(57,255,106,.85);}
+  #crosshair::before{left:50%;top:0;width:2px;height:100%;margin-left:-1px;}
+  #crosshair::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px;}
+  #crosshair.hit::before,#crosshair.hit::after{background:#ff2b2b;box-shadow:0 0 8px rgba(255,43,43,.9);}
+  #crosshair.kill{transform:scale(1.45);}
+  #weapon{position:absolute;bottom:12px;left:10px;width:min(300px,60vw);padding:8px 10px;
+    font-size:12px;display:none;}
+  body.onfoot #weapon{display:block;}
+  /* Pešo sú budíky, metráky, misie aj drift mimo hry — panel zbrane ich nahradí. */
+  body.onfoot #gauges,body.onfoot #meters,body.onfoot #mission,body.onfoot #drift{display:none;}
+  #w-name{color:var(--green);font-weight:bold;letter-spacing:1px;}
+  #w-ammo{font-size:19px;font-weight:bold;margin-top:3px;}
+  #w-ammo b{color:var(--green);}
+  #w-ammo.low b{color:#ffd97a;}
+  #w-ammo.empty b{color:var(--red);animation:blink .4s infinite steps(2);}
+  #w-reserve{color:#ffd97a;font-size:13px;}
+  #w-slots{display:flex;gap:4px;margin:6px 0 2px;flex-wrap:wrap;}
+  .wslot{pointer-events:auto;cursor:pointer;font:inherit;font-size:10px;padding:3px 5px;
+    background:rgba(10,8,2,.7);border:1px solid var(--amber-dim);color:var(--amber);}
+  .wslot.on{background:var(--amber);color:#0b0906;font-weight:bold;border-color:var(--amber);}
+  /* Mobil: t-use vždy, streľba/prepnutie len pešo (triedy na <body>). */
+  #t-actions{display:none;}
+  body.touch #t-actions{display:flex;}
+  body.touch #t-actions #t-fire,body.touch #t-actions #t-swap{display:none;}
+  body.touch.onfoot #t-actions #t-fire,body.touch.onfoot #t-actions #t-swap{display:block;}
+  body.touch #weapon{top:110px;left:10px;bottom:auto;width:170px;}
   /* display:none NIE opacity:0 — pri opacity:0 zostávajú dve plnoobrazovkové
      vrstvy v kompozícii a browser ich skladá nad canvasom každý snímok.
      Sú stále vypnuté (JS ich nikdy nezapína), takže sa strata vizuálne nemení. */

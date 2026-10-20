@@ -27,6 +27,7 @@
 
 
 <div id="game"></div>
+<div id="crosshair" title="Pešo: LMB strieľať, koliesko/1–5 = zbraň, R = prebiť"></div>
 <div id="grain"></div>
 <div id="dmg"></div>
 <div id="vign-red"></div>
@@ -97,6 +98,17 @@
     <div class="bar" id="bar-route"><i></i></div>
   </div>
   <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · C hudba · G motor · B búrka · R reštart · T turbo · F3 bloom · ESC nastavenia<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO · BURKA</div>
+  <div id="weapon" class="panel">
+    <div id="w-name">9MM</div>
+    <div id="w-slots">
+      <button class="wslot" type="button" data-w="0">1 9MM</button>
+      <button class="wslot" type="button" data-w="1">2 MP5</button>
+      <button class="wslot" type="button" data-w="2">3 50 BMG</button>
+      <button class="wslot" type="button" data-w="3">4 TEC-9</button>
+      <button class="wslot" type="button" data-w="4">5 AK-47</button>
+    </div>
+    <div id="w-ammo"><b id="w-mag">17</b> / <span id="w-reserve">136</span></div>
+  </div>
   <div id="fps" class="panel">60 FPS</div>
   <div id="ver" class="panel">B27 · LM</div>
 </div>
@@ -174,6 +186,13 @@
     <div class="tcol"><button class="tbtn pedal" id="t-hand">RUČ<br>NÁ</button><span class="tlab">RUČNÁ</span></div>
     <div class="tcol"><button class="tbtn pedal" id="t-brake">▼</button><span class="tlab">BRZDA</span></div>
     <div class="tcol"><button class="tbtn pedal" id="t-gas">▲</button><span class="tlab">PLYN</span></div>
+  </div>
+  <!-- Pešo: t-use vždy (nastúpiť/vystúpiť), t-fire/t-swap len s body.onfoot.
+       Na dotyku sa nedá kliknúť do canvasu pre pointer lock, preto tlačidlá. -->
+  <div class="tcluster" id="t-actions">
+    <div class="tcol"><button class="tbtn" id="t-fire">PÁL</button><span class="tlab">STREĽBA</span></div>
+    <div class="tcol"><button class="tbtn" id="t-swap">ZBRAŇ</button><span class="tlab">PREPNÚŤ</span></div>
+    <div class="tcol"><button class="tbtn" id="t-use">VYSTÚPIŤ</button><span class="tlab">AUTO</span></div>
   </div>
 </div>
 
