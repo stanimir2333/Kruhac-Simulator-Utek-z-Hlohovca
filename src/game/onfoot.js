@@ -226,16 +226,38 @@ export function createOnFoot(opts = {}) {
   function requestLock() {
     if (!canvas || !canvas.requestPointerLock) { lockFailed = true; return; }
     try {
-      const p = canvas.requestPointerLock();
-      if (p && typeof p.catch === 'function') p.catch(() => { lockFailed = true; });
-    } catch { lockFailed = true; }
-    // Niektoré prehliadače request ticho odmietnu bez eventu — po chvíľi
+      // unadjustedMovement = RAW delty myši bez akcelerácie OS (Chrome 88+).
+      // Bez tejto voľby Chrome násobí movementX rýchlosťou kurzora z OS
+      // ("Enhance pointer precision"), takže prudký trh prinesie obrie delty
+      // a pohľad zapráši na doraz pitch clampu — "zamknuté na zemi/oblohe".
+      // Staršie prehliadače options nevedia → normálny request ako fallback.
+      const p = canvas.requestPointerLock({ unadjustedMovement: true });
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          try {
+            const q = canvas.requestPointerLock();
+            if (q && typeof q.catch === 'function') q.catch(() => { lockFailed = true; });
+          } catch { lockFailed = true; }
+        });
+      }
+    } catch {
+      try {
+        const p = canvas.requestPointerLock();
+        if (p && typeof p.catch === 'function') p.catch(() => { lockFailed = true; });
+      } catch { lockFailed = true; }
+    }
+    // Niektoré prehliadače request ticho odmietnu bez eventu — po chvíli
     // to považujeme za neúspech a zapneme fallback (myš otáča pohľad).
     setTimeout(() => {
       if (foot.active && document.pointerLockElement !== canvas) lockFailed = true;
     }, 600);
   }
   document.addEventListener('pointerlockerror', () => { lockFailed = true; });
+  // Úspešný lock vždy zruší fallback režim — Chrome odmieta re-lock ~1,25 s po
+  // ESC a bez tohto by jeden zamietnutý request prilepil fallback naveky.
+  document.addEventListener('pointerlockchange', () => {
+    if (canvas && document.pointerLockElement === canvas) lockFailed = false;
+  });
 
   function exit() {
     if (foot.active || !car) return false;
@@ -410,11 +432,18 @@ export function createOnFoot(opts = {}) {
       // myši ako fallback — hráč sa aspoň dá otočiť.
       if (!locked && !lockFailed) return;
       const s = LOOK_SENS * sensFactor();
+      // Jemná kompresia špičiek: tanh nechá malé delty 1:1, ale jeden
+      // obohustený event (akcelerácia OS alebo kvízový ovládač) stlačí k
+      // limitu ~100 px, takže žiadny single-event flick nezamkne pohľad na
+      // doraz clampu.
+      const CAP = 100;
+      const dx = CAP * Math.tanh((e.movementX || 0) / CAP);
+      const dy = CAP * Math.tanh((e.movementY || 0) / CAP);
       // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
       // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
       // obrátená (pohyb vpravo otáčal pohľad doľava).
-      foot.yaw -= e.movementX * s;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - e.movementY * s));
+      foot.yaw -= dx * s;
+      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
