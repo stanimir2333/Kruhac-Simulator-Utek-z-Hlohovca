@@ -14,11 +14,11 @@ const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
-// Citlivosť pohľadu: rad/px. 0.0022 bolo pri ťahaní myši prudko pomalé
-// (100 px myse = 12°) — teraz 100 px = 18°, čo je bežný FPS pocit. Násobí sa
-// sliderom v nastaveniach (settings.sens).
-const LOOK_SENS = 0.0032;
-const TOUCH_SENS = 0.0075; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
+// Citlivosť pohľadu: rad/px. 0.0032 bolo príliš prudké (100 px myse = 18°,
+// myš sa strhala pri malom pohybe) — teraz 100 px = 11,5°, čo je bežný FPS
+// pocit. Násobí sa sliderom v nastaveniach (settings.sens).
+const LOOK_SENS = 0.0020;
+const TOUCH_SENS = 0.0045; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
 
 function insideBox(x, z, cx, cz, rot, hw, hl, margin) {
@@ -320,8 +320,11 @@ export function createOnFoot(opts = {}) {
     const speed = fwd < 0 ? BACK_SPEED : (foot.sprint ? RUN_SPEED : WALK_SPEED);
     let mx = 0, mz = 0;
     if (fwd !== 0 || strafe !== 0) {
+      // Konvencia hry (rovnaká ako auto v physics/vehicle.js): dopredu =
+      // (sin yaw, cos yaw), doprava = (−cos yaw, sin yaw). Pôvodný kód tu mal
+      // (cos yaw, −sin yaw), čo je PRESNE opačné — D posúval chodca doľava.
       const fx = Math.sin(foot.yaw), fz = Math.cos(foot.yaw);
-      const rx = Math.cos(foot.yaw), rz = -Math.sin(foot.yaw);
+      const rx = -Math.cos(foot.yaw), rz = Math.sin(foot.yaw);
       mx = fx * fwd + rx * strafe;
       mz = fz * fwd + rz * strafe;
       const l = Math.sqrt(mx * mx + mz * mz) || 1;
@@ -407,7 +410,10 @@ export function createOnFoot(opts = {}) {
       // myši ako fallback — hráč sa aspoň dá otočiť.
       if (!locked && !lockFailed) return;
       const s = LOOK_SENS * sensFactor();
-      foot.yaw += e.movementX * s;
+      // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
+      // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
+      // obrátená (pohyb vpravo otáčal pohľad doľava).
+      foot.yaw -= e.movementX * s;
       foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - e.movementY * s));
     });
     addEventListener('wheel', (e) => {
@@ -427,7 +433,8 @@ export function createOnFoot(opts = {}) {
       const dx = e.clientX - touchX, dy = e.clientY - touchY;
       touchX = e.clientX; touchY = e.clientY;
       const s = TOUCH_SENS * sensFactor();
-      foot.yaw += dx * s;
+      // Rovnaké znamienko ako myš: prst vpravo = pohľad vpravo.
+      foot.yaw -= dx * s;
       foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
     });
     const endTouch = (e) => { if (touchLook === e.pointerId) touchLook = -1; };
