@@ -153,6 +153,8 @@ export function createOnFoot(opts = {}) {
   };
   let touchLook = -1;
   let touchX = 0, touchY = 0;
+  // Raw delty myši za aktuálny snímok (súčítané cez všetky mousemove eventy).
+  let accDX = 0, accDY = 0;
   // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
   let lockFailed = false;
 
@@ -277,6 +279,8 @@ export function createOnFoot(opts = {}) {
     foot.grounded = true;
     foot.phase = 0;
     foot.moveSpeed = 0;
+    accDX = 0;
+    accDY = 0;
     car.speed = 0;
     car.steer = 0;
     root.visible = true;
@@ -331,6 +335,24 @@ export function createOnFoot(opts = {}) {
   function updateActive(dt) {
     const k = input?.keys || {};
     const locked = document.pointerLockElement === canvas;
+    // Raw delty z mousemove aplikované raz za snímok. tanh dáva malému
+    // pohybu 1:1, mäkký strop ~100 px/snímok znamená, že trh (~400 px raw)
+    // netočí viac ako ~5° — pitch sa viac nepichne na doraz clampu
+    // ("zamknuté na telo/oblohu") — nezávisí od toho, koľkými eventmi myš
+    // daný snímok pohla.
+    if (accDX !== 0 || accDY !== 0) {
+      const s = LOOK_SENS * sensFactor();
+      const CAP = 100;
+      const dx = CAP * Math.tanh(accDX / CAP);
+      const dy = CAP * Math.tanh(accDY / CAP);
+      // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
+      // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
+      // obrátená (pohyb vpravo otáčal pohľad doľava).
+      foot.yaw -= dx * s;
+      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
+      accDX = 0;
+      accDY = 0;
+    }
     const left = !!(k.KeyA || k.ArrowLeft || input?.touch?.left);
     const right = !!(k.KeyD || k.ArrowRight || input?.touch?.right);
     const fwd = (k.KeyW || k.ArrowUp || input?.touch?.gas ? 1 : 0) - (k.KeyS || k.ArrowDown || input?.touch?.brake ? 1 : 0);
@@ -431,19 +453,12 @@ export function createOnFoot(opts = {}) {
       // Ak ho prehliadač zablokuje (lockFailed), funguje relatívny pohyb
       // myši ako fallback — hráč sa aspoň dá otočiť.
       if (!locked && !lockFailed) return;
-      const s = LOOK_SENS * sensFactor();
-      // Jemná kompresia špičiek: tanh nechá malé delty 1:1, ale jeden
-      // obohustený event (akcelerácia OS alebo kvízový ovládač) stlačí k
-      // limitu ~100 px, takže žiadny single-event flick nezamkne pohľad na
-      // doraz clampu.
-      const CAP = 100;
-      const dx = CAP * Math.tanh((e.movementX || 0) / CAP);
-      const dy = CAP * Math.tanh((e.movementY || 0) / CAP);
-      // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
-      // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
-      // obrátená (pohyb vpravo otáčal pohľad doľava).
-      foot.yaw -= dx * s;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
+      // Delty sa TU IBA SČÍTAJÚ — aplikuje ich updateActive() raz za snímok.
+      // Doteraz rotoval handler po KAŽDOM evente: 1000 Hz myš pošle na jediný
+      // snímok aj ~8 eventov a delty sa násobili ich počtom, takže jeden trh
+      // pritlačil pitch na doraz clampu ("zamknuté na telo/oblohu").
+      accDX += e.movementX || 0;
+      accDY += e.movementY || 0;
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
