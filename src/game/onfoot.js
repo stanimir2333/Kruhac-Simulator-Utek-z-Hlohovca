@@ -171,6 +171,9 @@ export function createOnFoot(opts = {}) {
   // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
   let lockFailed = false;
   let lockFails = 0;
+  // Nastavené (pending) čakanie na delayed retry bez options; časovače
+  // retry-requestu a tichého fallback-verdiktu (používajú sa v requestLock nižšie).
+  let retryPending = false, retryT = 0, fallbackT = 0;
 
   // Násobka citlivosti z nastavení (settings.sens). Bez locku myši je to
   // jediný spôsob, ako pohyb myši vplýva na pohľad.
@@ -242,43 +245,59 @@ export function createOnFoot(opts = {}) {
   function requestLock() {
     if (!canvas || !canvas.requestPointerLock) { lockFailed = true; return; }
     try {
-      // unadjustedMovement = RAW delty myši bez akcelerácie OS (Chrome 88+).
-      // Bez tejto voľby Chrome násobí movementX rýchlosťou kurzora z OS
-      // ("Enhance pointer precision"), takže prudký trh prinesie obrie delty
-      // a pohľad zapráši na doraz pitch clampu — "zamknuté na zemi/oblohe".
-      // Staršie prehliadače options nevedia → normálny request ako fallback.
+      // unadjustedMovement = RAW delty myši bez akcelerácie OS (Chrome 88+,
+      // Firefox 133+). Bez tejto voľby prehliadač násobí movementX rýchlosťou
+      // kurzora z OS ("Enhance pointer precision") a pohľad "zapráši".
+      // Keď options nie je podporované alebo OS raw nedokáže (Wayland),
+      // request padne → retry bez options existuje, ale MUSÍ ísť v NOVOM
+      // tiku: Firefox posudzoval každý z dvojice osobitne a druhý zamietol
+      // ("Request for pointer lock was denied because the document is not
+      // focused") — jeden request na tik, retry až o ~300 ms.
       const p = canvas.requestPointerLock({ unadjustedMovement: true });
       if (p && typeof p.catch === 'function') {
         p.catch(() => {
-          try {
-            const q = canvas.requestPointerLock();
-            if (q && typeof q.catch === 'function') q.catch(() => { lockFailed = true; });
-          } catch { lockFailed = true; }
+          retryPending = true;
+          clearTimeout(retryT);
+          retryT = setTimeout(() => {
+            try {
+              const q = canvas.requestPointerLock();
+              if (q && typeof q.catch === 'function') q.catch(() => { /* rieši pointerlockerror */ });
+            } catch { /* rieši pointerlockerror */ }
+            retryPending = false;
+            armFallbackTimer();
+          }, 300);
         });
       }
     } catch {
+      // Starší prehliadač options vôbec neprijíma (throw) → normálny request
+      // je prvý aj jediný tohto tiku.
       try {
-        const p = canvas.requestPointerLock();
-        if (p && typeof p.catch === 'function') p.catch(() => { lockFailed = true; });
+        const q = canvas.requestPointerLock();
+        if (q && typeof q.catch === 'function') q.catch(() => { /* rieši pointerlockerror */ });
       } catch { lockFailed = true; }
     }
-    // Niektoré prehliadače request ticho odmietnu bez eventu — po chvíli
-    // to považujeme za neúspech a zapneme fallback (myš otáča pohľad).
-    setTimeout(() => {
+    armFallbackTimer();
+  }
+
+  // Tiché zamietnutie (bez eventu): ak N ms po poslednom reálnom requeste
+  // stále nie je locked ani error spracovaný, spadni do fallbacku.
+  function armFallbackTimer() {
+    clearTimeout(fallbackT);
+    fallbackT = setTimeout(() => {
       if (foot.active && document.pointerLockElement !== canvas && !lockFailed) {
         lockFailed = true;
-        console.warn('[onfoot] pointer lock nenastal bez odpovede — request zamietnutý ticho (často file:// alebo oddialený rám)');
+        console.warn('[onfoot] pointer lock nenastal bez odpovede — prehliadač request zamietol ticho (často file:// alebo keď okno práve stratilo fokus)');
         toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu, skúsi to znova.', 3600);
       }
-    }, 600);
+    }, 900);
   }
   document.addEventListener('pointerlockerror', () => {
-    // Firefox/Chrome chránia re-lock krátodobým cooldownom po ESC — chyba
-    // musí o sebe dať vedieť, inak hráč beží vo fallbacke (myš po obrazovke,
-    // okraje pohľad zastavia) a myslí si, že je citlivosť rozbitá.
+    // Prvý (options) request môže padnúť, kým delayed retry bez options ešte
+    // ide — kým je retry aktívny (retryPending), nesudčíme a nespustíme fallback.
+    if (retryPending) { armFallbackTimer(); return; }
     lockFails++;
     console.warn('[onfoot] pointer lock odmietnutý (pokus', lockFails,
-      ') — pravdepodobný cooldown po ESC, alebo zamietnuté povolenie stránky (Firefox: ikona v adresnom riadku)');
+      ') — cooldown po ESC, nepovolené "Skryť kurzor" (Firefox: ikona v adresnom riadku), alebo okno práve stratilo fokus (prvý klik po alt-tabe)');
     if (foot.active && !lockFailed) {
       lockFailed = true;
       toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu o chvíľu. Firefox: ak sa opakuje, povoľ „Skryť kurzor“ v ikone v adresnom riadku.', 6000);
@@ -286,10 +305,15 @@ export function createOnFoot(opts = {}) {
       lockFailed = true;
     }
   });
-  // Úspešný lock vždy zruší fallback režim — Chrome odmieta re-lock ~1,25 s po
-  // ESC a bez tohto by jeden zamietnutý request prilepil fallback naveky.
+  // Úspešný lock vždy zruší fallback režim — prehliadače odmietajú re-lock
+  // ~1-2 s po ESC a bez tohto by jeden zamietnutý request prilepil fallback naveky.
   document.addEventListener('pointerlockchange', () => {
-    if (canvas && document.pointerLockElement === canvas) lockFailed = false;
+    if (canvas && document.pointerLockElement === canvas) {
+      lockFailed = false;
+      retryPending = false;
+      clearTimeout(fallbackT);
+      clearTimeout(retryT);
+    }
   });
 
   function exit() {
