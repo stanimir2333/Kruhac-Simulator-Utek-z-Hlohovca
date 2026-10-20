@@ -100,6 +100,10 @@
   #mapcred{width:170px;max-width:170px;overflow:hidden;white-space:nowrap;
     text-overflow:ellipsis;text-align:center;}
   #bigmap .mapcred{width:auto;max-width:none;color:rgba(255,176,0,.55);}
+  /* Pečiatka buildu v nastaveniach — hráč si overí, či má čerstvý kód
+     (Pages servíruje max-age=600, takže po pushi zostáva cache ~10 min). */
+  .buildstamp{font-size:10px;letter-spacing:1px;color:rgba(255,176,0,.45);
+    margin-top:6px;text-align:center;pointer-events:none;}
   /* ---------- Full-size mapa ---------- */
   #bigmap{z-index:70;}
   #bigmap .card{max-width:min(92vw,760px);}

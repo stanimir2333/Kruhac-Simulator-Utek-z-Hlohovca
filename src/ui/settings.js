@@ -17,6 +17,7 @@
 // Žiadne volania pri importe; žiadne game/player/input/bgm.
 import { S } from '../world/shared.js';
 import { setShadowRangeScale } from '../fx/sunshadow.js';
+import { VERSION } from '../core/config.js';
 
 // Vlastný store (predvolené hodnoty podľa zadania).
 export const settings = {
@@ -395,6 +396,12 @@ export function wireSettingsUI(ctx, toast) {
   loadSettings();
   applyAll(c);
   syncSettingsUI(c);
+
+  // Pečiatka buildu — viditeľná, keď hráč nevie, či má v prehliadači
+  // starý (zcache) kód. Pages servíruje max-age=600, takže po pushi môže
+  // zostať v cache ešte 10 minút.
+  const build = $('set-build');
+  if (build) build.textContent = 'BUILD ' + VERSION;
 
   $('set-btn')?.addEventListener('click', () => toggleSettings());
   $('btn-set-close')?.addEventListener('click', () => toggleSettings(false));

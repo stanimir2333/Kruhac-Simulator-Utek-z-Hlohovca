@@ -14,11 +14,12 @@ const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
-// Citlivosť pohľadu: rad/px. 0.0032 bolo príliš prudké (100 px myse = 18°,
-// myš sa strhala pri malom pohybe) — teraz 100 px = 11,5°, čo je bežný FPS
-// pocit. Násobí sa sliderom v nastaveniach (settings.sens).
-const LOOK_SENS = 0.0020;
-const TOUCH_SENS = 0.0045; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
+// Citlivosť pohľadu: rad/px. 0.0032 bolo príliš prudké (100 px myse = 18°),
+// 0.0020 stále "hnalo" pri bežnom pohybe myši — teraz 100 px = 8°. Slider
+// v nastaveniach (settings.sens) vie vyniesť 0,3×–2,5×, takže pôvodný
+// "rýchly" pocit je dostupný na 250 %.
+const LOOK_SENS = 0.0014;
+const TOUCH_SENS = 0.0032; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
 
 function insideBox(x, z, cx, cz, rot, hw, hl, margin) {
