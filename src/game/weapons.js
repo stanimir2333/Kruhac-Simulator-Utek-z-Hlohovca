@@ -21,14 +21,15 @@ const _dir = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 
-function steel(c, rough = 0.35, metal = 0.75) {
+function steel(c, rough = 0.45, metal = 0.22) {
   return new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: metal });
 }
 
 function buildModels() {
   const holder = new THREE.Group();
   const all = [];
-  const dark = steel(0x24272b, 0.38, 0.8);
+  const dark = steel(0x3c4249, 0.42, 0.3);
+  dark.emissive = new THREE.Color(0x14181d); // kov bez envMapu by bol úplne čierny
   const polymer = steel(0x111214, 0.72, 0.12);
   const wood = steel(0x6d3f1e, 0.72, 0.05);
   const tan = steel(0x8a7a5a, 0.7, 0.08);
@@ -100,8 +101,11 @@ function buildModels() {
   box(g, 0.012, 0.027, 0.018, sight, 0, 0.105, 0.5);
   box(g, 0.025, 0.06, 0.03, sight, 0, 0.115, 0.22);
 
-  holder.position.set(0.19, 1.27, 0.26);
   holder.rotation.order = 'YXZ';
+  // Viewmodel sa zobrazuje 45 cm od očí — modely sú v "svetej" mierke
+  // (pištoľ 30 cm, AK 1.3 m), takže ich zmenšujeme na reálnu veľkosť
+  // a posúvame od očí, inak by zbraň vyplnila pol obrazovky.
+  holder.scale.set(0.6, 0.6, 0.6);
 
   const flashCanvas = document.createElement('canvas');
   flashCanvas.width = 64;
@@ -135,6 +139,10 @@ export function createWeapons(opts = {}) {
   const models = buildModels();
   const holder = models.holder;
   const flash = models.flash;
+  // Zbraň je "viewmodel" — žije v priestore kamery (prvá osoba), nie na tele
+  // chodca. Preto je v scéne a každý snímok ju poskladáme podľa kamery.
+  holder.visible = false;
+  if (scene) scene.add(holder);
   const ammo = WEAPONS.map((w) => ({ mag: w.mag, reserve: w.reserve }));
   let current = 0;
   let cooldown = 0;
@@ -368,6 +376,7 @@ export function createWeapons(opts = {}) {
     triggerHeld = false;
     triggerPressed = false;
     flash.visible = false;
+    holder.visible = !!on;
     if (!active) {
       reloadT = 0;
       kick = 0;
@@ -406,13 +415,28 @@ export function createWeapons(opts = {}) {
       flash.visible = flashT > 0;
     }
     if (kick > 0) kick = Math.max(0, kick - dt * (WEAPONS[current].id === 'bmg' ? 7 : 12));
-    if (foot) {
-      holder.rotation.x = -foot.pitch + kick * 0.05;
-      holder.position.z = 0.26 - kick * 0.055;
-      holder.position.y = 1.27 - kick * 0.02;
-    }
+    placeHolder(foot);
     updateTracers(dt);
     if (hudDirty) updateHUD();
+  }
+
+  // VIEWMODEL: zbraň sa drží v zornom poli kamery (prvá osoba). Drží sa
+  // napravo a dole od očí, takže zameriavač ostáva čistý; pri výstrele
+  // vystrelí (kick) dozadu a nahor.
+  function placeHolder(foot) {
+    if (!foot || !camera) {
+      if (holder.visible) holder.visible = false;
+      return;
+    }
+    holder.visible = true;
+    holder.position.copy(camera.position);
+    holder.quaternion.copy(camera.quaternion);
+    holder.translateX(0.22);
+    holder.translateY(-0.19);
+    holder.translateZ(-0.46);
+    // Modely zbraní mieria na +Z, kamera pozerá na -Z → 180° okolo Y.
+    holder.rotateY(Math.PI);
+    holder.rotateX(-kick * 0.16);
   }
 
   showCurrent();

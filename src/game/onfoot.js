@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { S } from '../world/shared.js';
 import { nearestRoute, ALL_CARS } from '../ai/traffic.js';
-import { getTerrainHeight, wheelGroundY } from '../world/height.js';
+import { wheelGroundY } from '../world/height.js';
 import { gridQuery, GQ_MAX } from '../world/ground.js';
 import { createPedestrianSystem } from '../ai/pedestrians.js';
 import { createWeapons } from './weapons.js';
@@ -13,9 +13,13 @@ const RUN_SPEED = 7.4;
 const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
-const LOOK_SENS = 0.0022;
+const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
+// Citlivosť pohľadu: rad/px. 0.0022 bolo pri ťahaní myši prudko pomalé
+// (100 px myse = 12°) — teraz 100 px = 18°, čo je bežný FPS pocit. Násobí sa
+// sliderom v nastaveniach (settings.sens).
+const LOOK_SENS = 0.0032;
+const TOUCH_SENS = 0.0075; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
-const CAM_PT = { x: 0, z: 0 };
 
 function insideBox(x, z, cx, cz, rot, hw, hl, margin) {
   const dx = x - cx, dz = z - cz;
@@ -41,7 +45,7 @@ function pushRect(p, cx, cz, rot, hw, hl, radius) {
   return true;
 }
 
-function buildBody(weaponHolder) {
+function buildBody() {
   const root = new THREE.Group();
   const skin = new THREE.MeshStandardMaterial({ color: 0xd7a06e, roughness: 0.85, metalness: 0.02 });
   const jacket = new THREE.MeshStandardMaterial({ color: 0x1b2632, roughness: 0.72, metalness: 0.08 });
@@ -94,7 +98,8 @@ function buildBody(weaponHolder) {
     root.add(shoulder);
     arms.push(shoulder);
   }
-  root.add(weaponHolder);
+  // Zbraň NIE JE dieťaom tela: v prvej osobe je to "viewmodel" — drží sa
+  // v priestore kamery (pozri weapons.js → placeHolder).
   root.visible = false;
   return { root, legs, arms, torso, head, hair: hairMesh, phase: 0 };
 }
@@ -123,9 +128,24 @@ export function createOnFoot(opts = {}) {
       hitTimer = 0.13;
     },
   });
-  const body = buildBody(weapons.holder);
+  const body = buildBody();
   const root = body.root;
   if (scene) scene.add(root);
+
+  // PRVÁ OSOBA: kamera sedí v hlave chodca, takže hlava a ramená by boli
+  // vo vnútri (alebo priamo pred) kamerou. Hlavu, vlasy a ramená skrývame;
+  // trup a nohy ostávajú — pri pohľade dolu vidíš vlastné nohy.
+  body.head.visible = false;
+  body.hair.visible = false;
+  body.arms[0].visible = false;
+  body.arms[1].visible = false;
+
+  // Tien chodca: elipsa pod nohami (rovnaký shader ako autá — S.MAT.blob).
+  // Bez nej by hráč pri prvej osobe vyzeral ako by plával.
+  const blob = new THREE.Mesh(S.GEO.blob, S.MAT.blob);
+  blob.scale.set(0.4, 0.4, 1);
+  blob.visible = false;
+  if (scene) scene.add(blob);
 
   const foot = {
     active: false, x: startX, y: 0, z: startZ, h: 0, yaw: 0, pitch: -0.07,
@@ -133,7 +153,16 @@ export function createOnFoot(opts = {}) {
   };
   let touchLook = -1;
   let touchX = 0, touchY = 0;
-  let noLock = false;
+  // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
+  let lockFailed = false;
+
+  // Násobka citlivosti z nastavení (settings.sens). Bez locku myši je to
+  // jediný spôsob, ako pohyb myši vplýva na pohľad.
+  function sensFactor() {
+    const raw = typeof opts.sens === 'function' ? opts.sens() : opts.sens;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0.05 ? v : 1;
+  }
 
   function groundAt(x, z) {
     const nr = nearestRoute(x, z);
@@ -195,12 +224,18 @@ export function createOnFoot(opts = {}) {
   }
 
   function requestLock() {
-    if (!canvas || !canvas.requestPointerLock) { noLock = true; return; }
+    if (!canvas || !canvas.requestPointerLock) { lockFailed = true; return; }
     try {
       const p = canvas.requestPointerLock();
-      if (p && typeof p.catch === 'function') p.catch(() => { noLock = true; });
-    } catch { noLock = true; }
+      if (p && typeof p.catch === 'function') p.catch(() => { lockFailed = true; });
+    } catch { lockFailed = true; }
+    // Niektoré prehliadače request ticho odmietnu bez eventu — po chvíľi
+    // to považujeme za neúspech a zapneme fallback (myš otáča pohľad).
+    setTimeout(() => {
+      if (foot.active && document.pointerLockElement !== canvas) lockFailed = true;
+    }, 600);
   }
+  document.addEventListener('pointerlockerror', () => { lockFailed = true; });
 
   function exit() {
     if (foot.active || !car) return false;
@@ -226,7 +261,10 @@ export function createOnFoot(opts = {}) {
     weapons.setActive(true);
     sfx?.setEngineActive?.(false);
     setModeUI(true);
-    if (toast) toast('Vystúpil si z auta · ENTER = naspäť · 1–5 = zbraň · R = prebiť', 3200);
+    // Pointer lock hneď: v prvej osobe bez neho myš nekontroluje pohľad
+    // (a klik by sa spotreboval na získanie locku namiesto výstrelu).
+    requestLock();
+    if (toast) toast('Vystúpil si z auta · myš = pohľad · LMB = strielať · 1–5 = zbraň · R = prebiť · ENTER = naspäť', 3600);
     return true;
   }
 
@@ -239,6 +277,7 @@ export function createOnFoot(opts = {}) {
     }
     foot.active = false;
     root.visible = false;
+    if (blob) blob.visible = false;
     weapons.setActive(false);
     sfx?.setEngineActive?.(true);
     setModeUI(false);
@@ -315,42 +354,19 @@ export function createOnFoot(opts = {}) {
       foot.y = ground;
     }
 
-    const cosP = Math.cos(foot.pitch);
-    const dx = Math.sin(foot.yaw) * cosP;
-    const dz = Math.cos(foot.yaw) * cosP;
-    const dy = Math.sin(foot.pitch);
+    // PRVÁ OSOBA: kamera je v hlave chodca (nie 3.6 m za ním). Preto tu
+    // už nie je potreba vytláčať kameru z budov a áut — hráčovo telo je
+    // vytlačené z nich a kamera je v jeho strede.
     if (camera) {
-      const tx = foot.x, ty = foot.y + 1.48, tz = foot.z;
-      let cx = tx - dx * 3.6;
-      let cy = ty - dy * 3.6 + 0.18;
-      let cz = tz - dz * 3.6;
-      // Kamera nesmie skončiť v aute ani v budove — inak pri chôdzi pozdĺž
-      // zaparkovaného auta vidíš zvnútra jeho kapotu (žlté "dosky" cez celú
-      // obrazovku). Vytlačí sa kolmo von ako chodec, len s menším polomerom.
-      CAM_PT.x = cx; CAM_PT.z = cz;
-      for (let pass = 0; pass < 2; pass++) {
-        let moved = false;
-        const nb = gridQuery(S.BGRID, CAM_PT.x, CAM_PT.z, 1, FOOT_GQ);
-        for (let i = 0; i < nb; i++) {
-          const b = FOOT_GQ[i];
-          if (pushRect(CAM_PT, S.BX.x[b], S.BX.z[b], S.BX.rot[b], S.BX.hw[b], S.BX.hl[b], 0.3)) moved = true;
-        }
-        for (let i = 0; i < ALL_CARS.length; i++) {
-          const c = ALL_CARS[i];
-          if (c.hidden) continue;
-          const ddx = c.x - CAM_PT.x, ddz = c.z - CAM_PT.z;
-          if (ddx * ddx + ddz * ddz > 36) continue;
-          if (pushRect(CAM_PT, c.x, c.z, c.h, 0.95, 2.15, 0.35)) moved = true;
-        }
-        if (car && pushRect(CAM_PT, car.x, car.z, car.h, 0.95, 2.15, 0.35)) moved = true;
-        if (!moved) break;
-      }
-      cx = CAM_PT.x; cz = CAM_PT.z;
-      const minY = getTerrainHeight(cx, cz) + 0.35;
-      if (cy < minY) cy = minY;
-      camera.position.set(cx, cy, cz);
+      const walk = Math.min(1, foot.moveSpeed / WALK_SPEED);
+      const bob = (Math.sin(foot.phase * 2) * 0.028 + Math.sin(foot.phase) * 0.012) * walk;
+      camera.position.set(foot.x, foot.y + EYE_H + bob, foot.z);
       camera.rotation.order = 'YXZ';
       camera.rotation.set(foot.pitch, foot.yaw + Math.PI, 0);
+    }
+    if (blob) {
+      blob.visible = true;
+      blob.position.set(foot.x, ground + 0.03, foot.z);
     }
     animate(dt);
     root.updateMatrixWorld(true);
@@ -364,6 +380,7 @@ export function createOnFoot(opts = {}) {
 
   function updateAmbient(dt, x, z) {
     if (root.visible) root.visible = false;
+    if (blob && blob.visible) blob.visible = false;
     // Neaktívne zbrane musia dobehnúť časovače (stopy striel, prebíjanie),
     // inak by posledné tracery ostali visieť v scéne naveky.
     weapons.update(dt, null);
@@ -374,19 +391,24 @@ export function createOnFoot(opts = {}) {
     canvas.addEventListener('contextmenu', (e) => { if (foot.active) e.preventDefault(); });
     canvas.addEventListener('mousedown', (e) => {
       if (!foot.active || e.button !== 0) return;
-      if (document.pointerLockElement !== canvas && !noLock) {
-        requestLock();
-        return;
-      }
+      // Klik zároveň žiada pointer lock, ale VÝSTREL sa nikdy nevytratí —
+      // inak by sa v prehliadači bez locku nedalo vystreliť vôbec.
+      if (document.pointerLockElement !== canvas) requestLock();
       weapons.pressTrigger();
     });
     addEventListener('mouseup', (e) => {
       if (foot.active && e.button === 0) weapons.releaseTrigger();
     });
     addEventListener('mousemove', (e) => {
-      if (!foot.active || document.pointerLockElement !== canvas) return;
-      foot.yaw += e.movementX * LOOK_SENS;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - e.movementY * LOOK_SENS));
+      if (!foot.active) return;
+      const locked = document.pointerLockElement === canvas;
+      // Bez pointer locku myš neotáča (A/D otáčajú), kým sa lock nepodarí.
+      // Ak ho prehliadač zablokuje (lockFailed), funguje relatívny pohyb
+      // myši ako fallback — hráč sa aspoň dá otočiť.
+      if (!locked && !lockFailed) return;
+      const s = LOOK_SENS * sensFactor();
+      foot.yaw += e.movementX * s;
+      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - e.movementY * s));
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
@@ -404,8 +426,9 @@ export function createOnFoot(opts = {}) {
       if (touchLook !== e.pointerId) return;
       const dx = e.clientX - touchX, dy = e.clientY - touchY;
       touchX = e.clientX; touchY = e.clientY;
-      foot.yaw += dx * 0.006;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * 0.005));
+      const s = TOUCH_SENS * sensFactor();
+      foot.yaw += dx * s;
+      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
     });
     const endTouch = (e) => { if (touchLook === e.pointerId) touchLook = -1; };
     canvas.addEventListener('pointerup', endTouch);

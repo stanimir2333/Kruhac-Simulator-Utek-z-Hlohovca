@@ -129,6 +129,26 @@ candidates, don't switch to an absolute path.
 - `public/assets` is a **symlink** to `../assets`. If it doesn't resolve after a
   copy/deploy, textures silently go procedural — check the symlink, not the loader.
 
+## Pešo = prvá osoba (src/game/onfoot.js, weapons.js, src/ai/pedestrians.js)
+
+- **Kamera je v hlave chodca** (`EYE_H` 1.62 m), nie 3.6 m za ním. Preto je
+  `camera.near = 0.1` (zbraň-viewmodel je 46 cm od očí; pri 0.5 by sa orezal).
+  Hlavu, vlasy a ramená chodca treba skryť (`body.head/hair/arms`), inak je
+  kamera vo vnútri hlavy.
+- **Zbraň je viewmodel, nie dieťa tela.** `weapons.holder` žije v scéne a
+  `placeHolder()` ho každý snímok poskladá z transformu kamery
+  (napravo + dole od očí, 180° okolo Y, lebo modely mieria na +Z).
+  `holder.localToWorld()` sa používa na ústie pištole → stopa striely.
+- **Kov bez envMapu je čierny** — `weapons.js` používa `metalness ≤ 0.3`
+  a temný materiál má `emissive`, inak je zbraň v scéne takmer čierna.
+- Vlastné auto hráča **NIE JE v `ALL_CARS`** (ten je len pre civilistov) →
+  kolízie peši aj kamera musia riešiť `car` zvlášť.
+- Pointer lock: `requestLock()` pri vystúpení, `pointerlockerror` + 600 ms
+  timeout → `lockFailed` = fallback (myš otáča pohľad aj bez locku).
+  Klik vždy aj strieľa — request locku nesmie zožrať výstrel.
+- Citlivosť: `LOOK_SENS` (rad/px) × `settings.sens` (slider v nastaveniach,
+  kľúč `sen` v localStorage). Dotyk: `TOUCH_SENS`.
+
 ## Conventions
 
 - **All comments, user-facing strings, toasts and commit messages are Slovak.**

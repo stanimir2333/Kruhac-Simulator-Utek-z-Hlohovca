@@ -75,7 +75,9 @@ async function boot() {
   S.TEX_ANISO = Math.max(1, Math.min(16, renderer.capabilities.getMaxAnisotropy()));
   scene.background = new THREE.Color(S.SKY_HORIZON);
   scene.fog = new THREE.FogExp2(S.SKY_FOG, 0.0008);
-  camera.fov = 68; camera.near = 0.5; camera.far = 5000; camera.updateProjectionMatrix();
+  // near 0.1 (nie 0.5): v prvej osobe je zbraň "viewmodel" 30 cm od očí —
+  // pri near 0.5 by sa orezala. 24-bit depth buffer to znesie bez šumenia.
+  camera.fov = 68; camera.near = 0.1; camera.far = 5000; camera.updateProjectionMatrix();
   sun.color.setHex(0xfff1d8); sun.intensity = 2.4;
   sun.position.set(S.SUN_OFF.x, S.SUN_OFF.y, S.SUN_OFF.z);
   sun.shadow.mapSize.set(2048, 2048);
@@ -243,6 +245,8 @@ async function boot() {
   // aj ALL_CARS (zásahy do áut), ktoré vznikajú vyššie.
   const onfoot = createOnFoot({
     scene, camera, car, input, renderer, sfx,
+    // Citlivosť pohľadu z nastavení (settings.sens) — živá hodnota.
+    sens: () => settings.sens,
     toast: (m) => hud.toast(m),
   });
 

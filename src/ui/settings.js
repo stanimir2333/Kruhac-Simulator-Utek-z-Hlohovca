@@ -24,6 +24,7 @@ export const settings = {
   rt: true, rtQ: 1, rtSh: 1, rtLi: 1, rtQl: 1, shq: 2,
   music: 1, // hudba (rádio) ZAP = 1 / VYP = 0; motor a zvuky idú vždy
   engine: 'tdi', // motor: 'tdi' (1.9 TDI) | 'wankel' (4-rotor)
+  sens: 1, // citlivosť pohľadu pešo (násobka, 0.3–2.5)
 };
 // Mená motorov pre label (bez importu fyziky — settings nesmie ťahať vehicle).
 const ENGINE_NAME = { tdi: '1.9 TDI', wankel: '4-ROTOR' };
@@ -203,6 +204,7 @@ export function saveSettings() {
       rtql: settings.rtQl,
       mus: settings.music, // hudba (rádio) 1/0; zvuky motora sa neukladajú
       eng: settings.engine, // motor 'tdi' | 'wankel'
+      sen: settings.sens, // citlivosť pohľadu pešo (násobka)
     }));
   } catch (_e) { /* noop: súkromný režim bez localStorage */ }
 }
@@ -245,6 +247,7 @@ export function loadSettings() {
     settings.rtQl = storedNum(s.rtQl, 0.3, 1, settings.rtQl);
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     if (s.eng === 'tdi' || s.eng === 'wankel') settings.engine = s.eng;
+    settings.sens = storedNum(s.sen, 0.3, 2.5, settings.sens);
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
 }
@@ -277,6 +280,10 @@ export function syncSettingsUI(ctx) {
   $('set-dist') && ($('set-dist').value = settings.dist);
   const distV = $('set-dist-v');
   if (distV) distV.textContent = settings.dist + ' m';
+  // --- citlivosť pohľadu pešo (myš) ---
+  $('set-sens') && ($('set-sens').value = settings.sens);
+  const sensV = $('set-sens-v');
+  if (sensV) sensV.textContent = Math.round(settings.sens * 100) + '%';
   // --- tieňová mapa ---
   const shqV = $('set-shq-v');
   if (shqV) shqV.textContent = SHADOW_RES + ' px';
@@ -431,6 +438,14 @@ export function wireSettingsUI(ctx, toast) {
     applyViewDist(c);
   });
   $('set-dist')?.addEventListener('change', () => saveSettings());
+
+  // Citlivosť pohľadu pešo (myš / dotyk). Násobka nad LOOK_SENS v onfoot.js.
+  $('set-sens')?.addEventListener('input', (e) => {
+    settings.sens = parseFloat(e.target.value);
+    const v = $('set-sens-v');
+    if (v) v.textContent = Math.round(settings.sens * 100) + '%';
+  });
+  $('set-sens')?.addEventListener('change', () => saveSettings());
 
   $('set-bal')?.addEventListener('input', (e) => {
     settings.bal = Math.max(-1, Math.min(1, parseInt(e.target.value, 10) / 50));
