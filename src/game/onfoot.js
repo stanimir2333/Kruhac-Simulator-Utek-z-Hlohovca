@@ -15,17 +15,21 @@ const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
 // Citlivosť pohľadu: rad/px. S unadjustedMovement sú delty RAW counts, takže
-// pocit závisí od DPI myši (800/1600/3200 DPI = 2×/4× rozdiel). História
-// 0.0032 → … → 0.0009 → 0.00045 bola vždy "stále hnalá", lebo sa hádalo DPI.
-// 0.00018 ≈ 0.0103°/px = CS-pocit pri 1600 DPI (360° ≈ 55 cm nábeh);
-// pri 800 DPI si zámaľ otáčaš hore sliderom — rozsah je 5–400 %.
-const LOOK_SENS = 0.00018;
+// pocit závisí od DPI myši (800/1600/3200/6400 DPI). História 0.0032 → … →
+// 0.00018 bola vždy "stále hnalá" — pri 3200–6400 DPI myši je CS-pocit až
+// ~0.00009. Rozsah slidera 2–400 % pokrýva DPI od 800 po 12800.
+const LOOK_SENS = 0.00009;
 // Mäkký strop rýchlosti pohľadu: rozpočet dopĺňa REÁLNY ČAS (px/ms), takže
 // je nezávislý od FPS aj od počtu mousemove eventov (125 Hz aj 1000 Hz myš
 // otáča rovnako rýchlo). Normálny pohyb (≤ ~20 px/ms pri 1600 DPI) ide 1:1;
 // strop chytí len obrieventy z akcelerácie OS v fallback režime.
 const LOOK_RATE = 30;   // dopĺňané px za ms
 const LOOK_BUDGET = 60; // max delta použitá na jeden event (px)
+// Pitch: fyzický clamp ±60° (kamera je v hlave — nižšie by hlodal do trupu).
+// Mäkká zóna nad ~46° tlmením nechá pohľad plynule dopadnúť namiesto trhnutia
+// na doraz ("zamknuté na oblohu/zemi").
+const PITCH_MAX = 1.05;
+const PITCH_SOFT = 0.8;
 const TOUCH_SENS = 0.0022; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
 
@@ -260,10 +264,23 @@ export function createOnFoot(opts = {}) {
     // Niektoré prehliadače request ticho odmietnu bez eventu — po chvíli
     // to považujeme za neúspech a zapneme fallback (myš otáča pohľad).
     setTimeout(() => {
-      if (foot.active && document.pointerLockElement !== canvas) lockFailed = true;
+      if (foot.active && document.pointerLockElement !== canvas && !lockFailed) {
+        lockFailed = true;
+        toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu, skúsi to znova.', 3600);
+      }
     }, 600);
   }
-  document.addEventListener('pointerlockerror', () => { lockFailed = true; });
+  document.addEventListener('pointerlockerror', () => {
+    // Firefox/Chrome chránia re-lock krátodobým cooldownom po ESC — chyba
+    // musí o sebe dať vedieť, inak hráč beží vo fallbacke (myš po obrazovke,
+    // okraje pohľad zastavia) a myslí si, že je citlivosť rozbitá.
+    if (foot.active && !lockFailed) {
+      lockFailed = true;
+      toast?.('Kurzor sa nepodarilo zamknúť — klikni na hernú plochu, skúsi to znova. Pokiaľ nie je zamknutý, pohľad ohraničujú okraje obrazovky.', 4200);
+    } else {
+      lockFailed = true;
+    }
+  });
   // Úspešný lock vždy zruší fallback režim — Chrome odmieta re-lock ~1,25 s po
   // ESC a bez tohto by jeden zamietnutý request prilepil fallback naveky.
   document.addEventListener('pointerlockchange', () => {
@@ -461,7 +478,15 @@ export function createOnFoot(opts = {}) {
       // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
       // obrátená (pohyb vpravo otáčal pohľad doľava).
       foot.yaw -= tx * s;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - ty * s));
+      // Mäkká zóna pitchu: znamienko kroku zostáva, magnitude sa pri blížení
+      // k clampu tlmení — žiadny trh už nenadosadí pitch natvrdo na ±PITCH_MAX.
+      let np = foot.pitch - ty * s;
+      const over = Math.abs(np) - PITCH_SOFT;
+      if (over > 0) {
+        const k = Math.max(0.12, 1 - (over / (PITCH_MAX - PITCH_SOFT)) * 0.88);
+        np = foot.pitch + (np - foot.pitch) * k;
+      }
+      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, np));
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
@@ -482,7 +507,13 @@ export function createOnFoot(opts = {}) {
       const s = TOUCH_SENS * sensFactor();
       // Rovnaké znamienko ako myš: prst vpravo = pohľad vpravo.
       foot.yaw -= dx * s;
-      foot.pitch = Math.max(-1.05, Math.min(1.05, foot.pitch - dy * s));
+      let np = foot.pitch - dy * s;
+      const over = Math.abs(np) - PITCH_SOFT;
+      if (over > 0) {
+        const k = Math.max(0.12, 1 - (over / (PITCH_MAX - PITCH_SOFT)) * 0.88);
+        np = foot.pitch + (np - foot.pitch) * k;
+      }
+      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, np));
     });
     const endTouch = (e) => { if (touchLook === e.pointerId) touchLook = -1; };
     canvas.addEventListener('pointerup', endTouch);
