@@ -1,5 +1,7 @@
 // src/world/sky.js — gradientová kupola + PMREM prostredie pre PBR (vlastný kód,
 // paleta z monolitu S.SKY_*; legacy buildSky s RT/bloom väzbami sem nepatrí).
+// Doplnené: skybox z textúr (assets/skybox/sky.jpg + thunder.jpg) s fallbackom
+// na procedurálnu gradientovú kupolu, ak súbor chýba / je pokazený.
 import * as THREE from 'three';
 import { PERF } from '../core/config.js';
 import { S } from './shared.js';
@@ -35,6 +37,71 @@ export function cullChunks(x, z, now) {
     n++;
   }
   return n;
+}
+
+// ---------- SKYBOX ----------
+// Kandidátske cesty — rovnaký vzor ako mapData.js / radio.js, aby hra nabehla
+// z Vite dev, z dist/, z python http.server, z Pages aj z file://.
+const SKY_BASES = ['/assets/', './assets/', 'assets/', '/public/assets/', './public/assets/', 'public/assets/'];
+const SKY_FILES = { normal: 'skybox/sky.jpg', thunder: 'skybox/thunder.jpg' };
+
+let domeRef = null;
+let currentVariant = 'normal';
+const skyTextures = { normal: null, thunder: null };
+
+function candidateUrls(file) {
+  return SKY_BASES.map((b) => b + file);
+}
+
+function loadSkyTexture(file) {
+  return new Promise((resolve) => {
+    const urls = candidateUrls(file);
+    const loader = new THREE.TextureLoader();
+    let i = 0;
+    const tryNext = () => {
+      if (i >= urls.length) { resolve(null); return; }
+      const url = urls[i++];
+      loader.load(
+        url,
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.generateMipmaps = true;
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          resolve(tex);
+        },
+        undefined,
+        () => tryNext(),
+      );
+    };
+    tryNext();
+  });
+}
+
+function applyVariant(v) {
+  currentVariant = v;
+  if (!domeRef) return;
+  const tex = skyTextures[v];
+  if (tex) {
+    try { domeRef.material?.dispose?.(); } catch (_e) { /* noop */ }
+    domeRef.material = new THREE.MeshBasicMaterial({
+      map: tex, side: THREE.BackSide, depthWrite: false, fog: false,
+    });
+  }
+  // ak textúra ešte nie je načítaná, ostáva aktuálny materiál (gradient fallback)
+}
+
+export function setSkyVariant(v) {
+  const key = (v === 'thunder') ? 'thunder' : 'normal';
+  // ak textúra ešte nie je načítaná, spusti lazy load a aplikuj po dobehnutí
+  if (!skyTextures[key]) {
+    loadSkyTexture(SKY_FILES[key]).then((tex) => {
+      if (!tex) return;
+      skyTextures[key] = tex;
+      if (currentVariant === key) applyVariant(key);
+    });
+  }
+  applyVariant(key);
 }
 
 export function buildSkyDome(scene, renderer) {
@@ -74,5 +141,17 @@ export function buildSkyDome(scene, renderer) {
     scene.environment = envRT.texture;
     pm.dispose();
   } catch (e) { console.warn('[sky] PMREM env skipped:', e?.message); }
+  domeRef = dome;
+  // Lazy load skybox textúr (neblokuje boot); po dobehnutí sa aplikuje, ak je variant aktívny.
+  loadSkyTexture(SKY_FILES.normal).then((tex) => {
+    if (!tex) return;
+    skyTextures.normal = tex;
+    if (currentVariant === 'normal') applyVariant('normal');
+  });
+  loadSkyTexture(SKY_FILES.thunder).then((tex) => {
+    if (!tex) return;
+    skyTextures.thunder = tex;
+    if (currentVariant === 'thunder') applyVariant('thunder');
+  });
   return dome;
 }

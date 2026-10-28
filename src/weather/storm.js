@@ -15,6 +15,7 @@
 // isActive } — to je ten "StormManager" zo zadania, len bez `class`.
 import * as THREE from 'three';
 import { S } from '../world/shared.js';
+import { setSkyVariant } from '../world/sky.js';
 
 // ---------- KONFIG ----------
 const RAIN_W = 70;          // šírka dažďovej škatule (m)
@@ -414,6 +415,7 @@ export function createStormManager() {
     loadSamples(); // fire-and-forget: údery medzitým hrajú zo syntézy
     setRainLevel(0.16);
     setWet(true);
+    try { setSkyVariant('thunder'); } catch (_e) { /* noop */ }
     strikeT = rnd(0.5, 1.5); // prvý blesk príde rýchlo (efekt hneď vidno)
   }
 
@@ -424,6 +426,7 @@ export function createStormManager() {
     clearTimers();
     setRainLevel(0);
     setWet(false);
+    try { setSkyVariant('normal'); } catch (_e) { /* noop */ }
   }
 
   function update(dt, car) {
