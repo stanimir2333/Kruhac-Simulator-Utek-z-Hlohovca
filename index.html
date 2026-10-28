@@ -45,6 +45,8 @@
     <span>|</span>
     <span id="music-btn">HUDBA: ON [C]</span>
     <span>|</span>
+    <span id="garage-btn">GARÁŽ [G]</span>
+    <span>|</span>
     <span id="boost-badge">TURBO</span>
   </div>
 
@@ -97,7 +99,7 @@
     <div id="hud-street">CESTA 513 → VON Z MESTA</div>
     <div class="bar" id="bar-route"><i></i></div>
   </div>
-  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · C hudba · G motor · B búrka · R reštart · T turbo · F3 bloom · ESC nastavenia<br>ENTER vystúpiť/nastúpiť (pešo: myš = pohľad, LMB = strieľať, 1–5 = zbraň, R = prebiť)<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO · BURKA</div>
+  <div id="hint" class="panel">W/▲ plyn · S/▼ brzda · A/D riadenie · SPACE ručná<br>H trúbenie · M mapa · Q/E rádio · X zvuk · C hudba · G garáž · B búrka · R reštart · T turbo · F3 bloom · ESC nastavenia<br>ENTER vystúpiť/nastúpiť (pešo: myš = pohľad, LMB = strieľať, 1–5 = zbraň, R = prebiť)<br>F pokec s Petrom (misie) · CHEAT: NOCLIP · WARPZAMOK · WARPURBANEK · WARPBRIDGE · WARPSTATION · WARPPETER · FIXCAR · TURBO · BURKA</div>
   <div id="weapon" class="panel">
     <div id="w-name">9MM</div>
     <div id="w-slots">
@@ -152,10 +154,9 @@
       <input id="set-bal" type="range" min="-50" max="50" step="1" value="0"></div>
     <div class="srow"><label><span>HUDBA · RÁDIO [C]</span><span id="set-music-v">ZAP.</span></label>
       <button id="set-music-toggle">HUDBA ZAPNUTÁ</button></div>
-    <div class="srow"><label><span>MOTOR [G]</span><span id="set-engine-v">1.9 TDI</span></label>
-      <div class="segs" id="set-engine">
-        <button data-e="tdi">1.9 TDI</button><button data-e="wankel">4-ROTOR</button>
-      </div></div>
+    <div class="srow"><label><span>AUTO · GARÁŽ [G]</span><span id="set-car-v">ŠKODA OCTAVIA I</span></label>
+      <button id="set-car-open">OTVORIŤ GARÁŽ</button></div>
+    <div class="srow"><label><span>MOTOR (podľa auta)</span><span id="set-engine-v">1.9 TDI</span></label></div>
     <div class="srow"><label><span>DYNAMICKÉ TIENE + SLNKO</span><span id="set-rt-v">VYP.</span></label>
       <button id="set-rt-toggle">ZAPNÚŤ TIENE</button></div>
     <div class="srow rt-only"><label><span>TIENE · MAPA</span><span id="set-rtq-v">STANDARD</span></label>
@@ -212,10 +213,21 @@
     <p style="font-size:12px;">Pri štarte kolóny máva <b>Peter</b> — zastav pri ňom a stlač <b>F</b>, zadá ti misie.</p>
     <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
     A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
-    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — motor &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
+    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
     <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
     <br>
     <button class="btn" id="btn-start">ŠTARTOVAŤ ÚTEK</button>
+  </div>
+</div>
+
+<div id="garage" class="overlay hidden">
+  <div class="card panel">
+    <h1 style="font-size:24px;">GARÁŽ · VÝBER AUTA</h1>
+    <h2>Motor patrí typu auta — Octavia jazdí 1.9 TDI, RX-7 4-ROTOR WANKEL</h2>
+    <div id="garage-list"></div>
+    <p style="font-size:12px;line-height:1.7;">Výber motora zanikol: prepínač [G] teraz otvára garáž a motor si vyberie
+      typ auta sám (TDI = pracant 250 km/h, Wankel = rotácia 15000 ot/min).</p>
+    <button class="btn" id="garage-close">SPÄŤ DO HRY</button>
   </div>
 </div>
 

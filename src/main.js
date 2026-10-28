@@ -1,7 +1,7 @@
 // src/main.js — boot: preloader → mapa (async) → svet (legacy poradie) → slučka.
 // Ťažká práca až v krokoch init(), medzi krokmi yield → loading bar žije.
 import * as THREE from 'three';
-import { VERSION, PERF } from './core/config.js';
+import { VERSION, PERF, CARS } from './core/config.js';
 import { createState } from './core/state.js';
 import { createEngine } from './core/engine.js';
 import { createInput } from './core/input.js';
@@ -23,7 +23,9 @@ import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
 import { buildSkyDome, cullChunks } from './world/sky.js';
 import { cullLabels } from './world/labels.js';
-import { buildPlayerMesh, syncMesh } from './world/cars.js';
+import {
+  buildPlayerMesh, syncMesh, disposeCarMesh,
+} from './world/cars.js';
 import {
   createVehicle, updateVehicle, vehicleTelemetry, collideWorld, KMH_PER_MPS,
   setEngine as setPhysEngine, engineDef,
@@ -35,7 +37,7 @@ import { createSfx } from './audio/sfx.js';
 import { createStormManager } from './weather/storm.js';
 import { createBloom } from './fx/bloom.js';
 import { updateSunShadow } from './fx/sunshadow.js';
-import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI } from './ui/settings.js';
+import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI, toggleSettings } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, updateExhaustFlames, loadDriftBest, resetDrift, DR } from './game/drift.js';
@@ -51,6 +53,7 @@ import { createDashboard } from './ui/dashboard.js';
 import { createEngineViz } from './ui/engineViz.js';
 import { createMinimap, enableTiles } from './ui/minimap.js';
 import { wireMenus } from './ui/menus.js';
+import { wireGarage } from './ui/garage.js';
 // Štýly ťahá <link> v index.html (Vite ich zbalí; natívny ESM by import CSS odmietol).
 
 const pre = createPreloader();
@@ -90,10 +93,12 @@ async function boot() {
   const dash = createDashboard();
   const engineViz = createEngineViz();
   const sfx = createSfx();
-  // Prepínač motora [G] — 1.9 TDI vs 4-rotor wankel (15000 ot, brap na voľnobehu).
-  // Prepne naraz fyziku, zvuk, vizualizáciu aj otáčkomer; otáčky auta sa premapujú
-  // pomero (r01), takže pri výmene za jazdy nepadnú na voľnobeh. Auto sa dopĺňa
-  // až v kroku 3 (motorCtl.car), dovtedy sa prepína len profil.
+  // PREPÍNAČ MOTORA ZANIKOL (B29): motor patrí typu auta (CARS[car].engine —
+  // Octavia → 1.9 TDI, RX-7 → 4-ROTOR WANKEL). Výber auta má na starosti
+  // garáž [G] (ui/garage.js), prepínanie všetkých vrstiev zvláda jediná
+  // funkcia setEngineAll: naraz fyziku, zvuk, vizualizáciu aj budíky; otáčky
+  // sa premapujú pomerom (r01), takže pri výmene za jazdy nepadnú na voľnobeh.
+  // Auto sa dopĺňa až v kroku 3 (motorCtl.car), dovtedy sa prepína len profil.
   const motorCtl = { car: null };
   const setEngineAll = (id, silent) => {
     const next = id === 'wankel' ? 'wankel' : 'tdi';
@@ -118,7 +123,6 @@ async function boot() {
         : 'Motor: 1.9 TDI · 250 km/h');
     }
   };
-  const toggleEngine = () => setEngineAll(engineDef().id === 'wankel' ? 'tdi' : 'wankel', false);
   // Prepínač hudby [C] — len rádio ticho, motor/trúbenie/nárazy hrajú ďalej.
   // Zdieľaný medzi klávesou, #music-btn v topbare a tlačidlom v nastaveniach
   // (to volá ctx.audio.toggleMusic). Rádio sa dopĺňa až v kroku 4.
@@ -154,11 +158,10 @@ async function boot() {
       setMusicMuted: (m) => sfx.setMusicMuted(m),
       toggleMusic: () => toggleMusic(),
     },
-    motor: { setEngine: (id) => setEngineAll(id, false) },
   };
   wireSettingsUI(settingsCtx, (m) => hud.toast(m));
-  // Uložený motor z localStorage (settings.engine) na všetky vrstvy ešte pred
-  // tvorbou auta — createVehicle potom štartuje na správnom voľnobehu.
+  // Uložené auto z localStorage (settings.car; engine je odvodený atribút) —
+  // createVehicle potom štartuje na správnom voľnobehu.
   setEngineAll(settings.engine, true);
 
   // Dotykové ovládanie: #touch má v CSS display:none a objaví sa len cez .on,
@@ -223,13 +226,32 @@ async function boot() {
   await step(0.92, 'autá…');
   routePose(8, _v3, _hWrap, LANE_OFF);
   const car = createVehicle({ x: _v3.x, z: _v3.z });
-  motorCtl.car = car; // pre pomerné premapovanie otáčok pri výmene motora [G]
+  motorCtl.car = car; // pre pomerné premapovanie otáčok pri výmene auta v garáži
   car.h = _hWrap.v;
   car.y = driveY(car.x, car.z, 8, LANE_OFF);
   let playerS = 8;
   state.player.x = car.x; state.player.z = car.z; state.player.h = car.h;
-  const playerMesh = buildPlayerMesh(state.player.color);
+  let playerMesh = buildPlayerMesh(state.player.color, settings.car); // GARÁŽ: id z localStorage
   scene.add(playerMesh.group);
+  // GARÁŽ: výmena auta hráča (mesh + motor podľa typu auta). Kolízny OBB
+  // (CAR_HW/CAR_HL vo vehicle.js) zostáva zdieľaný — obidve autá sú podstatne
+  // podobných rozmerov, takže sa fyzickej kolízie nedotkáme.
+  const setPlayerCar = (id, silent = false) => {
+    const def = CARS[id];
+    if (!def || settings.car === id) return; // rovnaké auto → nič nerob
+    settings.car = id;
+    setEngineAll(def.engine, silent); // motor patrí typu auta (fyzika, zvuk, budíky)
+    scene.remove(playerMesh.group);
+    disposeCarMesh(playerMesh); // len materiály (geometrie sú zdieľané medzi autami)
+    playerMesh = buildPlayerMesh(state.player.color, id);
+    scene.add(playerMesh.group);
+    try { saveSettings(); } catch (_e) { /* noop */ }
+    try { syncSettingsUI(); } catch (_e) { /* noop */ }
+    if (!silent) {
+      const E = engineDef();
+      hud.toast(`Auto: ${def.name} · motor ${E.name} · ${Math.round(E.vmax * KMH_PER_MPS)} km/h`);
+    }
+  };
 
   const traffic = createTraffic(26);
   placeTraffic(traffic, playerS, S.routeLen);
@@ -254,7 +276,17 @@ async function boot() {
     toast: (m) => hud.toast(m),
   });
 
-  // Odraz Váhu až PO autách (mirror vrstva musí vidieť aj meshe áut, ako v monolitu).
+  // GARÁŽ [G] — menu výberu auta so štatistikami. Motor patrí typu auta, takže
+  // apply → setPlayerCar vymení mesh aj profil motora v jednom kroku.
+  const garage = wireGarage(state, hud, { apply: setPlayerCar, carId: () => settings.car });
+  // Nastavenia: tlačidlo AUTO · GARÁŽ otvára garáž — najprv zavri panel
+  // nastavení, aby neboli otvorené oba overlaye naraz.
+  document.getElementById('set-car-open')?.addEventListener('click', () => {
+    toggleSettings(false);
+    garage.open();
+  });
+
+  // Odraz Váhu až PO autách (mirror vrstva musí vidieť aj meshe áut, ako v monolite).
   // + zosynchronizuj materiál s uloženou kvalitou (boot inak nechá shader aj pri VYP).
   await step(0.93, 'odraz Váhu…');
   initWater(renderer, scene, camera, skyDome, settings.water);
@@ -338,7 +370,7 @@ async function boot() {
     }
     if (e.code === 'KeyX' && !typing) toggleMute();
     if (e.code === 'KeyC' && !typing) toggleMusic();
-    if (e.code === 'KeyG' && !typing) toggleEngine();
+    if (e.code === 'KeyG' && !typing) garage.toggle(); // GARÁŽ (auto + motor v ňom)
     if (e.code === 'KeyB' && !typing) toggleStorm();
     if (e.code === 'KeyR' && state.started && !typing) {
       routePose(8, _v3, _hWrap, LANE_OFF);
