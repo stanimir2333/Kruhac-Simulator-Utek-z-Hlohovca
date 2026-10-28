@@ -28,6 +28,7 @@
   #topbar b{font-size:18px;}
   #snd-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
   #music-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
+  #garage-btn{pointer-events:auto;cursor:pointer;border:1px solid var(--amber);padding:2px 8px;}
   /* ---------- Rádio widget ---------- */
   #radio-wrap{position:absolute;top:64px;left:50%;transform:translateX(-50%);
     display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px 14px;font-size:13px;}
@@ -265,6 +266,32 @@
     padding:8px 2px;background:rgba(10,8,2,.7);border:2px solid var(--amber);color:var(--amber);}
   .segs button.on{background:var(--amber);color:#0b0906;font-weight:bold;}
   #settings.rt-off .rt-only{opacity:.3;pointer-events:none;}
+  /* ---------- GARÁŽ: výber auta [G] (motor patrí typu auta) ---------- */
+  #garage .card{max-width:min(94vw,820px);}
+  #garage-list{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:14px;}
+  .gcar{pointer-events:auto;cursor:pointer;text-align:left;flex:1 1 300px;
+    padding:12px 14px;font-family:inherit;color:var(--amber);
+    background:rgba(10,8,2,.7);border:2px solid var(--amber-dim);}
+  .gcar.on{border-color:var(--green);box-shadow:0 0 10px rgba(57,255,106,.35);}
+  .gchead{display:block;font-weight:bold;font-size:16px;letter-spacing:1px;}
+  .gcbadge{display:none;}
+  .gcar.on .gcbadge{display:inline-block;margin-left:8px;font-size:10px;
+    color:#071108;background:var(--green);padding:1px 6px;
+    text-shadow:none;vertical-align:2px;}
+  .gcsub{display:block;font-size:11px;color:#ffd97a;margin:3px 0 8px;}
+  .gcr{display:flex;justify-content:space-between;gap:10px;font-size:11px;
+    line-height:1.9;border-top:1px dashed rgba(255,176,0,.25);}
+  .gcr i{font-style:normal;color:rgba(255,176,0,.65);}
+  .gcr b{font-weight:bold;color:#ffd97a;}
+  .gcdesc{display:block;margin-top:8px;font-size:11px;line-height:1.55;
+    color:rgba(255,176,0,.8);}
+  .gcengine{display:block;margin-top:8px;font-size:10px;letter-spacing:1px;
+    color:var(--green);}
+  .gcar:active{transform:translateY(1px);}
+  #set-car-open{width:100%;pointer-events:auto;cursor:pointer;font-family:inherit;
+    font-size:12px;letter-spacing:1px;padding:8px;background:rgba(10,8,2,.7);
+    border:2px solid var(--amber);color:var(--amber);}
+  #set-car-open:active{background:var(--amber);color:#0b0906;}
   #rt-diag{position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:57;
     padding:6px 10px;font-size:10px;line-height:1.55;white-space:pre;text-align:left;
     pointer-events:none;}
