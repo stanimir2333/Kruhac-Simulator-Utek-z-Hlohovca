@@ -10,6 +10,17 @@ export function createEngine(container) {
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Tieňovú mapu NEkreslí three každý snímok — riadi ju src/fx/sunshadow.js:
+  // frustum sa posúva v celých texeloch a obnova sa preskakuje, keď sa nič
+  // nezmenilo (statické mesto = mapa platí ďalej). Bez tohto prepínača by bol
+  // snap zbytočný, lebo three aj tak prekreslí mapu pri každom render() skoku.
+  renderer.shadowMap.autoUpdate = false;
+  // `#fps` číta renderer.info.render. S predvoleným autoReset = true ho každé
+  // volanie renderer.render() vyčistí — a bloom composer volá render 3x (scéna,
+  // bloom mipy, OutputPass), takže HUD ukazoval "1 DC · 0k tri". Reset robíme
+  // raz za snímok v slučke, takže čísla zahŕňajú tieňový priechod, odraz Váhu
+  // aj bloom — presne to, čo chceme merať.
+  renderer.info.autoReset = false;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -36,6 +47,10 @@ export function createEngine(container) {
   let renderOverride = null; // bloom composer (src/fx/bloom.js) sa sem zapojí
   const listeners = { tick: [] };
   const resizeExtra = [];    // callbacky z onResizeExtra (na odstránenie v dispose)
+  // Snímkové štatistiky z POSLEDNÉHO dokončeného snímku. HUD ich číta počas
+  // ticku, teda skôr než sa vykreslí aktuálny snímok — bez tejto kópie by vždy
+  // videl nuly (renderer.info sa resetuje na začiatku snímku).
+  const stats = { calls: 0, triangles: 0 };
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     let dt = Math.min((now - last) / 1000, 0.1);
@@ -44,13 +59,18 @@ export function createEngine(container) {
     acc += dt;
     if (acc < 1 / fpsCap) return;
     dt = acc; acc = 0;
+    // Štatistiky snímku: jedno vyčistenie na snímok (pozri info.autoReset vyššie).
+    renderer.info.reset();
     for (const fn of listeners.tick) fn(dt, now / 1000);
     if (renderOverride) renderOverride();
     else renderer.render(scene, camera);
+    stats.calls = renderer.info.render.calls;
+    stats.triangles = renderer.info.render.triangles;
   };
 
   return {
     renderer, scene, camera, sun,
+    stats,
     onTick(fn) { listeners.tick.push(fn); },
     setRenderOverride(fn) { renderOverride = fn; },
     // (onRender/setViewDist odstránené: onRender nikto neprihlásil, setViewDist

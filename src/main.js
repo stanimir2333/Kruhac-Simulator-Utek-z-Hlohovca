@@ -441,6 +441,7 @@ async function boot() {
 
   engine.onTick((dt, t) => {
     state.time = t;
+    S.UNI.time.value = t; // vietor v korunách (src/world/nature.js), jedna uniforma
     if (!state.started || state.paused) {
       // menu orbitka okolo štartu
       const a = t * 0.12;
@@ -570,7 +571,7 @@ async function boot() {
 
     // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
     if (settings.rt) {
-      const diag = updateSunShadow(sun, focusX, focusY, focusZ, settings.dist, shadowTierR());
+      const diag = updateSunShadow(sun, focusX, focusY, focusZ, settings.dist, shadowTierR(), t);
       if (diag) setShadowDiag(diag.texel, diag.depth);
     }
     // distance culling: chunky (budovy + vegetácia) a blízke štítky, oboje 2 Hz.
@@ -606,8 +607,10 @@ async function boot() {
       const el = document.getElementById('fps');
       // draw calls + trojuholníky: jediný spoľahlivý ukazov, kde sa reálne
       // stráca výkon (drawCars, bloom, odraz Váhu). Bez toho je každá ďalšia
-      // optimalizácia odhadom.
-      const info = renderer.info.render;
+      // optimalizácia odhadom. engine.stats je kópia z POSLEDNÉHO dokončeného
+      // snímku (renderer.info sa počas ticku resetuje, takže by ukazoval nuly)
+      // a zahŕňa tieňový priechod, odraz hladiny aj bloom — nie len scénu.
+      const info = engine.stats;
       if (el) el.textContent = `${Math.round(fpsN / fpsAcc)} FPS · ${info.calls} DC · ${(info.triangles / 1000) | 0}k tri`;
       fpsAcc = 0; fpsN = 0;
     }
@@ -615,6 +618,19 @@ async function boot() {
   // FPS limit už nastavil wireSettingsUI → applyAll z uloženého settings.fps.
   // Tento riadok ho prepisoval natvrdo na 60 a zahodil nastavenie pri každom starte.
   engine.start();
+
+  // Diagnostický hák (len na čítanie, nič v hre ho nepoužíva): z konzoly sa dá
+  // prepnúť bloom/tiene/voda a zmerať renderer.info bez reloadu — bez toho je
+  // každá ďalšia optimalizácia odhad. `__kruhac.stats()` vráti čísla snímku.
+  globalThis.__kruhac = {
+    renderer, scene, camera, sun, engine, S, bloom, settings, osm,
+    water: { setQuality: setWaterQuality },
+    stats() {
+      const r = renderer.info.render;
+      return { calls: r.calls, triangles: r.triangles, programs: renderer.info.programs?.length ?? 0,
+        geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures };
+    },
+  };
 
   pre.finish();
   console.info(`[boot] ${VERSION} · route ${S.routeLen | 0} m · blds ${(osm.blds || []).length} · roads ${(osm.roads || []).length}`);

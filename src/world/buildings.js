@@ -406,23 +406,26 @@ export function buildBuildings(){
     for(let u=0;u<uv.count;u++){ uv.setXY(u, uv.getX(u)*0.125, uv.getY(u)*0.125); }
     const key = Math.floor((k.x-S.GB.x0)/250)*1000 + Math.floor((k.z-S.GB.z0)/250);
     let ch = cells.get(key);
-    // Mergnuté geometrie PER CHUNK PER MATERIÁL (max 6 draw calls / chunk):
-    // wHouse/wPanel/wHist/wInd = steny kategórií, rPitch/rFlat = strechy.
+    // Mergnuté geometrie PER CHUNK PER MATERIÁL. B30: steny domov, panelákov
+    // a historických budov sú ZJEDNOTENÉ do jednej omietky (wPlaster) — líšili
+    // sa len o roughness 0.85/0.9/0.9 a normalScale 0.55/0.7, teda takmer
+    // neviditeľne, ale stáli 2 draw calls navyše v každom chunku (bolo ich 6,
+    // teraz 4: omietka, plech, šikmá strecha, plochá strecha). Odchýlku
+    // kategórií nesie vertex tint, ktorý zostal.
     // Distance culling (CHUNKS, 2 Hz) + frustum culling držia FPS na 60 aj pri vysokej dohľadnosti.
     if(!ch){ ch = { items:[],
-      wHouse:{p:[],n:[],u:[],c:[],i:[],v:0}, wPanel:{p:[],n:[],u:[],c:[],i:[],v:0},
-      wHist:{p:[],n:[],u:[],c:[],i:[],v:0}, wInd:{p:[],n:[],u:[],c:[],i:[],v:0},
+      wPlaster:{p:[],n:[],u:[],c:[],i:[],v:0}, wInd:{p:[],n:[],u:[],c:[],i:[],v:0},
       rPitch:{p:[],n:[],u:[],c:[],i:[],v:0}, rFlat:{p:[],n:[],u:[],c:[],i:[],v:0} };
       cells.set(key, ch); }
     ch.items.push({ x:k.x, z:k.z, hd:Math.sqrt(k.w*k.w+k.d*k.d)/2 });
     const wv = hx3(ZWALL[k.zone][(i*7+k.zone)%ZWALL[k.zone].length]);
     const rv = hx3(ZROOF[k.zone][(i*5+k.zone+1)%ZROOF[k.zone].length]);
-    // Kat. A domy (0) -> pastel + šikmá škridla; B paneláky (1) -> mriežka + plochá štrková;
-    // C priemysel/obchody (2,4) + technické (5) -> vlnitý plech + plochá; D historické (3) -> kameň + tmavá.
-    if(k.zone === 0){ pushGeo(ch.wHouse, g, 1, wv[0], wv[1], wv[2], k.baseY); pushGeo(ch.rPitch, g, 0, rv[0], rv[1], rv[2]); }
-    else if(k.zone === 1){ pushGeo(ch.wPanel, g, 1, wv[0], wv[1], wv[2], k.baseY); pushGeo(ch.rFlat, g, 0, rv[0], rv[1], rv[2]); }
-    else if(k.zone === 3){ pushGeo(ch.wHist, g, 1, wv[0], wv[1], wv[2], k.baseY); pushGeo(ch.rPitch, g, 0, rv[0], rv[1], rv[2]); }
-    else { pushGeo(ch.wInd, g, 1, wv[0], wv[1], wv[2], k.baseY); pushGeo(ch.rFlat, g, 0, rv[0], rv[1], rv[2]); }
+    // Kat. A domy (0), B paneláky (1), D historické (3) -> omietka; C priemysel
+    // (2), obchody (4), technické (5) -> vlnitý plech. Strecha: šikmá škridla
+    // len pre domy a historické budovy, paneláky a haly majú plochú.
+    const pitch = (k.zone === 0 || k.zone === 3);
+    pushGeo(pitch || k.zone === 1 ? ch.wPlaster : ch.wInd, g, 1, wv[0], wv[1], wv[2], k.baseY);
+    pushGeo(pitch ? ch.rPitch : ch.rFlat, g, 0, rv[0], rv[1], rv[2]);
   }
   // Kostol sv. Michala: veža (sokel + teleso + zvonica + helma + kríž), inak je to len garáž
   for(let i=0;i<kept.length;i++){
@@ -488,9 +491,7 @@ export function buildBuildings(){
     }
     const parts = [];
     // Všetky meshe budov: castShadow + receiveShadow (mäkké tiene na terén aj zástavbu).
-    if(ch.wHouse.i.length){ const m = new THREE.Mesh(finishGeo(ch.wHouse), S.MAT.houseWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
-    if(ch.wPanel.i.length){ const m = new THREE.Mesh(finishGeo(ch.wPanel), S.MAT.panelWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
-    if(ch.wHist.i.length){ const m = new THREE.Mesh(finishGeo(ch.wHist), S.MAT.histWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
+    if(ch.wPlaster.i.length){ const m = new THREE.Mesh(finishGeo(ch.wPlaster), S.MAT.houseWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.wInd.i.length){ const m = new THREE.Mesh(finishGeo(ch.wInd), S.MAT.indWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rPitch.i.length){ const m = new THREE.Mesh(finishGeo(ch.rPitch), S.MAT.pitchedRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rFlat.i.length){ const m = new THREE.Mesh(finishGeo(ch.rFlat), S.MAT.flatRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }

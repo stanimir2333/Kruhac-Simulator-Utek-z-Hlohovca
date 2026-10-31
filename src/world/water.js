@@ -144,6 +144,11 @@ export function buildRiverSurface(ways, step, lat){
   const nor = new Float32Array(nv*3);   // hladina je rovina: (0,1,0) — RT prepass to číta
   const edge = new Float32Array(nv);
   const idx = new Uint32Array(ni);
+  // Rozsahy indexov po úsekoch [start, end): hladina sa delí na ~WATER_CHUNK
+  // metrové kusy, aby frustum culling (aj odrazový priechod) vedel rieku
+  // ignorovať, keď nie je v zábere. Atribúty sú ZDIEĽANÉ, delí sa len index.
+  const WATER_CHUNK = 400;
+  const spans = [];
   let v = 0, ii = 0, ymin = 1e18, ymax = -1e18;
   for(let w=0; w<rows.length; w++){
     const R = rows[w], hw = R.hw, n = R.n, r = R.r;
@@ -175,24 +180,55 @@ export function buildRiverSurface(ways, step, lat){
         idx[ii++] = k+j+1;   idx[ii++] = k+j+lat+2; idx[ii++] = k+j+lat+1;
       }
     }
+    // Riadok zaberá lat*6 indexov, takže hranice úsekov sú presné násobky.
+    const firstIdx = ii - (n-1)*lat*6;
+    const rowsPerChunk = Math.max(1, Math.round(WATER_CHUNK / step));
+    for(let i0=0;i0<n-1;i0+=rowsPerChunk){
+      const i1 = Math.min(n-1, i0+rowsPerChunk);
+      spans.push([firstIdx + i0*lat*6, firstIdx + i1*lat*6]);
+    }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
-  g.setAttribute("aEdge", new THREE.BufferAttribute(edge, 1));
-  g.setIndex(new THREE.BufferAttribute(idx, 1));
-  g.computeBoundingSphere();
-  S.DYN_GEO.push(g);
-  const m = new THREE.Mesh(g, WAT.mat);
-  m.frustumCulled = true;
-  m.matrixAutoUpdate = false;
-  m.updateMatrix();
-  S.scene.add(m);
-  WAT.meshes.push(m);
-  m.layers.enable(BLOOM_LAYER);   // slnečný lesk na vode má svietiť
+  const posAttr = new THREE.BufferAttribute(pos, 3);
+  const norAttr = new THREE.BufferAttribute(nor, 3);
+  const edgeAttr = new THREE.BufferAttribute(edge, 1);
+  let made = 0;
+  for(let sp=0; sp<spans.length; sp++){
+    const s = spans[sp][0], e = spans[sp][1];
+    if(e <= s) continue;
+    const g = new THREE.BufferGeometry();
+    // Atribúty sú zdieľané (jeden upload do GPU), vlastný je len index.
+    g.setAttribute("position", posAttr);
+    g.setAttribute("normal", norAttr);
+    g.setAttribute("aEdge", edgeAttr);
+    g.setIndex(new THREE.BufferAttribute(idx.subarray(s, e), 1));
+    // Atribúty sú zdieľané (celá rieka), takže computeBoundingSphere() by dal
+    // každému úseku guľu celej rieky a frustum culling by bol bezúčinný. Počítame
+    // guľu len z indexov tohto úseku, aby sa úseky cull-li samostatne.
+    {
+      let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (let i = s; i < e; i++) {
+        const p = idx[i] * 3;
+        const x = pos[p], y = pos[p + 1], z = pos[p + 2];
+        if (x < minX) minX = x; if (y < minY) minY = y; if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x; if (y > maxY) maxY = y; if (z > maxZ) maxZ = z;
+      }
+      const cx = (minX + maxX) * 0.5, cy = (minY + maxY) * 0.5, cz = (minZ + maxZ) * 0.5;
+      const r = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) * 0.5;
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), Math.max(1, r));
+    }
+    S.DYN_GEO.push(g);
+    const m = new THREE.Mesh(g, WAT.mat);
+    m.frustumCulled = true;
+    m.matrixAutoUpdate = false;
+    m.updateMatrix();
+    S.scene.add(m);
+    WAT.meshes.push(m);
+    m.layers.enable(BLOOM_LAYER);   // slnečný lesk na vode má svietiť
+    made++;
+  }
   console.log("[VODA] hladina " + (ymin+S.ELE_DATUM).toFixed(1) + ".." + (ymax+S.ELE_DATUM).toFixed(1)
-    + " m n.m. · " + nv + " vrcholov · " + (ni/3) + " trojuholníkov");
-  return m;
+    + " m n.m. · " + nv + " vrcholov · " + (ni/3) + " trojuholníkov · " + made + " úsekov");
+  return made ? WAT.meshes[WAT.meshes.length - 1] : null;
 }
 
 export function buildWaterNormals(size){
@@ -397,6 +433,29 @@ function renderWaterReflection() {
 }
 
 // TICK VODY: čas vĺn, uReflMix fade, throttlovaný odraz. Volá main loop PRED render.
+const _reflFrustum = new THREE.Frustum();
+const _reflPV = new THREE.Matrix4();
+const _reflSphere = new THREE.Sphere();
+let reflVisAt = -1e9, waterInView = true;
+
+// Je aspoň jeden úsek hladiny v zábere kamery? Odraz stojí celý druhý priechod
+// scény, takže v centre mesta (Váh 300+ m mimo záberu) je to čistá strata.
+function waterVisibleFrom(camera) {
+  if (!camera) return true;
+  _reflPV.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _reflFrustum.setFromProjectionMatrix(_reflPV);
+  for (let i = 0; i < WAT.meshes.length; i++) {
+    const m = WAT.meshes[i];
+    const g = m.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    if (!g.boundingSphere) continue;
+    _reflSphere.copy(g.boundingSphere).applyMatrix4(m.matrixWorld);
+    _reflSphere.radius += 24; // vlny + breh okolo geometrie
+    if (_reflFrustum.intersectsSphere(_reflSphere)) return true;
+  }
+  return false;
+}
+
 export function updateWater(dt, viewDist) {
   if (!WAT.mat || !WAT.mat.uniforms) return;
   if (typeof viewDist === 'number') _wctx.viewDist = viewDist;
@@ -415,6 +474,13 @@ export function updateWater(dt, viewDist) {
   const mix = u.uReflMix.value;
   u.uReflMix.value = mix + (want - mix) * Math.min(1, dt * 2.5);
   if (!WAT.live || WAT.level < 1 || !WAT.reflRT) return;
+  // Viditeľnosť hladiny preverujeme 4x za sekundu (frustum test je lacný, ale
+  // nie zadarmo); keď sa rieka vráti do záberu, odraz sa vykreslí HNEĎ.
+  if (WAT.time - reflVisAt > 0.25) {
+    reflVisAt = WAT.time;
+    waterInView = waterVisibleFrom(camera);
+  }
+  if (!waterInView) { WAT.tick = WAT.every; return; }
   WAT.tick++;
   const mx = camera.position.x - WAT.lastX, mz = camera.position.z - WAT.lastZ;
   if (WAT.tick < WAT.every && (mx * mx + mz * mz) <= 9) return;

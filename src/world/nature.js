@@ -76,16 +76,51 @@ export function vegInBld(x, z){
   }
   return false;
 }
+// Vietor v korunách: čisto vertex shader, žiadna CPU práca za snímok. Fáza sa
+// berie z pozície inštancie (instanceMatrix[3]), takže sa susedné stromy nekývu
+// synchrónne. Amplitúda rastie s výškou vrcholu — kmeň (y≈0) stojí, koruna sa
+// ohne. Bez `scale` je posun v lokálnych metroch geometrie, takže ho inštancia
+// ešte prenásobí svojou mierkou; veľký strom sa teda ohne viac, čo je správne.
+// customProgramCacheKey drží program oddelený od iných MeshStandardMaterial
+// (inak by three zdieľal shader s neupraveným materiálom a vietor by zmizol).
+function windSway(mat, amp, h0, h1){
+  const key = 'veg-wind-' + amp.toFixed(3);
+  const ampZ = (amp * 0.6).toFixed(4);
+  mat.onBeforeCompile = function(sh){
+    // rovnaký objekt uniformy pre všetky materiály → tick mení jednu hodnotu
+    sh.uniforms.uWind = S.UNI.time;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uWind;')
+      .replace('#include <begin_vertex>', [
+        '#include <begin_vertex>',
+        '#ifdef USE_INSTANCING',
+        '  vec2 wIP = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);',
+        '#else',
+        '  vec2 wIP = vec2(0.0);',
+        '#endif',
+        '  float wPh = wIP.x * 0.17 + wIP.y * 0.23;',
+        '  float wK = smoothstep(' + h0.toFixed(2) + ', ' + h1.toFixed(2) + ', transformed.y);',
+        '  transformed.x += sin(uWind * 1.35 + wPh) * wK * ' + amp.toFixed(4) + ';',
+        '  transformed.z += sin(uWind * 0.91 + wPh * 1.7) * wK * ' + ampZ + ';',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = function(){ return key; };
+}
+
 export function buildVegInstanced(){
   vegBuildWater();
   if(!S.GEO.trunkV){
-    S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 6);
+    // B30: viac polygónov v korunách (detail 1 = 80 stien namiesto 20). Na
+    // strom v diaľke to je jedno, ale v aleji a v parku je guľa hladká a nie
+    // "diamant". Mobil ostáva na detaile 0 (polovičná hustota stromov).
+    const crownDetail = S.IS_MOBILE ? 0 : 1;
+    S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 7);
     S.GEO.trunkV.translate(0, 1.3, 0);
-    S.GEO.crownV = new THREE.IcosahedronGeometry(1.9, 0);
+    S.GEO.crownV = new THREE.IcosahedronGeometry(1.9, crownDetail);
     S.GEO.crownV.translate(0, 3.7, 0);
-    S.GEO.coniferV = new THREE.ConeGeometry(1.7, 4.8, 7);
+    S.GEO.coniferV = new THREE.ConeGeometry(1.7, 4.8, 9);
     S.GEO.coniferV.translate(0, 3.6, 0);
-    S.GEO.bushV = new THREE.IcosahedronGeometry(1.0, 0);
+    S.GEO.bushV = new THREE.IcosahedronGeometry(1.0, crownDetail);
     S.GEO.bushV.translate(0, 0.55, 0);
     S.DYN_GEO.push(S.GEO.trunkV, S.GEO.crownV, S.GEO.coniferV, S.GEO.bushV);
     // kmeny stromov vo svete sú 3953 inštancií GEO.trunkV (CylinderGeometry, UV 0..1)
@@ -93,6 +128,11 @@ export function buildVegInstanced(){
     S.MAT.vegCrown = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
     S.MAT.vegConifer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0.0 });
     S.MAT.vegBush = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0 });
+    // Vietor: koruny sa jemne kývu (vrchol viac než kmeň) — rozsah výšok je
+    // spodok a vrchol geometrie, aby sa neohýbal aj kmeň pod korunou.
+    windSway(S.MAT.vegCrown, 0.075, 1.6, 5.4);
+    windSway(S.MAT.vegConifer, 0.055, 1.2, 5.6);
+    windSway(S.MAT.vegBush, 0.050, 0.0, 1.4);
   }
   let seed = 770031;
   function rnd(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; }

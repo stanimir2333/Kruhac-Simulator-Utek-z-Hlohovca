@@ -42,6 +42,10 @@ export const S = {
   MAT: {}, // <- legacy @3844
   TEX: {}, // <- legacy @3845
   DYN_GEO: [], // <- legacy @3846
+  // Jediná zdieľaná uniforma pre vlastné vertex shadery (dnes vietor v korunách,
+  // src/world/nature.js). Drží sa TU, aby ju tick v main.js aktualizoval raz za
+  // snímok — nie raz za materiál ani za inštanciu.
+  UNI: { time: { value: 0 } },
   ROUTE_N: 1600, // <- legacy @3855
   routeX: null, // <- legacy @3856 (alokuje sa nižšie — S nesmie čítať S.ROUTE_N v literáli!)
   routeZ: null, // <- legacy @3857
