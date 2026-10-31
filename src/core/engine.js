@@ -2,10 +2,15 @@
 import * as THREE from 'three';
 
 const DEFAULT_FPS_CAP = 60;
-const MAX_DEVICE_PIXEL_RATIO = 2;
+// Mobilné GPU (dotykové, nízky výkon): MSAA a 2x DPR sú najväčšími zbytočnými
+// nákladmi — displej je už vysoko-DPI a tieňová mapa je najdrahší priechod.
+// Na desktope ostáva plná kvalita (antialias + až 2x DPR).
+const IS_MOBILE = (typeof window !== 'undefined' && typeof window.matchMedia === 'function')
+  && window.matchMedia('(pointer: coarse)').matches;
+const MAX_DEVICE_PIXEL_RATIO = IS_MOBILE ? 1.5 : 2;
 
 export function createEngine(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DEVICE_PIXEL_RATIO));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
