@@ -1,6 +1,8 @@
 // src/world/textures.js — procedurálne PBR textúry + AssetManager (verbatim port z monolitu, js 4109–4842).
 import * as THREE from 'three';
 import { S } from './shared.js';
+// B31: zaoblené hranové hmoty pre AI autá (pozri buildShared nižšie).
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Hra beží CELÁ aj keď assets/textures/ neexistuje (pozri assets/textures/README.md).
 // Každý slot si hneď vytvorí syntetickú CanvasTexture, takže buildShared() môže bežať
@@ -662,14 +664,19 @@ export function makeLabel(text, scale){
 // ---------- MATERIÁLY A GEOMETRIE (raz, zdieľané) ----------
 
 export function buildShared(){
+  // B31: AI autá (InstancedMesh) dostávajú takisto zaoblené hmoty — rovnaký
+  // bevel ako hráčove auto, telo/kabína si držia presné rozmery (kolízne OBB
+  // a matice inštancií sú nedotknuté). Koleso 16→24 zubov hladší okraj pneu.
+  const rbox = (w, h, d, r, seg = 3) =>
+    new RoundedBoxGeometry(w, h, d, seg, Math.max(0.005, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01)));
   S.GEO.box   = new THREE.BoxGeometry(1,1,1);
   S.GEO.cyl   = new THREE.CylinderGeometry(0.5,0.5,1,10);
   S.GEO.cone  = new THREE.ConeGeometry(0.5,1,8);
-  S.GEO.body  = new THREE.BoxGeometry(1.8, 0.65, 4.2);
+  S.GEO.body  = rbox(1.8, 0.65, 4.2, 0.14);
   S.GEO.bodyP = S.GEO.body.clone(); // klon LEN pre hráča (deformácia damage, AI zdieľa GEO.body)
   S.GEO.bodyP.userData.base = S.GEO.bodyP.attributes.position.array.slice(); // panenský stav pre reset
-  S.GEO.cabin = new THREE.BoxGeometry(1.6, 0.55, 2.0);
-  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 16);
+  S.GEO.cabin = rbox(1.6, 0.55, 2.0, 0.08, 2);
+  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 24);
   S.GEO.light = new THREE.BoxGeometry(0.42, 0.22, 0.12);
   S.GEO.blob  = new THREE.CircleGeometry(1.2, 16);
   S.GEO.blob.rotateX(-Math.PI/2); // tieňová elipsa naležato

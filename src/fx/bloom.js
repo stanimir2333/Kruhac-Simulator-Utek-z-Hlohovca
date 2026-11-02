@@ -11,6 +11,10 @@
 //    bez MSAA, takže zapnutý bloom zároveň ZRUŠIL antialiasing celej scény
 //    (canvasové MSAA sa na RT nevzťahuje) — hrany budov a stromov boli zubaté.
 //    FXAA stojí jeden full-screen priesvit a vráti hladké hrany.
+// B31 (kvalita): composer kreslí do MULTI-SAMPLED RT (samples 4, desktop) v
+//  HalfFloat HDR — hladké hrany rovno v kompozite (FXAA ostáva len ako záložný
+//  filter) a prahový bloom má skutočný HDR rozsah namiesto rezu pri jase 1.0.
+//  Na mobile sú samples 0 (MSAA v kompozite je tam najdrahšie) — ostáva FXAA.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -18,6 +22,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { S } from '../world/shared.js';
 
 const MODES = [
   null, // 0 = VYP.
@@ -40,7 +45,20 @@ export function createBloom(renderer, scene, camera) {
   function ensure() {
     if (composer) return true;
     try {
-      composer = new EffectComposer(renderer);
+      // B31: vlastný render target composera — MULTI-SAMPLED + HalfFloat.
+      // Default composer RT je LDR (UnsignedByte) a bez MSAA: prahový bloom tak
+      // nemá HDR rozsah (svetlomety sa režú na jase 1.0) a hrany budov sú
+      // zubaté, lebo canvasové MSAA sa na composer RT nevzťahuje. samples = 4
+      // (desktop) dá hladké hrany rovno v kompozite a HalfFloat drží HDR pre
+      // threshold aj mipy. Na mobile sa ostáva bez MSAA (nákladné) — FXAA
+      // nižšie sa o aliasing postará ako doteraz.
+      const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+      const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
+      const rt = new THREE.WebGLRenderTarget(w, h, {
+        type: THREE.HalfFloatType,
+        samples: S.IS_MOBILE ? 0 : 4,
+      });
+      composer = new EffectComposer(renderer, rt);
       composer.addPass(new RenderPass(scene, camera));
       bloomPass = new UnrealBloomPass(
         new THREE.Vector2(innerWidth, innerHeight), MODES[mode].strength, MODES[mode].radius, MODES[mode].threshold);

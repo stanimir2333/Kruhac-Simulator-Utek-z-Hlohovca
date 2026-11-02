@@ -39,7 +39,14 @@ export function createEngine(container) {
   sun.position.set(-400, 500, 200);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  scene.add(sun, new THREE.HemisphereLight(0x9db8ff, 0x3a2c18, 0.7));
+  // FILL SVETLO (obloha z opačnej strany): slnko je jediné tieniace svetlo,
+  // takže strany budov a áut odvrátené od neho padali do takmer čiernej.
+  // Studený fill nemá tiene (castShadow = false), takže nekoštuje tieňový
+  // priechod a je zadarmo — dvihne tieto tmavé tváre nad terén.
+  const fill = new THREE.DirectionalLight(0xbcd0e8, 0.35);
+  fill.position.set(300, 260, -240);
+  fill.castShadow = false;
+  scene.add(sun, fill, new THREE.HemisphereLight(0x9db8ff, 0x3a2c18, 0.85));
 
   const onResize = () => {
     camera.aspect = innerWidth / innerHeight;

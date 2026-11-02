@@ -105,7 +105,10 @@ export function setSkyVariant(v) {
 }
 
 export function buildSkyDome(scene, renderer) {
-  const geo = new THREE.SphereGeometry(3200, 24, 12);
+  // B31: slnečné glow na shaderovej kupole lálo po vrcholoch (24×12 je na
+  // bodové žiarenie hrubé). 48×24 segmentov je stále nepatrná geometria a
+  // halo aj PMREM okolie z jej klonu je hladké.
+  const geo = new THREE.SphereGeometry(3200, 48, 24);
   const top = new THREE.Color(S.SKY_ZENITH);
   const hor = new THREE.Color(S.SKY_HORIZON);
   const sunC = new THREE.Color(S.SKY_SUN);

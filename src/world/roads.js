@@ -393,7 +393,10 @@ export function buildRoundabouts(){
   // okruhy + ostrovčeky VŠETKÝCH kruháčov mesta
   const all = S.osm.rounds;
   for(let i=0;i<all.length;i++){
-    const ring = new THREE.RingGeometry(all[i][2]-3, all[i][2]+3, 56);
+    // B31: okruh na 80 segmentov obvodu (56 dalo pri 14 m priemere viditelnú
+    // viditeľnú mnohouholníkovú hranu na vozovke). UV v metroch a posuny po meshSample
+    // zostávajú nezmenené.
+    const ring = new THREE.RingGeometry(all[i][2]-3, all[i][2]+3, 80);
     ring.rotateX(-Math.PI/2);
     S.DYN_GEO.push(ring);
     const rgy = getTerrainHeight(all[i][0], all[i][1]);

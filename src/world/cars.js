@@ -5,34 +5,56 @@
 // podľa katalógu CARS (src/core/config.js); kolízny obdĺžnik zostáva zdieľaný
 // (CAR_HW/CAR_HL vo vehicle.js) — obidve autá sú kompaktnej rovnakej stopy.
 import * as THREE from 'three';
+// B31: RoundedBoxGeometry = BoxGeometry s hoblovanými hranami (bevel). Hlavné
+// hmoty karosérie (spodok, kapota, Hatchback, strecha) mali podľa PBR oster
+// tvrdé 90° hrany — odraz PMREM okolia sa na nich lámal čiarovo a profil auta
+// pôsobil "kartónovo". Zaoblene hraná hmota drží EXAKTNE rovnaké rozmery aj
+// pozicie (kolidéry a usadenie dielov sa nemenia), len hrany dostane 6–12 cm polomer.
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// B31: RoundedBoxGeometry = BoxGeometry s hoblinami na hranách (bevel).
+// Hlavné hmoty karosérie (spodok, kapota, hatch, strecha) mali tvrdé 90° hrany
+// — odraz PMREM okolia sa na nich lámal čiarovo a auto pôsobilo "kartónovo".
+// Zaoblená hmota drží EXAKTNE rovnaké rozmery aj pozície (kolízne OBB a usad-
+// zovanie dielov sa nemení), mení sa len polomer hrany. Poistenie: polomer je
+// vždy ≤ polovica najmenšieho rozmeru, inak by RoundedBoxGeometry protrhla sieť.
+function rbox(w, h, d, r, seg = 3) {
+  const rr = Math.max(0.005, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01));
+  return new RoundedBoxGeometry(w, h, d, seg, rr);
+}
 
 // Octavia I je skladaná z jednoduchých dielov. Pravidlo usadenia: ozdobný diel je
 // vždy 1–3 cm zapustený do nosného (drží bez medzery) a 2–4 cm trčí von (je vidieť).
 // Žiadne dve líce nesmú byť koplanárne (z-fighting) a dutiny (vidieť skrz auto).
-const lowerBodyGeo = new THREE.BoxGeometry(1.8, 0.42, 4.16);
-const hoodGeo = new THREE.BoxGeometry(1.72, 0.19, 1.16);
-const hatchGeo = new THREE.BoxGeometry(1.72, 0.22, 0.94);
-const roofGeo = new THREE.BoxGeometry(1.62, 0.13, 1.5);
+const lowerBodyGeo = rbox(1.8, 0.42, 4.16, 0.12);
+const hoodGeo = rbox(1.72, 0.19, 1.16, 0.06);
+const hatchGeo = rbox(1.72, 0.22, 0.94, 0.07);
+const roofGeo = rbox(1.62, 0.13, 1.5, 0.05);
 const sideGlassGeo = new THREE.BoxGeometry(0.035, 0.63, 1.42);
 const screenGeo = new THREE.BoxGeometry(1.5, 0.055, 0.7);
 const rearScreenGeo = new THREE.BoxGeometry(1.45, 0.055, 0.8);
-const cowlFGeo = new THREE.BoxGeometry(1.6, 0.08, 0.3);
-const cowlRGeo = new THREE.BoxGeometry(1.5, 0.07, 0.44);
-const bumperGeo = new THREE.BoxGeometry(1.84, 0.14, 0.12);
+const cowlFGeo = rbox(1.6, 0.08, 0.3, 0.03, 2);
+const cowlRGeo = rbox(1.5, 0.07, 0.44, 0.03, 2);
+const bumperGeo = rbox(1.84, 0.14, 0.12, 0.045, 2);
 const grilleGeo = new THREE.BoxGeometry(0.5, 0.22, 0.08);
 const trimGeo = new THREE.BoxGeometry(0.04, 0.055, 3.4);
 const plateGeo = new THREE.BoxGeometry(0.48, 0.12, 0.025);
 const badgeGeo = new THREE.BoxGeometry(0.12, 0.12, 0.035);
 const tdiGeo = new THREE.BoxGeometry(0.34, 0.065, 0.025);
 const mirrorStalkGeo = new THREE.BoxGeometry(0.12, 0.04, 0.1);
-const mirrorHeadGeo = new THREE.BoxGeometry(0.07, 0.14, 0.16);
+const mirrorHeadGeo = rbox(0.07, 0.14, 0.16, 0.025, 2);
 const handleGeo = new THREE.BoxGeometry(0.03, 0.035, 0.18);
-const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.26, 24);
-const rimGeo = new THREE.CylinderGeometry(0.19, 0.19, 0.24, 20);
-const exhaustGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.16, 14);
+// Kolesá: viac segmentov valca (32/24 namiesto 24/20) — okraj pneu aj ráfika
+// pri pohľade zblízka nepôsobi ako oholený mnohouholník. Totočenie (syncMesh:
+// spin) sa segmentmi nijako nemení.
+const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.26, 32);
+const rimGeo = new THREE.CylinderGeometry(0.19, 0.19, 0.24, 24);
+const exhaustGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.16, 16);
 const antennaGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.34, 8);
-const headGeo = new THREE.BoxGeometry(0.34, 0.2, 0.12);
-const tailGeo = new THREE.BoxGeometry(0.3, 0.16, 0.12);
+// Svetlá: jemne zaoblená šošovka — tvrdý kváder lámal odraz okolia po jednej
+// hrane na každej ploche; emissive jas (bloom) zostáva rovnaký.
+const headGeo = rbox(0.34, 0.2, 0.12, 0.03, 2);
+const tailGeo = rbox(0.3, 0.16, 0.12, 0.03, 2);
 // Emisívne svetlá: HDR jas (intensity > 1) → chytí ich prahový bloom. Predok = +z.
 // Materiály sú SHARED cez obidve autá (dispose ich neprepaľuje — pozri disposeCarMesh).
 const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffffff, emissiveIntensity: 3.2 });
@@ -41,17 +63,18 @@ const tailMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff
 tailMat.userData.shared = true;
 
 // ---------- RX-7 FD: šírka 1,85 m, dĺžka 4,30 m, výška 1,23 m ----------
-const rxBodGeo = new THREE.BoxGeometry(1.84, 0.40, 4.02);
-const rxHoodGeo = new THREE.BoxGeometry(1.72, 0.16, 1.60);
-const rxNoseGeo = new THREE.BoxGeometry(1.80, 0.14, 0.34);
-const rxRoofGeo = new THREE.BoxGeometry(1.42, 0.09, 1.05);
+// Nosné hmoty taktiež s hoblovanou hranou (rovnaký vzor ako Octavia vyššie).
+const rxBodGeo = rbox(1.84, 0.40, 4.02, 0.12);
+const rxHoodGeo = rbox(1.72, 0.16, 1.60, 0.05);
+const rxNoseGeo = rbox(1.80, 0.14, 0.34, 0.045, 2);
+const rxRoofGeo = rbox(1.42, 0.09, 1.05, 0.03, 2);
 const rxGlassGeo = new THREE.BoxGeometry(1.40, 0.05, 0.78);
 const rxHatchGlassGeo = new THREE.BoxGeometry(1.36, 0.05, 0.85);
 const rxSideGlassGeo = new THREE.BoxGeometry(0.035, 0.36, 1.05);
-const rxDeckGeo = new THREE.BoxGeometry(1.70, 0.18, 0.55);
-const rxFenderGeo = new THREE.BoxGeometry(0.14, 0.14, 1.10);
-const rxRearPanelGeo = new THREE.BoxGeometry(1.80, 0.20, 0.16);
-const rxWingGeo = new THREE.BoxGeometry(1.58, 0.05, 0.34);
+const rxDeckGeo = rbox(1.70, 0.18, 0.55, 0.05);
+const rxFenderGeo = rbox(0.14, 0.14, 1.10, 0.04, 2);
+const rxRearPanelGeo = rbox(1.80, 0.20, 0.16, 0.05, 2);
+const rxWingGeo = rbox(1.58, 0.05, 0.34, 0.02, 2);
 const rxStalkGeo = new THREE.BoxGeometry(0.06, 0.18, 0.10);
 const rxPopGeo = new THREE.BoxGeometry(0.40, 0.06, 0.26);
 const rxHeadGeo = new THREE.BoxGeometry(0.24, 0.05, 0.18);
@@ -76,10 +99,24 @@ function std(color, rough = 0.55, metal = 0.3) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
 }
 
+// B31: LAK hráča = MeshPhysicalMaterial s clearcoat. Obyčajný Standard
+// (roughness 0.55) pôsobil matne — odraz okolia sa strácal pod difúziou.
+// Dve vrstvy (farba + transparentný lak s vlastnou drsnosťou) dávajú
+// auto-panelu reálnu logiku: ostré odrazy oblohy na poliach plus mäkká
+// difúzia navyše. Náklad je per-fragment na 2 hráčových autách; AI (instan-
+// covaná) jazdi ďalej na lacnom Standard.
+function carPaint(color) {
+  return new THREE.MeshPhysicalMaterial({
+    color, roughness: 0.42, metalness: 0.3,
+    clearcoat: 0.7, clearcoatRoughness: 0.25, envMapIntensity: 0.9,
+  });
+}
+
 function wheels(parent, zf = 1.35, zr = -1.35, rimColor = 0xc9cdcb) {
   const list = [];
   const mat = std(0x141414, 0.9, 0.1);
   const rimMat = std(rimColor, 0.38, 0.45);
+  rimMat.envMapIntensity = 0.8; // ráfik je leštený kov — odraz oblohy živý
   for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
     const z = sz > 0 ? zf : zr;
     const w = new THREE.Mesh(wheelGeo, mat);
@@ -109,6 +146,7 @@ function box(parent, geo, mat, x, y, z, shadow = false) {
 function octaviaDetails(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
   const glass = std(0x182b35, 0.2, 0.55);
+  glass.envMapIntensity = 0.9; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x252a2a, 0.7, 0.15);
   const plate = std(0xe9e8dc, 0.55, 0.05);
 
@@ -163,7 +201,7 @@ function octaviaDetails(parent, bodyMat) {
 
 export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
   const g = new THREE.Group();
-  const bodyMat = std(color);
+  const bodyMat = carPaint(color);
   if (carId === 'rx7') {
     rx7Details(g, bodyMat);
     rx7Lights(g);
@@ -180,6 +218,7 @@ export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
 function rx7Details(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
   const glass = std(0x182b35, 0.2, 0.55);
+  glass.envMapIntensity = 0.9; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x232527, 0.68, 0.2);
   const plate = std(0xe9e8dc, 0.55, 0.05);
 

@@ -4,6 +4,9 @@ import { S } from './shared.js';
 import { roadDist2, routePose, mergedBoxes } from './roads.js';
 import { getTerrainHeight, dist2ToSamples } from './height.js';
 import { gridQuery, GQ_MAX } from './ground.js';
+// B31: zváranie vrcholov (PolyhedronGeometry = neindexovaná polievka; bez
+// zvárania by každý duplicitný vrchol dostal iné posunutie a koruna by sa roztrhla).
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 // ---------- VEGETÁCIA: OSM scatter + THREE.InstancedMesh (LEN v init) ----------
 // Body stromov nie sú v tomto module, ale v `S.osm.trees` (public/data/
 // osmExtra.json) — generuje ich `python3 tools/gen_osm_extra.py` z nového OSM
@@ -110,17 +113,35 @@ function windSway(mat, amp, h0, h1){
 export function buildVegInstanced(){
   vegBuildWater();
   if(!S.GEO.trunkV){
-    // B30: viac polygónov v korunách (detail 1 = 80 stien namiesto 20). Na
-    // strom v diaľke to je jedno, ale v aleji a v parku je guľa hladká a nie
-    // "diamant". Mobil ostáva na detaile 0 (polovičná hustota stromov).
-    const crownDetail = S.IS_MOBILE ? 0 : 1;
-    S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 7);
+    // B31: koruny organické. 1) Vyššia subdivízia (desktop: icosa detail 2 =
+    // ~320 stien namiesto 80, silueta koruny nie je "diamant") a
+    // 2) deformácia vrcholov radiálne podľa sin-hash pozície: dokonalá guľa
+    // tak dostane nepravidelný obrys listia. Beží raz pri boote; geometria
+    // sa ďalej inštancuje ako doteraz.
+    const crownDetail = S.IS_MOBILE ? 1 : 2;
+    // Zváranie: PolyhedronGeometry neindexuje — jeden vrchol existuje raz pre
+    // každú plôšku a computeVertexNormals by z toho dalo tvrdé fasety. Najprv
+    // zvar (mergeVertices), potom deformácia a až nakoniec normály.
+    const lumpy = (src, amt) => {
+      src.deleteAttribute('normal'); src.deleteAttribute('uv');
+      const g = mergeVertices(src, 1e-4);
+      const pos = g.attributes.position;
+      for(let i=0;i<pos.count;i++){
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const h = Math.sin(x*2.7)*Math.sin(y*3.1+0.7)*Math.sin(z*2.3+1.3);
+        const f = 1 + h*amt;
+        pos.setXYZ(i, x*f, y*f, z*f);
+      }
+      g.computeVertexNormals();
+      return g;
+    };
+    S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 9);
     S.GEO.trunkV.translate(0, 1.3, 0);
-    S.GEO.crownV = new THREE.IcosahedronGeometry(1.9, crownDetail);
+    S.GEO.crownV = lumpy(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
     S.GEO.crownV.translate(0, 3.7, 0);
-    S.GEO.coniferV = new THREE.ConeGeometry(1.7, 4.8, 9);
+    S.GEO.coniferV = new THREE.ConeGeometry(1.7, 4.8, S.IS_MOBILE ? 9 : 12);
     S.GEO.coniferV.translate(0, 3.6, 0);
-    S.GEO.bushV = new THREE.IcosahedronGeometry(1.0, crownDetail);
+    S.GEO.bushV = lumpy(new THREE.IcosahedronGeometry(1.0, crownDetail), 0.34);
     S.GEO.bushV.translate(0, 0.55, 0);
     S.DYN_GEO.push(S.GEO.trunkV, S.GEO.crownV, S.GEO.coniferV, S.GEO.bushV);
     // kmeny stromov vo svete sú 3953 inštancií GEO.trunkV (CylinderGeometry, UV 0..1)
