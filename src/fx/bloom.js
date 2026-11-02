@@ -29,15 +29,28 @@ const MODES = [
   { strength: 0.25, radius: 0.4, threshold: 0.85 }, // 1 = SLABÝ
   { strength: 0.55, radius: 0.5, threshold: 0.8 },  // 2 = JASNÝ
 ];
-// Interné rozlíšenie bloom reťaze (1 = plné). 0.5 = štvornásobná úspora.
-const BLOOM_SCALE = 0.5;
+// Interné rozlíšenie bloom reťaze (1 = plné). 0.4 = ~6x úspora v mipo-vrstvách
+// (bloom je z princípu rozostrený, takže nižšie rozlíšenie nie je vidieť).
+const BLOOM_SCALE = 0.4;
+// Renderovacia škála celého bloom priechodu (scéna + bloom + FXAA). Composer
+// inak kreslí pri plnom devicePixelRatio (na desktope až 2x → 4x pixely), čo
+// je na RTX 3050 najväčší jednotlivý náklad bloom cesty. 0.75 = 56 % pixelov
+// oproti plnému DPR, rozdiel v ostrosti je pri bloom móde zanedbateľný
+// (bloom mipy sú aj tak rozostrené a FXAA hrany dohladí).
+const BLOOM_RENDER_SCALE = 0.75;
 
 export function createBloom(renderer, scene, camera) {
   let composer = null, bloomPass = null, fxaaPass = null, mode = 1;
 
+  // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
+  // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
+  function composerPixelRatio() {
+    const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+    return Math.max(0.5, pr * BLOOM_RENDER_SCALE);
+  }
   function syncFxaa() {
     if (!fxaaPass) return;
-    const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+    const pr = composerPixelRatio();
     const w = Math.max(2, innerWidth * pr), h = Math.max(2, innerHeight * pr);
     fxaaPass.material.uniforms.resolution.value.set(1 / w, 1 / h);
   }
@@ -52,16 +65,23 @@ export function createBloom(renderer, scene, camera) {
       // (desktop) dá hladké hrany rovno v kompozite a HalfFloat drží HDR pre
       // threshold aj mipy. Na mobile sa ostáva bez MSAA (nákladné) — FXAA
       // nižšie sa o aliasing postará ako doteraz.
-      const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+      // B32: samples 2 namiesto 4 (MSAA resolve je na RTX 3050 najväčší
+      // jednotlivý náklad bloom priechodu; 2x stále odstráni najhoršie
+      // zubaté hrany a FXAA nižšie dohladí zvyšok). Renderovacia škála 0.75.
+      const pr = composerPixelRatio();
       const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
       const rt = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.HalfFloatType,
-        samples: S.IS_MOBILE ? 0 : 4,
+        samples: S.IS_MOBILE ? 0 : 2,
       });
       composer = new EffectComposer(renderer, rt);
+      composer.setPixelRatio(composerPixelRatio());
       composer.addPass(new RenderPass(scene, camera));
       bloomPass = new UnrealBloomPass(
         new THREE.Vector2(innerWidth, innerHeight), MODES[mode].strength, MODES[mode].radius, MODES[mode].threshold);
+      // 4 mipy namiesto 5 — menej blur passov, na bloom (už rozostrenom) bez
+      // viditeľnej straty, ale jeden full-screen pass menej.
+      bloomPass.nMips = 4;
       // Composer volá pass.setSize(plné rozlíšenie); bloom si ho preškáluje.
       const rawSetSize = bloomPass.setSize.bind(bloomPass);
       bloomPass.setSize = (w, h) => rawSetSize(
@@ -90,7 +110,7 @@ export function createBloom(renderer, scene, camera) {
   }
   function resize() {
     if (!composer) return;
-    composer.setPixelRatio?.(renderer.getPixelRatio());
+    composer.setPixelRatio?.(composerPixelRatio());
     composer.setSize(innerWidth, innerHeight);
     syncFxaa();
   }
