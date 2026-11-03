@@ -70,7 +70,9 @@ export function newCanvas(size){
 
 export function paintCanvas(size, painter){
   const c = newCanvas(size);
-  painter(c.getContext("2d"), size);
+  const g = c.getContext("2d");
+  if(g) painter(g, size);
+  else if(typeof console !== "undefined") console.warn("[TEX] paintCanvas: getContext null (" + size + ")");
   return c;
 }
 
@@ -140,20 +142,39 @@ export function adoptAsset(slot, loaded){
 // texeli (žiadne tri canvas prepisy, žiadne alokácie vo vykresľovacích slučkách).
 
 export function newField(size){
-  const c = newCanvas(size), g = c.getContext("2d"), img = g.createImageData(size, size);
+  const c = newCanvas(size);
+  const g = c.getContext("2d");
+  if(!g){
+    if(typeof console !== "undefined") console.warn("[TEX] newField: getContext('2d') vrátil null (" + size + " px) - textúra bude prázdna");
+    return { size:size, c:c, g:null, img:null, d:null, hf:new Float32Array(size*size) };
+  }
+  const img = g.createImageData(size, size);
   return { size:size, c:c, g:g, img:img, d:img.data, hf:new Float32Array(size*size) };
 }
 
 export function putField(f, i, r, gr, b){
+  if(!f || !f.d) return;
   const j = i*4;
   f.d[j] = r; f.d[j+1] = gr; f.d[j+2] = b; f.d[j+3] = 255;
 }
 
-export function commitField(f){ f.g.putImageData(f.img, 0, 0); return f.c; }
+export function commitField(f){
+  if(!f || !f.c) return f ? f.c : null;
+  // f.g môže byť null (kontext sa nepodarilo získať) - získaj čerstvý kontext
+  let g = f.g;
+  if(!g) g = f.c.getContext("2d");
+  if(g && f.img){ g.putImageData(f.img, 0, 0); f.g = g; }
+  else if(g && f.d){
+    try { const img = g.createImageData(f.size, f.size); img.data.set(f.d); g.putImageData(img, 0, 0); f.g = g; } catch(_e){}
+  }
+  return f.c;
+}
 // výškové pole -> tangent-space normálová mapa (sobel zo zabaleného poľa)
 
 export function normalCanvas(size, hf, strength){
-  const c = newCanvas(size), g = c.getContext("2d"), img = g.createImageData(size, size), d = img.data;
+  const c = newCanvas(size), g = c.getContext("2d");
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] normalCanvas: getContext null"); return c; }
+  const img = g.createImageData(size, size), d = img.data;
   for(let y = 0; y < size; y++){
     const row = y*size, ym = ((y - 1 + size) % size)*size, yp = ((y + 1) % size)*size;
     for(let x = 0; x < size; x++){
@@ -174,7 +195,9 @@ export function normalCanvas(size, hf, strength){
 // ľubovoľné pole -> sivá (lineárna) mapa, napr. roughness
 
 export function grayCanvas(size, f){
-  const c = newCanvas(size), g = c.getContext("2d"), img = g.createImageData(size, size), d = img.data;
+  const c = newCanvas(size), g = c.getContext("2d");
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] grayCanvas: getContext null"); return c; }
+  const img = g.createImageData(size, size), d = img.data;
   for(let i = 0, n = size*size; i < n; i++){
     const j = i*4, v = ss01(f[i])*255;
     d[j] = v; d[j+1] = v; d[j+2] = v; d[j+3] = 255;
@@ -489,8 +512,8 @@ export function facadeAux(SZ){
     hf[i] = (gray[i] - wall[i])*0.9 - g*0.55;                 // reliéf steny + vyrezanie skla
   }
   // 4) prepíšeme pixely PRIAMO do existujúcich canvasov textúr (žiadny nový objekt)
-  S.TEX.winRough.image.getContext("2d").putImageData(ri, 0, 0);
-  S.TEX.winNormal.image.getContext("2d").drawImage(normalCanvas(SZ, hf, 1.2), 0, 0);
+  const _wr = S.TEX.winRough.image.getContext("2d"); if(_wr) _wr.putImageData(ri, 0, 0);
+  const _wn = S.TEX.winNormal.image.getContext("2d"); if(_wn) _wn.drawImage(normalCanvas(SZ, hf, 1.2), 0, 0);
   S.TEX.winRough.needsUpdate = true;
   S.TEX.winNormal.needsUpdate = true;
   return true;

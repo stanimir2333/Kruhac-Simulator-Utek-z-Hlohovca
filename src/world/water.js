@@ -255,6 +255,7 @@ export function buildWaterNormals(size){
   const c = document.createElement("canvas");
   c.width = size; c.height = size;
   const g = c.getContext("2d");
+  if(!g){ if(typeof console!=="undefined") console.warn("[VODA] buildWaterNormals: getContext null"); return null; }
   const img = g.createImageData(size, size);
   const d = img.data;
   const sGrad = 3.2;   // zisk gradientu (sklon ~15-25°, ne prepäté vlnky)
@@ -273,7 +274,7 @@ export function buildWaterNormals(size){
       d[o+3] = 255;
     }
   }
-  g.putImageData(img, 0, 0);
+  if (g) g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = Math.min(8, S.TEX_ANISO);
