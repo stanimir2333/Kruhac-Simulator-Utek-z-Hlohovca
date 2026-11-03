@@ -159,6 +159,10 @@ export function putField(f, i, r, gr, b){
 }
 
 export function commitField(f){
+  // fRoofTile/fPave/fTrim (z remote merge) už samé volajú commitField(f) a
+  // vrátia objekt { S, dif, hf, rg } — ak príde taký, vráť hotový .dif, aby
+  // sa pri omyle vrátil existujúci canvas namiesto crashu "reading 'width'".
+  if(f && !f.c && f.dif) return f.dif;
   if(!f || !f.c) return f ? f.c : null;
   // f.g môže byť null (kontext sa nepodarilo získať) - získaj čerstvý kontext
   let g = f.g;
@@ -764,8 +768,8 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   // ŠKRIDLOVÁ STRECHA: plnohodnotné PBR (difúzia + normálová + drsnosť) namiesto
   // len bumpu. Dlažba 2,4 m: extrude UV sú v metriach×0.125, takže repeat = 8/2,4.
   // Čisto procedurálny slot — žiadne fotky, vzor sa generuje synchrónne.
-  const RT = fRoofTile(HQ);
-  S.TEX.roofTile  = texSlotCanvas("roofTile",  null, commitField(RT), true,  [8/2.4, 8/2.4]);
+  const RT = fRoofTile(HQ); // { S, dif, hf, rg } — painter si canvas commitol sám
+  S.TEX.roofTile  = texSlotCanvas("roofTile",  null, RT.dif, true,  [8/2.4, 8/2.4]);
   S.TEX.roofTileN = texSlotCanvas("roofTileN", null, normalCanvas(RT.S, RT.hf, 1.6), false, [8/2.4, 8/2.4]);
   S.TEX.roofTileR = texSlotCanvas("roofTileR", null, grayCanvas(RT.S, RT.rg), false, [8/2.4, 8/2.4]);
   mark("škridlová strecha");
@@ -773,13 +777,13 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   // v METROCH (vzor buildStrip), takže repeat je priamo 1/2,4 — meradlo sedí
   // aj na mostných chodníkoch aj na mestských vo vozovkách.
   const PA = fPave(HQ);
-  S.TEX.pave  = texSlotCanvas("pave",  null, commitField(PA), true,  [1/2.4, 1/2.4]);
+  S.TEX.pave  = texSlotCanvas("pave",  null, PA.dif, true,  [1/2.4, 1/2.4]);
   S.TEX.paveN = texSlotCanvas("paveN", null, normalCanvas(PA.S, PA.hf, 1.9), false, [1/2.4, 1/2.4]);
   S.TEX.paveR = texSlotCanvas("paveR", null, grayCanvas(PA.S, PA.rg), false, [1/2.4, 1/2.4]);
   mark("dláždenie");
   // OMIETKA PRE TRIMY: rímsy/partáče/štíty/komíny/ventily (dlažba 4 m, repeat 8/4).
   const TR = fTrim(HQ);
-  S.TEX.trim = texSlotCanvas("trim", null, commitField(TR), true, [2, 2]);
+  S.TEX.trim = texSlotCanvas("trim", null, TR.dif, true, [2, 2]);
   mark("trim omietka");
   // TRÁVNATKO: alfa kartička pre inštancované tufty po celom svete.
   S.TEX.tuft = texSlot("tuft", null, 128, true, null, function(g,s){ paintTuft(g, s); });

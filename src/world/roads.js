@@ -819,8 +819,8 @@ export function buildRoadDetails(){
         const t0 = s/L, t1 = (s+seg)/L;
         const m1x = ax+ex*t0, m1z = az+ez*t0, m2x = ax+ex*t1, m2z = az+ez*t1;
         const mx = (m1x+m2x)/2, mz = (m1z+m2z)/2;
-        if(dGridNear(mx, mz, 0.6, li)) continue;   // križovatka/trasa/kruháč
-        if(detailRoundSkip(mx, mz)) continue;
+        if(dGridNear(mx, mz, 0.6, li)){ s += seg; continue; }   // križovatka/trasa/kruháč
+        if(detailRoundSkip(mx, mz)){ s += seg; continue; }
         const y = getTerrainHeight(mx, mz)+0.16;
         const H = 0.07;
         // vrcholy: A(+n), A(−n), B(+n), B(−n) → tri [0,1,2],[1,3,2] dajú normál +y
