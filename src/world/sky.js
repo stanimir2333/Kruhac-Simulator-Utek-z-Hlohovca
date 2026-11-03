@@ -48,6 +48,7 @@ const SKY_FILES = { normal: 'skybox/sky.jpg', thunder: 'skybox/thunder.jpg' };
 let domeRef = null;
 let currentVariant = 'normal';
 const skyTextures = { normal: null, thunder: null };
+let envRendererRef = null, envSceneRef = null, envRTRef = null;
 
 function candidateUrls(file) {
   return SKY_BASES.map((b) => b + file);
@@ -87,8 +88,26 @@ function applyVariant(v) {
     domeRef.material = new THREE.MeshBasicMaterial({
       map: tex, side: THREE.BackSide, depthWrite: false, fog: false,
     });
+    bakeEnv();
   }
   // ak textúra ešte nie je načítaná, ostáva aktuálny materiál (gradient fallback)
+}
+
+// Znovu napečie IBL z aktuálneho materiála kupoly. far = 5000 je nutné:
+// default 100 by celú guľu r=4000 vystrihol a env by ošiel čierny (žiadne
+// odlesky na PBR materiáloch — veľmi tmavá obloha).
+function bakeEnv(){
+  if(!domeRef || !envSceneRef || !envRendererRef) return;
+  try {
+    const pm = new THREE.PMREMGenerator(envRendererRef);
+    const envScene = new THREE.Scene();
+    envScene.add(new THREE.Mesh(domeRef.geometry.clone(), domeRef.material));
+    const rt = pm.fromScene(envScene, 0.04, 0.1, 5000);
+    if(envRTRef){ try{ envRTRef.dispose(); }catch(_e){ /* noop */ } }
+    envRTRef = rt;
+    envSceneRef.environment = rt.texture;
+    pm.dispose();
+  } catch (e) { console.warn('[sky] PMREM refresh skipped:', e?.message); }
 }
 
 export function setSkyVariant(v) {
@@ -139,17 +158,14 @@ export function buildSkyDome(scene, renderer) {
   dome.frustumCulled = false;
   dome.renderOrder = -10;
   scene.add(dome);
-  // IBL pre PBR materiály: jednorazový PMREM z kupoly (žiadna závislosť na addons)
-  try {
-    const pm = new THREE.PMREMGenerator(renderer);
-    const envScene = new THREE.Scene();
-    envScene.add(new THREE.Mesh(geo.clone(), mat));
-    const envRT = pm.fromScene(envScene, 0.04);
-    scene.environment = envRT.texture;
-    pm.dispose();
-  } catch (e) { console.warn('[sky] PMREM env skipped:', e?.message); }
   domeRef = dome;
-  // Lazy load skybox textúr (neblokuje boot); po dobehnutí sa aplikuje, ak je variant aktívny.
+  // IBL pre PBR materiály: prvý bake z gradientnej kupoly (bez závislosti na
+  // addons); po dobehnutí skybox textúry ho bakeEnv() napečie nanovo.
+  envRendererRef = renderer;
+  envSceneRef = scene;
+  bakeEnv();
+  // Lazy load skybox textúr (neblokuje boot); po dobehnutí sa aplikuje, ak je
+  // variant aktívny — applyVariant potom obnoví aj IBL (bakeEnv).
   loadSkyTexture(SKY_FILES.normal).then((tex) => {
     if (!tex) return;
     skyTextures.normal = tex;

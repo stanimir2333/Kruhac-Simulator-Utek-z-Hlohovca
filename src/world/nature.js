@@ -6,7 +6,8 @@ import { getTerrainHeight, dist2ToSamples } from './height.js';
 import { gridQuery, GQ_MAX } from './ground.js';
 // B31: zváranie vrcholov (PolyhedronGeometry = neindexovaná polievka; bez
 // zvárania by každý duplicitný vrchol dostal iné posunutie a koruna by sa roztrhla).
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+// crownC/coniferV sa skladajú z viac geometrií — mergeGeometries ich spája.
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // ---------- VEGETÁCIA: OSM scatter + THREE.InstancedMesh (LEN v init) ----------
 // Body stromov nie sú v tomto module, ale v `S.osm.trees` (public/data/
 // osmExtra.json) — generuje ich `python3 tools/gen_osm_extra.py` z nového OSM
@@ -17,7 +18,8 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 //   pri Váhu) · AVE aleje popri uliciach · T SKUTOČNE zmapované stromy
 //   (`natural=tree`) — väčšie, ide o Platanusy na námestiach, ktoré boli
 //   dovtedy v mape úplne nezobrazené.
-// Render: 4 varianty (kmeň+ikosahedrón / kmeň+kužeľ / sploštená sféra),
+// Render: 4 varianty (kmeň+ikosahedrón / kmeň+3-patrový kužeľ / sploštená sféra)
+// + crownC pre lampové stromy (organická guľa, pozri mergedBoxes v roads.js),
 // matný PBR (roughness 0.9+), 4 odtiene zelenej + 3 olivové cez instanceColor.
 // Jeden InstancedMesh per typ per 250 m chunk (max 4/chunk), tiene + culling.
 export function vegBuildWater(){
@@ -110,51 +112,85 @@ function windSway(mat, amp, h0, h1){
   mat.customProgramCacheKey = function(){ return key; };
 }
 
+// ---------- TVARY VEGETÁCIE — geometrie a materiály (raz pri boote) ----------
+// Idempotentné: buildVegInstanced ho volá pri každom štarte, takže funkcia
+// nesmie vytvárať geometriu dvakrát (duplicitné DYN_GEO + nový materiál).
+// crownC je „organická korunka" pre lampové stromy: guľa so sploštenou
+// spodnou polovicou, dvojoktávovým šumom a náklonom — GEO.cone pre lampové
+// stromy nahradila práve táto koruna.
+function lumpyCrown(src, amt){
+  // Zváranie vyžaduje odstránenie oboch atribútov: rozdielne uv/normal na
+  // rovnakej pozícii by mergeVertices nevysvaroval (tvrdé fasety na listí).
+  src.deleteAttribute('normal'); src.deleteAttribute('uv');
+  const g = mergeVertices(src, 1e-4);
+  const pos = g.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const h = Math.sin(x*2.7)*Math.sin(y*3.1+0.7)*Math.sin(z*2.3+1.3);
+    const f = 1 + h*amt;
+    pos.setXYZ(i, x*f, y*f, z*f);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+export function ensureVegShapes(){
+  if(S.GEO.trunkV) return;   // idempotentné: geometrie sa vytvoria len raz
+  const crownDetail = S.IS_MOBILE ? 1 : 2;
+  S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 9);
+  S.GEO.trunkV.translate(0, 1.3, 0);
+  S.GEO.crownV = lumpyCrown(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
+  S.GEO.crownV.translate(0, 3.7, 0);
+  // Ihličnan = 3 nad sebou posunuté kužeľové patra (vyšší, organický strom
+  // namiesto jedného kužeľa). Patrá sa prekrývajú, takže nie sú viditeľné škáry.
+  const tiers = [[1.7, 2.2, 1.6], [1.3, 1.8, 3.4], [0.9, 1.4, 4.8]];
+  const coneParts = [];
+  for(let t=0;t<3;t++){
+    const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.IS_MOBILE ? 9 : 12);
+    tg.translate(0, tiers[t][2] + tiers[t][1]/2, 0);
+    coneParts.push(tg);
+  }
+  S.GEO.coniferV = mergeGeometries(coneParts);
+  S.GEO.bushV = lumpyCrown(new THREE.IcosahedronGeometry(1.0, crownDetail), 0.34);
+  S.GEO.bushV.translate(0, 0.55, 0);
+  // crownC pre lampové stromy: guľa r=1 (bez posunutia), spodok sploštený,
+  // náklon vrcholov + 2 oktávy šumu. mergedBoxes vyžaduje uv (aj keď materiál
+  // bez mapy ho nepoužíva): po zváraní bez uv (dokonalé zvar) doplním triviálny
+  // UV z pozícií, aby pole atribútov zodpovedalo počtu zváraných vrcholov.
+  const ccRaw = new THREE.IcosahedronGeometry(1.0, crownDetail);
+  ccRaw.deleteAttribute('normal'); ccRaw.deleteAttribute('uv');
+  const cc = mergeVertices(ccRaw, 1e-4);
+  const cp = cc.attributes.position;
+  for(let i=0;i<cp.count;i++){
+    let x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i);
+    if(y < 0) y *= 0.55;  // spodná časť gule plochšia — nevisí pod základ koruny
+    const h = Math.sin(x*2.7)*Math.sin(y*3.1+0.7)*Math.sin(z*2.3+1.3)
+            + 0.5*Math.sin(x*5.3+1.1)*Math.sin(z*4.9+2.3);
+    const f = 1 + h*0.26;
+    cp.setXYZ(i, x*f + y*0.10, y*f, z*f);  // náklon koruny (x += y*k)
+  }
+  cc.computeVertexNormals();
+  // triviálne UV z pozícií (materiál bez mapy, ale pole musí existovať)
+  const cuv = new Float32Array(cp.count*2);
+  for(let i=0;i<cp.count;i++){ cuv[i*2] = cp.getX(i)*0.5+0.5; cuv[i*2+1] = cp.getY(i)*0.5+0.5; }
+  cc.setAttribute('uv', new THREE.BufferAttribute(cuv, 2));
+  S.GEO.crownC = cc;
+  S.DYN_GEO.push(S.GEO.trunkV, S.GEO.crownV, S.GEO.crownC, S.GEO.coniferV, S.GEO.bushV);
+  // kmeny stromov vo svete sú 3953 inštancií GEO.trunkV (CylinderGeometry, UV 0..1)
+  S.MAT.vegTrunk = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xc8b49c, roughness: 0.96, metalness: 0.0 });
+  S.MAT.vegCrown = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
+  S.MAT.vegConifer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0.0 });
+  S.MAT.vegBush = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0 });
+  // Vietor: koruny sa jemne kývu (vrchol viac než kmeň) — rozsah výšok je
+  // spodok a vrchol geometrie, aby sa neohýbal aj kmeň pod korunou.
+  windSway(S.MAT.vegCrown, 0.075, 1.6, 5.4);
+  windSway(S.MAT.vegConifer, 0.055, 1.2, 5.6);
+  windSway(S.MAT.vegBush, 0.050, 0.0, 1.4);
+}
+
 export function buildVegInstanced(){
   vegBuildWater();
-  if(!S.GEO.trunkV){
-    // B31: koruny organické. 1) Vyššia subdivízia (desktop: icosa detail 2 =
-    // ~320 stien namiesto 80, silueta koruny nie je "diamant") a
-    // 2) deformácia vrcholov radiálne podľa sin-hash pozície: dokonalá guľa
-    // tak dostane nepravidelný obrys listia. Beží raz pri boote; geometria
-    // sa ďalej inštancuje ako doteraz.
-    const crownDetail = S.IS_MOBILE ? 1 : 2;
-    // Zváranie: PolyhedronGeometry neindexuje — jeden vrchol existuje raz pre
-    // každú plôšku a computeVertexNormals by z toho dalo tvrdé fasety. Najprv
-    // zvar (mergeVertices), potom deformácia a až nakoniec normály.
-    const lumpy = (src, amt) => {
-      src.deleteAttribute('normal'); src.deleteAttribute('uv');
-      const g = mergeVertices(src, 1e-4);
-      const pos = g.attributes.position;
-      for(let i=0;i<pos.count;i++){
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        const h = Math.sin(x*2.7)*Math.sin(y*3.1+0.7)*Math.sin(z*2.3+1.3);
-        const f = 1 + h*amt;
-        pos.setXYZ(i, x*f, y*f, z*f);
-      }
-      g.computeVertexNormals();
-      return g;
-    };
-    S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 9);
-    S.GEO.trunkV.translate(0, 1.3, 0);
-    S.GEO.crownV = lumpy(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
-    S.GEO.crownV.translate(0, 3.7, 0);
-    S.GEO.coniferV = new THREE.ConeGeometry(1.7, 4.8, S.IS_MOBILE ? 9 : 12);
-    S.GEO.coniferV.translate(0, 3.6, 0);
-    S.GEO.bushV = lumpy(new THREE.IcosahedronGeometry(1.0, crownDetail), 0.34);
-    S.GEO.bushV.translate(0, 0.55, 0);
-    S.DYN_GEO.push(S.GEO.trunkV, S.GEO.crownV, S.GEO.coniferV, S.GEO.bushV);
-    // kmeny stromov vo svete sú 3953 inštancií GEO.trunkV (CylinderGeometry, UV 0..1)
-    S.MAT.vegTrunk = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xc8b49c, roughness: 0.96, metalness: 0.0 });
-    S.MAT.vegCrown = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
-    S.MAT.vegConifer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0.0 });
-    S.MAT.vegBush = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0 });
-    // Vietor: koruny sa jemne kývu (vrchol viac než kmeň) — rozsah výšok je
-    // spodok a vrchol geometrie, aby sa neohýbal aj kmeň pod korunou.
-    windSway(S.MAT.vegCrown, 0.075, 1.6, 5.4);
-    windSway(S.MAT.vegConifer, 0.055, 1.2, 5.6);
-    windSway(S.MAT.vegBush, 0.050, 0.0, 1.4);
-  }
+  ensureVegShapes();
   let seed = 770031;
   function rnd(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; }
   const rounds = S.osm.rounds;
@@ -242,6 +278,70 @@ export function buildVegInstanced(){
     S.CHUNKS.push({ x:cx, z:cz, r:r, ms:parts, vis:true }); // distance culling (2 Hz) ako budovy
   });
   console.log("vegetácia: " + kept + " inštancií v " + cells.size + " chunkoch (cesty:" + skipRoad + " budovy:" + skipBld + " voda:" + skipWet + " koryto:" + skipLow + ")");
+  buildGrassTufts(rnd);
+}
+
+// ---------- TRSTINY TRÁVY (alfa karty, dekoratívny pás pri cestách) ----------
+// Jedna inštancovaná karta s alfa textúrou trstiny: jeden InstancedMesh
+// pre celý svet (jeden draw call, žiadne chunky). Rozptyl v pásme 7–30 m od
+// osí ciest (roadDist2 je v kvadrátoch) — mestské chodníky a vozovky tým
+// ostanú čisté a kvety trávy nerastú v strede cesty. Bez shadow castingu:
+// shadow mapka by z kariet kreslila celé obdĺžniky, tiene pod stromami stačia.
+// userData NEMÁ `veg`, takže snapVegetationToTerrain ich necháva stáť
+// (výška je už zapísaná pri rozptyle).
+function buildGrassTufts(rndSource){
+  const cnt = S.IS_MOBILE ? 900 : 2600;         // cieľový počet kariet
+  const attempts = S.IS_MOBILE ? 8000 : 24000;  // strop pokusov (rozptyl po mape)
+  if(!S.GEO.tuftV){
+    const tpl = new THREE.PlaneGeometry(0.9, 0.55);
+    tpl.translate(0, 0.275, 0);   // päta karty sedí na teréne
+    S.GEO.tuftV = tpl;
+    S.DYN_GEO.push(tpl);
+  }
+  const rows = [];
+  for(let a=0;a<attempts && rows.length < cnt;a++){
+    const x = S.GB.x0 + rndSource()*(S.GB.x1-S.GB.x0);
+    const z = S.GB.z0 + rndSource()*(S.GB.z1-S.GB.z0);
+    const rd = roadDist2(x, z);
+    if(rd < 49 || rd > 900) continue;   // pás 7–30 m od vozoviek (d2 v metroch²)
+    if(vegWet(x, z, 6)) continue;       // korytá vôd a ich brehy
+    if(vegInBld(x, z)) continue;        // parcely budov + 1.5 m ochrana múru
+    if(S.ROUTE_SUB && dist2ToSamples(x, z, S.ROUTE_SUB) < 60) continue;
+    const rounds = S.osm.rounds;
+    let inRound = false;
+    for(let r=0;r<rounds.length && !inRound;r++){
+      const dx = x-rounds[r][0], dz = z-rounds[r][1], lim = rounds[r][2]+3;
+      if(dx*dx+dz*dz < lim*lim) inRound = true;
+    }
+    if(inRound) continue;
+    const y = getTerrainHeight(x, z);
+    if(y < -0.4) continue;              // korytá vôd bez trávy
+    rows.push(x, y-0.02, z, 0.85+rndSource()*0.55, rndSource()*6.2832,
+              (rndSource()-0.5)*0.24);  // x,y,z, mierka, otáčanie, náklon
+  }
+  const n = rows.length/6;
+  if(!n) return;
+  // jemné kývovanie vetrom: vrch karty sa hýbe viac než päta
+  windSway(S.MAT.tuft, 0.012, 0.06, 0.5);
+  const m = new THREE.InstancedMesh(S.GEO.tuftV, S.MAT.tuft, n);
+  const MM = new THREE.Matrix4(), EE = new THREE.Euler(),
+        QQ = new THREE.Quaternion(), PP = new THREE.Vector3(),
+        SV = new THREE.Vector3();
+  for(let i=0;i<n;i++){
+    EE.set(rows[i*6+5], rows[i*6+4], (rndSource()-0.5)*0.24);
+    QQ.setFromEuler(EE);
+    PP.set(rows[i*6], rows[i*6+1], rows[i*6+2]);
+    const sc = rows[i*6+3];
+    SV.set(sc, sc, sc);
+    MM.compose(PP, QQ, SV);
+    m.setMatrixAt(i, MM);
+  }
+  m.instanceMatrix.needsUpdate = true;
+  m.castShadow = false;
+  m.receiveShadow = true;
+  m.updateMatrix(); m.matrixAutoUpdate = false;
+  S.scene.add(m);
+  console.log("trstiny: " + n + " kariet pri cestách");
 }
 // ---------- PRITIAHNUTIE STROMOV A KRIKOV NA TERÉN (getTerrainHeight) ----------
 // Znovunastaví maticu každej inštancie: kmeň/krúžka leží presne na novej
@@ -273,6 +373,7 @@ export function snapVegetationToTerrain(){
   return n;
 }
 export function buildLampsTrees(){
+  ensureVegShapes();   // crownC musí existovať skôr než lampové koruny
   function makeRnd(seed){
     let s = seed;
     return function(){ s = (s*1103515245 + 12345) & 0x7fffffff; return s/0x7fffffff; };
@@ -304,7 +405,9 @@ export function buildLampsTrees(){
     const sz = 2.2 + rnd()*2;
     const tgy = getTerrainHeight(S._v1.x, S._v1.z);
     trunks.push([S._v1.x, 1.2+tgy, S._v1.z, 0.5, 2.4, 0.5, 0]);
-    leaves.push([S._v1.x, 2.4+sz*0.7+tgy, S._v1.z, sz, sz*1.6, sz, 0]);
+    // crownC (organická guľa) namiesto kužeľa; náhodné otáčanie zruší
+    // systematický náklon všetkých korún na jednu stranu
+    leaves.push([S._v1.x, 2.4+sz*0.55+tgy, S._v1.z, sz*1.05, sz*0.8, sz*1.05, rnd()*6.2832]);
   }
   const hillLeaves = [];
   for(let hi=0;hi<130;hi++){
@@ -325,11 +428,11 @@ export function buildLampsTrees(){
     if(inW) continue;
     const sz = 2.6 + rnd()*2.4;
     trunks.push([hx, 1.4+hg, hz, 0.6, 2.8, 0.6, 0]);
-    hillLeaves.push([hx, 2.8+sz*0.7+hg, hz, sz, sz*1.7, sz, 0]);
+    hillLeaves.push([hx, 2.8+sz*0.55+hg, hz, sz*1.05, sz*0.8, sz*1.05, rnd()*6.2832]);
   }
   if(poles.length) mergedBoxes(poles, S.MAT.pole, S.GEO.cyl);
   if(heads.length) S.BLOOM.lampMesh = mergedBoxes(heads, S.MAT.lampOn, S.GEO.box); // žiarivky -> bloom vrstva
   if(trunks.length) mergedBoxes(trunks, S.MAT.trunk, S.GEO.cyl);
-  if(leaves.length) mergedBoxes(leaves, S.MAT.leaf, S.GEO.cone);
-  if(hillLeaves.length) mergedBoxes(hillLeaves, S.MAT.leafDark, S.GEO.cone);
+  if(leaves.length) mergedBoxes(leaves, S.MAT.leaf, S.GEO.crownC);
+  if(hillLeaves.length) mergedBoxes(hillLeaves, S.MAT.leafDark, S.GEO.crownC);
 }

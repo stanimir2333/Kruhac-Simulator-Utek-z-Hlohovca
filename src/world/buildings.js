@@ -1,7 +1,7 @@
 // src/world/buildings.js — OSM budovy, veža sv. Michala, fotofasády (verbatim port, js 5876–6440).
 import * as THREE from 'three';
 import { S } from './shared.js';
-import { routePose } from './roads.js';
+import { routePose, pointInRing } from './roads.js';
 import { regLabel } from './labels.js';
 import { getTerrainHeight } from './height.js';
 import { groundRayY, staticDone } from './ground.js';
@@ -192,6 +192,222 @@ export const ZROOF = [
   [0xa8b2bc]
 ];
 export function hx3(c){ return [((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255]; }
+
+// ---------- NOVÉ DETAILY: rímsy, partáče, sedlové strechy, komíny, ventily ----------
+// Každá budova dostane k existujúcim hmotám čisto nové detaily:
+//  - korunová rímsa okolo obvodu (previs 10 cm)
+//  - partáč 0,5 m na plochých strechách zón 1, 2, 4 a 5 (plocha > 400 m²)
+//  - sedlová strecha (hrebeň na dlhšej osi OBB) na domoch s plným obrysom
+//  - komín pri hrebeni sedlových domov, ventily na strechách hál
+// Všetko ide do chunkových bucketov (wTrim = svetlá omietka trimov), takže
+// draw calls v chunku narastú len o jeden a distance culling ich obsiahne.
+// Pozície, rozmery a kolízie existujúcich budov sa NEZMENIA.
+const UVK = 0.125; // UV konvencia chunkov: 1 jednotka UV = 8 m (rovnako extrude)
+
+// TRI so zadaným normálom (n) a UV v konvencii x0.125. Winding sa ráta z
+// krížového súčinu, takže trojuholník ide vždy do strany normálu.
+function bldTri(dst, p0, p1, p2, n, cr, cg, cb, u0, u1, u2, aoY){
+  const e1x = p1[0]-p0[0], e1y = p1[1]-p0[1], e1z = p1[2]-p0[2];
+  const e2x = p2[0]-p0[0], e2y = p2[1]-p0[1], e2z = p2[2]-p0[2];
+  if((e1y*e2z - e1z*e2y)*n[0] + (e1z*e2x - e1x*e2z)*n[1] + (e1x*e2y - e1y*e2x)*n[2] < 0){
+    const tp = p1, tu = u1; p1 = p2; p2 = tp; u1 = u2; u2 = tu;
+  }
+  const vi = dst.v;
+  const ps = [p0, p1, p2], uv = [u0, u1, u2];
+  for(let i=0;i<3;i++){
+    dst.p.push(ps[i][0], ps[i][1], ps[i][2]);
+    dst.n.push(n[0], n[1], n[2]);
+    dst.u.push(uv[i][0], uv[i][1]);
+    let f = 1;
+    if(aoY !== undefined){          // kontaktné stmavnutie pri päte (ako pushGeo)
+      let t = (ps[i][1] - aoY)/1.8;
+      if(t < 0) t = 0; else if(t > 1) t = 1;
+      f = 0.55 + 0.45*t;
+    }
+    dst.c.push(cr*f, cg*f, cb*f);
+    dst.i.push(vi+i);
+  }
+  dst.v += 3;
+}
+// Štyri vrcholy ako dva TRI po uhlopriečke p0-p2, jeden normál pre obe.
+
+function bldQuadV(dst, p0, p1, p2, p3, n, cr, cg, cb, u0, u1, u2, u3, aoY){
+  bldTri(dst, p0, p1, p2, n, cr, cg, cb, u0, u1, u2, aoY);
+  bldTri(dst, p0, p2, p3, n, cr, cg, cb, u0, u2, u3, aoY);
+}
+
+// Offsetovaný obrys (mitrovanie rohov): vráti vrcholy obrysu posunuté o off
+// vonku (off < 0 = dovnútra) a aj sgn — orientáciu obvodu. Vonkajší normál
+// hrany pri sgn = +1 je (ez, −ex), pri −1 opačný.
+function ringOut(pts, off){
+  const n = pts.length/2;
+  let area = 0;
+  for(let i=0;i<n;i++){
+    const j = (i+1)%n;
+    area += pts[i*2]*pts[j*2+1] - pts[j*2]*pts[i*2+1];
+  }
+  const sgn = area >= 0 ? 1 : -1;
+  const rx = new Float64Array(n), rz = new Float64Array(n);
+  for(let i=0;i<n;i++){
+    const p = i > 0 ? i-1 : n-1, q = (i+1)%n;
+    // e1 = do predchádzajúceho vrcholu (opačný smer), e2 = do nasledujúceho
+    const e1x = pts[p*2] - pts[i*2], e1z = pts[p*2+1] - pts[i*2+1];
+    const e2x = pts[q*2] - pts[i*2], e2z = pts[q*2+1] - pts[i*2+1];
+    let n1x = -sgn*e1z, n1z = sgn*e1x;   // e1 má opacný smer, preto negácia
+    let n2x = sgn*e2z, n2z = -sgn*e2x;
+    const l1 = Math.hypot(n1x, n1z) || 1, l2 = Math.hypot(n2x, n2z) || 1;
+    n1x /= l1; n1z /= l1; n2x /= l2; n2z /= l2;
+    let mx = n1x + n2x, mz = n1z + n2z;
+    const ml = Math.hypot(mx, mz);
+    if(ml < 0.25){   // pri takmer 180° rohu nech sa stiahne na normál jednej hrany
+      rx[i] = pts[i*2] + n2x*off; rz[i] = pts[i*2+1] + n2z*off;
+    } else {
+      mx /= ml; mz /= ml;
+      const cosHalf = Math.max(0.35, mx*n2x + mz*n2z); // mitra nesmie vyrásť do ihly
+      const s = off / cosHalf;
+      rx[i] = pts[i*2] + mx*s; rz[i] = pts[i*2+1] + mz*s;
+    }
+  }
+  return { rx:rx, rz:rz, sgn:sgn };
+}
+
+// KORUNOVÁ RÍMSA: pás po celom obvode, y0..y1, previs off vonku z obvodu.
+// Tri plochy: vonkajšia stena, podhľad, horná doska. UV = obvod a výška.
+function pushCorniceRing(dst, pts, y0, y1, off, cr, cg, cb){
+  const n = pts.length/2, R = ringOut(pts, off), K = UVK;
+  const dy0 = y0*K, dy1 = y1*K;
+  let acc = 0;
+  for(let i=0;i<n;i++){
+    if(i > 0) acc += Math.hypot(pts[i*2]-pts[(i-1)*2], pts[i*2+1]-pts[(i-1)*2+1]);
+    const j = (i+1)%n;
+    const ax = pts[j*2], az = pts[j*2+1];
+    const ex = ax - pts[i*2], ez = az - pts[i*2+1];
+    const nl = Math.hypot(ex, ez) || 1;
+    const nxo = (R.sgn*ez)/nl, nzo = -(R.sgn*ex)/nl;
+    const ox0 = R.rx[i], oz0 = R.rz[i], ox1 = R.rx[j], oz1 = R.rz[j];
+    const ux0 = acc*K, ux1 = (acc + nl)*K;
+    // 1) vonkajšia stena rímsy (previs viditeľný z ulice)
+    bldQuadV(dst, [ox0, y0, oz0], [ox1, y0, oz1], [ox1, y1, oz1], [ox0, y1, oz0],
+      [nxo, 0, nzo], cr, cg, cb, [ux0, dy0], [ux1, dy0], [ux1, dy1], [ux0, dy1]);
+    // 2) podhľad (normál dolu, jemne stmavený)
+    bldQuadV(dst, [ox0, y0, oz0], [ox1, y0, oz1], [ax, y0, az], [pts[i*2], y0, pts[i*2+1]],
+      [0, -1, 0], cr*0.72, cg*0.72, cb*0.72, [ux0, dy0], [ux1, dy0], [ux1, dy0], [ux0, dy0]);
+    // 3) horná doska (na sedlovách krytá okapom, na plochých viditeľná)
+    bldQuadV(dst, [ox0, y1, oz0], [ox1, y1, oz1], [ax, y1, az], [pts[i*2], y1, pts[i*2+1]],
+      [0, 1, 0], cr, cg, cb, [ux0, dy1], [ux1, dy1], [ux1, dy1], [ux0, dy1]);
+  }
+}
+
+// PARTÁČ: 0,5 m pás nad plochou strechou; vonkajšia stena tesne nad obvodom
+// (previs 2 cm), vnútorná 6 cm od obvodu. Vonkajšia + vnútorná + horná doska.
+function pushParapetRing(dst, pts, yb, hh, tin, cr, cg, cb){
+  const n = pts.length/2, Ro = ringOut(pts, 0.02), Ri = ringOut(pts, -tin), K = UVK;
+  const dyb = yb*K, dyt = (yb+hh)*K;
+  let acc = 0;
+  for(let i=0;i<n;i++){
+    if(i > 0) acc += Math.hypot(pts[i*2]-pts[(i-1)*2], pts[i*2+1]-pts[(i-1)*2+1]);
+    const j = (i+1)%n;
+    const ex = pts[j*2]-pts[i*2], ez = pts[j*2+1]-pts[i*2+1];
+    const nl = Math.hypot(ex, ez) || 1;
+    const nxo = (Ro.sgn*ez)/nl, nzo = -(Ro.sgn*ex)/nl;
+    const ux0 = acc*K, ux1 = (acc + nl)*K;
+    // 1) vonkajšia stena (viditeľná z ulice, predlženie fasády)
+    bldQuadV(dst, [Ro.rx[i], yb, Ro.rz[i]], [Ro.rx[j], yb, Ro.rz[j]],
+             [Ro.rx[j], yb+hh, Ro.rz[j]], [Ro.rx[i], yb+hh, Ro.rz[i]],
+      [nxo, 0, nzo], cr, cg, cb, [ux0, dyb], [ux1, dyb], [ux1, dyt], [ux0, dyt]);
+    // 2) vnútorná stena (viditeľná len zozhora, tmavšia)
+    bldQuadV(dst, [Ri.rx[i], yb, Ri.rz[i]], [Ri.rx[j], yb, Ri.rz[j]],
+             [Ri.rx[j], yb+hh, Ri.rz[j]], [Ri.rx[i], yb+hh, Ri.rz[i]],
+      [-nxo, 0, -nzo], cr*0.78, cg*0.78, cb*0.78, [ux0, dyb], [ux1, dyb], [ux1, dyt], [ux0, dyt]);
+    // 3) horná doska (šírka pierka = 0,02 + tin)
+    bldQuadV(dst, [Ri.rx[i], yb+hh, Ri.rz[i]], [Ri.rx[j], yb+hh, Ri.rz[j]],
+             [Ro.rx[j], yb+hh, Ro.rz[j]], [Ro.rx[i], yb+hh, Ro.rz[i]],
+      [0, 1, 0], cr, cg, cb, [ux0, dyt], [ux1, dyt], [ux1, dyt], [ux0, dyt]);
+  }
+}
+
+// BOX otáčaný okolo Y (komíny, ventily): 5 stien bez dolnej, leží na podložke.
+function bldBox(dst, cx, yb, cz, sx, sy, sz, rot, cr, cg, cb){
+  const co = Math.cos(rot), si = Math.sin(rot);
+  const hx = sx/2, hz = sz/2, yt = yb+sy, K = UVK;
+  const w = (lx, lz, y) => [cx + lx*co + lz*si, y, cz - lx*si + lz*co];
+  const P0 = w(-hx,-hz,yb), P1 = w(hx,-hz,yb), P2 = w(hx,hz,yb), P3 = w(-hx,hz,yb);
+  const P4 = w(-hx,-hz,yt), P5 = w(hx,-hz,yt), P6 = w(hx,hz,yt), P7 = w(-hx,hz,yt);
+  const nX = [co, 0, -si], nZ = [si, 0, co];
+  const uX = (p) => [ (p[0]*si + p[2]*co)*K, p[1]*K ];
+  const uZ = (p) => [ (p[0]*co - p[2]*si)*K, p[1]*K ];
+  const uT = (p) => [ (p[0]*co - p[2]*si)*K, (p[0]*si + p[2]*co)*K ];
+  const FA = 0.9;  // steny mierne tmavšie než vrchol boxu
+  bldQuadV(dst, P1, P2, P6, P5, nX, cr*FA, cg*FA, cb*FA, uX(P1), uX(P2), uX(P6), uX(P5));
+  bldQuadV(dst, P0, P3, P7, P4, [-nX[0], 0, -nX[2]], cr*FA, cg*FA, cb*FA, uX(P0), uX(P3), uX(P7), uX(P4));
+  bldQuadV(dst, P2, P3, P7, P6, nZ, cr*FA, cg*FA, cb*FA, uZ(P2), uZ(P3), uZ(P7), uZ(P6));
+  bldQuadV(dst, P0, P1, P5, P4, [-nZ[0], 0, -nZ[2]], cr*FA, cg*FA, cb*FA, uZ(P0), uZ(P1), uZ(P5), uZ(P4));
+  bldQuadV(dst, P4, P5, P6, P7, [0, 1, 0], cr, cg, cb, uT(P4), uT(P5), uT(P6), uT(P7));
+}
+
+// SEDLOVÁ STRECHA pre obdĺžnikový obrys (plocha / OBB >= 0.85): hrebeň na
+// dlhšej osi OBB, dva pásy s previsom okapu 25 cm, štíty z trim omietky a
+// komíny pri hrebeni. Sklon ~28° (výška hrebeňa = pol šírky × 0,55).
+function pushGableRoof(dstRoof, dstTrim, k, topY, wv, rv, area2, rng){
+  const ca = Math.cos(k.a), sa = Math.sin(k.a);
+  const longX = k.w >= k.d;
+  const lenH = longX ? k.w/2 : k.d/2;    // pol dĺžky hrebeňa
+  const spanH = longX ? k.d/2 : k.w/2;   // pol šírky, základ pre okap
+  const ux = longX ? ca : -sa, uz = longX ? sa : ca;  // os hrebena
+  const vx = longX ? -sa : ca, vz = longX ? ca : sa;  // priečna os (cez strechu)
+  const ov = 0.25, E = spanH + ov;       // okap 25 cm za stenou
+  const rise = spanH*0.55;
+  const CS = Math.hypot(E, rise);        // dĺžka sklonu pre UV
+  const K = UVK;
+  const ww = (u, v, y) => [k.x + u*ux + v*vx, y, k.z + u*uz + v*vz];
+  for(let s=-1;s<=1;s+=2){
+    const A = ww(-lenH, 0, topY+rise), B = ww(lenH, 0, topY+rise),
+          C = ww(lenH, s*E, topY), D = ww(-lenH, s*E, topY);
+    // normál pásu: kríž u-osa × smer sklonu, orientáciu rieši flip nižšie
+    let suX = s*vx, suY = -rise/E, suZ = s*vz;
+    const sl = Math.hypot(suX, suY, suZ); suX /= sl; suY /= sl; suZ /= sl;
+    let sNX = -uz*suY, sNY = uz*suX - ux*suZ, sNZ = ux*suY;
+    if(sNY < 0){ sNX = -sNX; sNY = -sNY; sNZ = -sNZ; }
+    bldQuadV(dstRoof, A, B, C, D, [sNX, sNY, sNZ], rv[0], rv[1], rv[2],
+      [-lenH*K, 0], [lenH*K, 0], [lenH*K, CS*K], [-lenH*K, CS*K], topY+rise);
+    // spodná strana toho istého pásu = podhľad pod okapom (viditeľný od zeme)
+    bldQuadV(dstRoof, A, B, C, D, [-sNX, -sNY, -sNZ], rv[0]*0.72, rv[1]*0.72, rv[2]*0.72,
+      [-lenH*K, 0], [lenH*K, 0], [lenH*K, CS*K], [-lenH*K, CS*K]);
+  }
+  // ŠTÍTY: čelné trojsteny z trim omietky (o 6 cm dovnútra od konca OBB)
+  for(let e=-1;e<=1;e+=2){
+    const inu = e*(lenH - 0.06);
+    const A = ww(inu, -spanH, topY-0.04), B = ww(inu, spanH, topY-0.04),
+          apex = ww(inu, 0, topY+rise);
+    bldTri(dstTrim, A, B, apex, [e*ux, 0, e*uz], wv[0], wv[1], wv[2],
+      [-spanH*K, (topY-0.04)*K], [spanH*K, (topY-0.04)*K], [0, (topY+rise)*K], k.baseY);
+  }
+  // KOMÍNY pri hrebeni: 1 alebo 2 podľa plochy, deterministicky hashované
+  const nCh = area2 > 220 ? 2 : 1;
+  for(let q=0;q<nCh;q++){
+    const uCh = (q === 0 ? 1 : (rng() < 0.5 ? -1 : 1)) * lenH*0.28;
+    const sCh = rng() < 0.5 ? -1 : 1;
+    const yPlane = topY + rise*(1 - 0.55/E); // rovina strechy 55 cm od hrebeňa
+    const wp = ww(uCh, sCh*0.55, 0);
+    bldBox(dstTrim, wp[0], yPlane - 0.55, wp[2], 0.9, 1.4, 0.9, -k.a,
+      wv[0]*0.88, wv[1]*0.88, wv[2]*0.88);
+  }
+}
+
+// VENTILY na plochých strechách: 1-3 malé boxy podľa plochy, pozícia s PIP
+// testom (pointInRing bez marže, musí ležať vnútri obrysu) inak preskočí.
+function pushRoofVents(dst, cx, cz, pts, topY, wpad, dPad, area2, rv, rng){
+  if(area2 < 400) return;
+  let want = 1;
+  if(area2 > 900) want++;
+  if(area2 > 2500) want++;
+  for(let q=0;q<want;q++){
+    const px = cx + (rng()*2 - 1)*wpad*0.32, pz = cz + (rng()*2 - 1)*dPad*0.32;
+    if(!pointInRing(px, pz, pts, 0)) continue;
+    bldBox(dst, px, topY-0.02, pz, 1.1, 0.45, 0.75, rng()*3.1416,
+      rv[0]*0.8, rv[1]*0.8, rv[2]*0.8);
+  }
+}
 // ---------- ČISTÉ PBR FASÁDY (bez foto-textúr) ----------
 // Načítavanie obrázkov zo zložky assets/tex je ZRUŠENÉ: bežné budovy používajú
 // výhradne procedurálne CanvasTexture (TEX.winGrid + TEX.winRough + TEX.roofTile
@@ -216,13 +432,13 @@ export const CHIMNEYS = [[-1702.3,-325.6,48,"concrete"],[-1687.9,-357.5,60,"bric
 // Kostol sv. Michala (OSM tag church) je v mape len garáž. Veža stojí v konci
 // lode obrátenom k Námestiu sv. Michala: v orientovanej sústave kostola (os = jeho
 // uhol `a`) je to diagonála u=v, takže pätu posunieme o DU/DV. Päta 9x9 m má
-// ~5.4 m voľnosti od múzu polygonu (zmerané z OSM obrysu) - nikdy neprečníva.
+// ~5.4 m voľnosti od múru polygonu (zmerané z OSM obrysu) - nikdy neprečníva.
 export const CHURCH_TOWER = { du:-10.45, dv:-10.45 };
 export function buildChurchTower(k){
   const ca = Math.cos(k.a), sa = Math.sin(k.a);
   const D = CHURCH_TOWER;
   const tx = k.x + D.du*ca - D.dv*sa, tz = k.z + D.du*sa + D.dv*ca;
-  const y0 = k.baseY;                       // presne podložka kostola (rovina flattenu)
+  const y0 = k.baseY;                       // presne podložka kostola (rovina podložia)
   if(!S.MAT.churchStone) S.MAT.churchStone = new THREE.MeshStandardMaterial({ color: 0xd9cebe, roughness: 0.92, metalness: 0.0 });
   if(!S.MAT.churchRoof)  S.MAT.churchRoof  = new THREE.MeshStandardMaterial({ color: 0x3f4650, roughness: 0.6, metalness: 0.25 });
   // zvonica je štvorcová (4 steny), kužeľ otočíme o 45°, aby jeho podstava sedela na rohoch
@@ -231,6 +447,7 @@ export function buildChurchTower(k){
     shaft:  new THREE.BoxGeometry(9, 21.0, 9),
     corbel: new THREE.BoxGeometry(10.4, 1.3, 10.4),
     belfry: new THREE.BoxGeometry(7.8, 4.2, 7.8),
+    open:   new THREE.BoxGeometry(2.9, 1.9, 0.12),
     ledge:  new THREE.BoxGeometry(8.8, 0.8, 8.8),
     helmet: new THREE.ConeGeometry(5.657, 7.4, 4),
     lantern:new THREE.CylinderGeometry(1.1, 1.25, 2.2, 10),
@@ -240,18 +457,24 @@ export function buildChurchTower(k){
   };
   G.helmet.rotateY(Math.PI/4);
   for(const g in G) S.DYN_GEO.push(G[g]);
-  const put = (geo, mat, dy, cast) => {
+  const put = (geo, mat, dy, cast, px, pz, ry) => {
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(tx, y0+dy, tz);
-    m.rotation.y = k.a;
+    m.position.set(px !== undefined ? px : tx, y0+dy, pz !== undefined ? pz : tz);
+    m.rotation.y = ry !== undefined ? ry : k.a;
     S.scene.add(m);
     staticDone(m, cast !== false, true);
   };
-  put(G.plinth, S.MAT.churchStone,  0.4);   // pätný sokel
+  put(G.plinth, S.MAT.churchStone,  0.4);   // sokel pri päte
   put(G.shaft,  S.MAT.churchStone, 11.8);    // teleso veže 21 m
-  put(G.corbel, S.MAT.churchStone, 22.95);   // vola pod zvonicou (malý previs)
+  put(G.corbel, S.MAT.churchStone, 22.95);   // konzola pod zvonicou (malý previs)
   put(G.belfry, S.MAT.churchStone, 25.7);    // zvonica s oknami
-  put(G.ledge,  S.MAT.churchRoof,  28.2);    // manžel
+  // štyri tmavé otvory (okná zvonice) na všetkých 4 stenách — doska 5 cm
+  // vynesená nad stenu (3.95 oproti 3.9 m), aby neblikala a nebola pod ňu zaborená
+  for(let s2=0;s2<4;s2++){
+    const ry2 = k.a + s2*Math.PI/2;
+    put(G.open, S.MAT.churchRoof, 25.7, false, tx+Math.sin(ry2)*3.95, tz+Math.cos(ry2)*3.95, ry2);
+  }
+  put(G.ledge,  S.MAT.churchRoof,  28.2);    // rímsa pod helmu
   put(G.helmet, S.MAT.churchRoof,  32.3);    // baroková helma
   put(G.lantern,S.MAT.churchRoof,  37.1);    // laterna
   put(G.ball,   S.MAT.churchRoof,  38.55);
@@ -415,7 +638,8 @@ export function buildBuildings(){
     // Distance culling (CHUNKS, 2 Hz) + frustum culling držia FPS na 60 aj pri vysokej dohľadnosti.
     if(!ch){ ch = { items:[],
       wPlaster:{p:[],n:[],u:[],c:[],i:[],v:0}, wInd:{p:[],n:[],u:[],c:[],i:[],v:0},
-      rPitch:{p:[],n:[],u:[],c:[],i:[],v:0}, rFlat:{p:[],n:[],u:[],c:[],i:[],v:0} };
+      rPitch:{p:[],n:[],u:[],c:[],i:[],v:0}, rFlat:{p:[],n:[],u:[],c:[],i:[],v:0},
+      wTrim:{p:[],n:[],u:[],c:[],i:[],v:0} };
       cells.set(key, ch); }
     ch.items.push({ x:k.x, z:k.z, hd:Math.sqrt(k.w*k.w+k.d*k.d)/2 });
     const wv = hx3(ZWALL[k.zone][(i*7+k.zone)%ZWALL[k.zone].length]);
@@ -425,20 +649,48 @@ export function buildBuildings(){
     // len pre domy a historické budovy, paneláky a haly majú plochú.
     const pitch = (k.zone === 0 || k.zone === 3);
     pushGeo(pitch || k.zone === 1 ? ch.wPlaster : ch.wInd, g, 1, wv[0], wv[1], wv[2], k.baseY);
-    pushGeo(pitch ? ch.rPitch : ch.rFlat, g, 0, rv[0], rv[1], rv[2]);
+    // ---------- NOVÉ DETAILY (rímsy, partáče, sedlové strechy, ventily) ----------
+    // Sedlová strecha NIE JE len náter: pri plnom obdĺžnikovom obryse nahradí
+    // hornú kapu extrúzie pár šikmých plôch + štíty. Poloha, obrys a výška
+    // budovy zostávajú nezmenené — mení sa len zakrývajúca plocha vrchu.
+    let gable = false, area2 = 0;
+    const np2 = (k.fp.length-5)/2;
+    if(np2 >= 3){
+      const pts = new Float64Array(np2*2);
+      for(let p=0;p<np2;p++){ pts[p*2] = k.fp[5+p*2]; pts[p*2+1] = k.fp[5+p*2+1]; }
+      for(let p=0;p<np2;p++){ const q = (p+1)%np2;
+        area2 += pts[p*2]*pts[q*2+1] - pts[q*2]*pts[p*2+1]; }
+      area2 = Math.abs(area2)/2;
+      gable = pitch && area2/(k.w*k.d) >= 0.85 && k.w >= 4.5 && k.d >= 4;
+      if(!gable) pushGeo(pitch ? ch.rPitch : ch.rFlat, g, 0, rv[0], rv[1], rv[2]);
+      const ca2 = Math.cos(k.a), sa2 = Math.sin(k.a);
+      const wPad = Math.abs(k.w/2*ca2)+Math.abs(k.d/2*sa2);
+      const dPad = Math.abs(k.w/2*sa2)+Math.abs(k.d/2*ca2);
+      let rs = (Math.imul(i+1, 2654435761)) >>> 0;   // deterministický hash z indexu
+      const rng = function(){ rs = (Math.imul(rs, 1103515245) + 12345) >>> 0; return rs/4294967296; };
+      const topY = k.baseY + k.h;
+      if(gable){
+        pushGableRoof(ch.rPitch, ch.wTrim, k, topY, wv, rv, area2, rng);
+        pushCorniceRing(ch.wTrim, pts, topY-0.30, topY-0.02, 0.10, wv[0]*0.88, wv[1]*0.88, wv[2]*0.88);
+      } else {
+        pushCorniceRing(ch.wTrim, pts, topY-0.28, topY, 0.10, wv[0], wv[1], wv[2]);
+        if(k.zone >= 1) pushParapetRing(ch.wTrim, pts, topY, 0.5, 0.06, wv[0], wv[1], wv[2]);
+      }
+      if(!gable) pushRoofVents(ch.wTrim, k.x, k.z, pts, topY, wPad, dPad, area2, rv, rng);
+    }
   }
   // Kostol sv. Michala: veža (sokel + teleso + zvonica + helma + kríž), inak je to len garáž
   for(let i=0;i<kept.length;i++){
     const k = kept[i];
     if(k.skipMesh || !k.fp || k.fp[3] !== "Kostol sv. Michala") continue;
-    buildChurchTower(k);   // páta je vnútrí kostolného kolízieho boxu = koliduje automaticky
+    buildChurchTower(k);   // päta je vnútri kolízneho boxu kostola = koliduje automaticky
     break;
   }
   if(!S.MAT.towerSide){
     S.MAT.towerSide = S.MAT.concrete; // čisté PBR: betón, žiadna foto-textúra vodnej veže
   }
-  const towerShaft = new THREE.CylinderGeometry(5, 6.5, 20, 12);
-  const towerTank = new THREE.SphereGeometry(7, 14, 10);
+  const towerShaft = new THREE.CylinderGeometry(5, 6.5, 20, 18);
+  const towerTank = new THREE.SphereGeometry(7, 18, 12);
   S.DYN_GEO.push(towerShaft, towerTank);
   for(let ti=0;ti<TOWERS.length;ti++){
     const tx = TOWERS[ti][0], tz = TOWERS[ti][1];
@@ -454,10 +706,10 @@ export function buildBuildings(){
     regLabel("VODNÁ VEŽA", 0.8, tx, tb+32, tz, true);
   }
   // Komíny Manckovičova: zužený valec + tmavé ústa + sokel (podľa fotky: tehla vyšší)
-  const chimBrick = new THREE.CylinderGeometry(1.7, 2.8, 60, 12);
-  const chimConc = new THREE.CylinderGeometry(1.5, 2.4, 48, 12);
-  const chimMouthB = new THREE.CylinderGeometry(1.55, 1.55, 0.6, 12);
-  const chimMouthC = new THREE.CylinderGeometry(1.35, 1.35, 0.6, 12);
+  const chimBrick = new THREE.CylinderGeometry(1.7, 2.8, 60, 16);
+  const chimConc = new THREE.CylinderGeometry(1.5, 2.4, 48, 16);
+  const chimMouthB = new THREE.CylinderGeometry(1.55, 1.55, 0.6, 16);
+  const chimMouthC = new THREE.CylinderGeometry(1.35, 1.35, 0.6, 16);
   const chimBase = new THREE.BoxGeometry(7, 3, 7);
   S.DYN_GEO.push(chimBrick, chimConc, chimMouthB, chimMouthC, chimBase);
   for(let ci=0;ci<CHIMNEYS.length;ci++){
@@ -495,6 +747,7 @@ export function buildBuildings(){
     if(ch.wInd.i.length){ const m = new THREE.Mesh(finishGeo(ch.wInd), S.MAT.indWall); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rPitch.i.length){ const m = new THREE.Mesh(finishGeo(ch.rPitch), S.MAT.pitchedRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rFlat.i.length){ const m = new THREE.Mesh(finishGeo(ch.rFlat), S.MAT.flatRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
+    if(ch.wTrim.i.length){ const m = new THREE.Mesh(finishGeo(ch.wTrim), S.MAT.trim); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     S.CHUNKS.push({ x:cx, z:cz, r:r, ms:parts, vis:true });
   });
   // kolízne dáta budov do mriežky + exaktné footprinty (dvor test)
