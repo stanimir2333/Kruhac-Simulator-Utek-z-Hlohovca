@@ -1,4 +1,5 @@
 // src/world/roads.js — vozovky, trasa 513, kruháče, most, koľaje, zeleň (verbatim port).
+// Nové detaily mesta (chodníky, stredové čiary) sú na konci: buildRoadDetails().
 import * as THREE from 'three';
 import { S } from './shared.js';
 import { getTerrainHeight, riverBedY, meshSample, wheelGroundY } from './height.js';
@@ -312,6 +313,7 @@ export function buildRoads(){
   const [esc] = routeSamplesFlat(S.routeLen-14, S.routeLen-4, 1); // úniková brána
   buildStrip(esc, 4, function(x, z){ return getTerrainHeight(x, z)+0.21; }, S.MAT.escape);
   buildTownRoads(); // celá sieť (ramená kryje priamo)
+  buildRoadDetails(); // chodníky + stredové čiary (potrebujú RGRID/mriežky z townRoads)
 }
 
 const RGRID = { cs:10, nx:0, nz:0, head:null, next:null };
@@ -672,4 +674,185 @@ export function routePose(s, out, outH, lat){
   out.set(cx + (-Math.cos(h))*L, 0, cz + (Math.sin(h))*L);
   outH.v = h;
   return h;
+}
+
+// ---------- MESTSKÉ DETAILY CEST: chodníky a stredové čiary ----------
+// Dva merged meshe (jeden chodníky, jeden čiary). Detaily:
+//  - chodníky na OBOCH stranách asfaltových ciest hw >= 2.8: stred v osi
+//    + (hw+1.6), pol šírky 0.8 (celý pás 1.6 m), y = terén + 0.16;
+//  - stredové čiary 3 m dlhé s 6 m medzerou, šírka 0.14 m, y = terén+0.16.
+// FILTRÁCIA KRIŽOVATIEK: roadDist2 je NEPOUŽITEĽNÉ (vzorky vlastnej osi sú
+// vždy v nule, takže by test zahodil celú cestu). Namiesto toho sa buduje
+// vlastná mriežka SEGMENTOV (20 m bunky) a meria sa vzdialenosť bodu k
+// úsečkám INÝCH ciest (vrátane trasy 513 a okruhov kruháčov).
+// Idempotentné: volá sa raz z buildRoads.
+const DGRID = new Map();
+let DGRID_ON = false;
+function dSegD2(px, pz, ax, az, bx, bz){
+  const ex = bx-ax, ez = bz-az;
+  const L2 = ex*ex+ez*ez;
+  let t = L2 > 0 ? ((px-ax)*ex+(pz-az)*ez)/L2 : 0;
+  if(t < 0) t = 0; else if(t > 1) t = 1;
+  const qx = px-(ax+ex*t), qz = pz-(az+ez*t);
+  return qx*qx+qz*qz;
+}
+function dGridAdd(ax, az, bx, bz, hw, li){
+  const x0 = Math.min(ax,bx)-4, x1 = Math.max(ax,bx)+4;
+  const z0 = Math.min(az,bz)-4, z1 = Math.max(az,bz)+4;
+  for(let cx=Math.floor((x0-S.GB.x0)/20); cx<=Math.floor((x1-S.GB.x0)/20); cx++){
+    for(let cz=Math.floor((z0-S.GB.z0)/20); cz<=Math.floor((z1-S.GB.z0)/20); cz++){
+      const k = (cx+500)*1000 + (cz+500);
+      let a = DGRID.get(k);
+      if(!a){ a = []; DGRID.set(k, a); }
+      a.push(ax,az,bx,bz,hw,li);
+    }
+  }
+}
+// true, ak je bod bližie než (hw segmentu + pad) k úsečke inej cesty ako liEx
+function dGridNear(x, z, pad, liEx){
+  const cx = Math.floor((x-S.GB.x0)/20), cz = Math.floor((z-S.GB.z0)/20);
+  let any = false;
+  for(let ax=-1;ax<=1 && !any;ax++){ for(let az=-1;az<=1 && !any;az++){
+    const a = DGRID.get((cx+ax+500)*1000 + (cz+az+500));
+    if(!a) continue;
+    for(let s=0;s<a.length;s+=6){
+      if(a[s+5] === liEx) continue;
+      const rr = a[s+4]+pad;
+      if(dSegD2(x, z, a[s], a[s+1], a[s+2], a[s+3]) < rr*rr){ any = true; break; }
+    }
+  }}
+  return any;
+}
+// ostrovčeky kruháčov: nič (chodník/čiara) nestojí v strede okruhu ani láme
+// uličku tesne pri okruhu
+function detailRoundSkip(x, z){
+  const rbs = S.osm.rounds;
+  for(let r2=0;r2<rbs.length;r2++){
+    const dx = x-rbs[r2][0], dz = z-rbs[r2][1], lim = rbs[r2][2]+3.5;
+    if(dx*dx+dz*dz < lim*lim) return true;
+  }
+  return false;
+}
+export function buildRoadDetails(){
+  if(!S.townRoads.length || DGRID_ON) return;
+  DGRID_ON = true;
+  // 1) mriežka segmentov: mestské (asfalt + špina), trasa 513 a okruhy kruháčov
+  for(let li=0;li<S.townRoads.length;li++){
+    const R = S.townRoads[li];
+    for(let i=1;i<R.n;i++){
+      dGridAdd(R.pts[i*2-2], R.pts[i*2-1], R.pts[i*2], R.pts[i*2+1], R.hw, li);
+    }
+  }
+  for(let i=0;i<S.ROUTE_N;i++){
+    dGridAdd(S.routeX[i], S.routeZ[i], S.routeX[i+1], S.routeZ[i+1], S.ROAD_HW, -1);
+  }
+  const rbs = S.osm.rounds;
+  for(let r2=0;r2<rbs.length;r2++){
+    for(let a2=0;a2<24;a2++){
+      const t0 = a2/24*6.2832, t1 = (a2+1)/24*6.2832;
+      dGridAdd(rbs[r2][0]+Math.cos(t0)*rbs[r2][2], rbs[r2][1]+Math.sin(t0)*rbs[r2][2],
+               rbs[r2][0]+Math.cos(t1)*rbs[r2][2], rbs[r2][1]+Math.sin(t1)*rbs[r2][2], 3, -1);
+    }
+  }
+  // 2) CHODNÍKY — pásmo po celých asfaltových cestách hw >= 2.8, obe strany.
+  // Rohy quadu: A1/A2 (vnútro/vonko) na začiatku segmentu, B1/B2 na konci;
+  // poradie indexov volí strana, aby normál vychádzal zhora (+y).
+  const swPos = [], swUV = [], swIdx = [];
+  let swQ = 0;
+  for(let li=0;li<S.osm.roads.length && li<S.townRoads.length;li++){
+    const R = S.townRoads[li];
+    if(R.hw < 2.8) continue;
+    for(let side=-1;side<=1;side+=2){
+      for(let i=1;i<R.n;i++){
+        const ax = R.pts[i*2-2], az = R.pts[i*2-1], bx = R.pts[i*2], bz = R.pts[i*2+1];
+        const ex = bx-ax, ez = bz-az;
+        const L = Math.hypot(ex, ez);
+        if(L < 0.3) continue;
+        const nx = -ez/L, nz = ex/L;
+        const o1 = side*(R.hw+0.8), o2 = side*(R.hw+2.4);
+        const a1x = ax+nx*o1, a1z = az+nz*o1, a2x = ax+nx*o2, a2z = az+nz*o2;
+        const b1x = bx+nx*o1, b1z = bz+nz*o1, b2x = bx+nx*o2, b2z = bz+nz*o2;
+        const mx = (a1x+b2x)/2, mz = (a1z+b2z)/2;
+        // križovatka: stred offsetového segmentu blízko inej cesty = preskočiť
+        if(dGridNear(mx, mz, 0.5, li)) continue;
+        if(detailRoundSkip(mx, mz)) continue;
+        const c0x = a1x, c0z = a1z, c1x = b1x, c1z = b1z;
+        const c2x = a2x, c2z = a2z, c3x = b2x, c3z = b2z;
+        const y0 = getTerrainHeight(c0x, c0z)+0.16, y1 = getTerrainHeight(c1x, c1z)+0.16;
+        const y2 = getTerrainHeight(c2x, c2z)+0.16, y3 = getTerrainHeight(c3x, c3z)+0.16;
+        const v0 = R.cum[i-1], v1 = R.cum[i];
+        // UV v metroch: u 0 (vnútro) .. 1.6 (vonko), v = celková dĺžka po ceste
+        swPos.push(c0x, y0, c0z, c1x, y1, c1z, c2x, y2, c2z, c3x, y3, c3z);
+        swUV.push(0, v0, 0, v1, 1.6, v0, 1.6, v1);
+        // poradie indexov: side +1 → [0,2,1, 1,2,3]; side −1 → zrkadlo [0,1,2, 1,3,2]
+        const b4 = swQ*4;
+        if(side > 0){
+          swIdx.push(b4, b4+2, b4+1, b4+1, b4+2, b4+3);
+        } else {
+          swIdx.push(b4, b4+1, b4+2, b4+1, b4+3, b4+2);
+        }
+        swQ++;
+      }
+    }
+  }
+  // 3) STREDOVÉ ČIARY — po celej dĺžke cesty: čiarka 3 m, medzera 6 m, šírka 0.14 m.
+  // Test križovatky proti úsečke inej cesty (pad 0.6): vlastné úsečky (liEx=li)
+  // sa nepočítajú — vlastná os nie je prekážkou sama pre seba.
+  const dsPos = [], dsIdx = [];
+  let dsQ = 0;
+  for(let li=0;li<S.osm.roads.length && li<S.townRoads.length;li++){
+    const R = S.townRoads[li];
+    if(R.hw < 2.8) continue;
+    for(let i=1;i<R.n;i++){
+      const ax = R.pts[i*2-2], az = R.pts[i*2-1], bx = R.pts[i*2], bz = R.pts[i*2+1];
+      const ex = bx-ax, ez = bz-az;
+      const L = Math.hypot(ex, ez);
+      if(L < 1.2) continue;
+      const exu = ex/L, ezu = ez/L;
+      const pnx = -ezu, pnz = exu;   // kolmica na čiarku
+      let s = 0;
+      while(s < L){
+        const tot = R.cum[i-1] + s;
+        const ph = ((tot % 9) + 9) % 9;
+        if(ph >= 3){ s += 9 - ph; continue; }   // medzera medzi čiarkami
+        const seg = Math.min(3 - ph, L - s);
+        const t0 = s/L, t1 = (s+seg)/L;
+        const m1x = ax+ex*t0, m1z = az+ez*t0, m2x = ax+ex*t1, m2z = az+ez*t1;
+        const mx = (m1x+m2x)/2, mz = (m1z+m2z)/2;
+        if(dGridNear(mx, mz, 0.6, li)) continue;   // križovatka/trasa/kruháč
+        if(detailRoundSkip(mx, mz)) continue;
+        const y = getTerrainHeight(mx, mz)+0.16;
+        const H = 0.07;
+        // vrcholy: A(+n), A(−n), B(+n), B(−n) → tri [0,1,2],[1,3,2] dajú normál +y
+        dsPos.push(m1x+pnx*H, y, m1z+pnz*H,  m1x-pnx*H, y, m1z-pnz*H,
+                   m2x+pnx*H, y, m2z+pnz*H,  m2x-pnx*H, y, m2z-pnz*H);
+        const b4 = dsQ*4;
+        dsIdx.push(b4, b4+1, b4+2, b4+1, b4+3, b4+2);
+        dsQ++;
+        s += seg;
+      }
+    }
+  }
+  // 4) MERGE + mesh: chodník ako dlažba (MAT.sidewalk), čiarky ako biely náter
+  if(dsQ){
+    const gds = new THREE.BufferGeometry();
+    gds.setAttribute("position", new THREE.BufferAttribute(new Float32Array(dsPos), 3));
+    gds.setIndex(dsIdx);
+    S.DYN_GEO.push(gds);
+    const mds = new THREE.Mesh(gds, S.MAT.white);
+    S.scene.add(mds);
+    staticDone(mds, false, true);
+  }
+  if(swQ){
+    const gsl = new THREE.BufferGeometry();
+    gsl.setAttribute("position", new THREE.BufferAttribute(new Float32Array(swPos), 3));
+    gsl.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(swUV), 2));
+    gsl.setIndex(swIdx);
+    gsl.computeVertexNormals();
+    S.DYN_GEO.push(gsl);
+    const msl = new THREE.Mesh(gsl, S.MAT.sidewalk);
+    S.scene.add(msl);
+    staticDone(msl, false, true);
+  }
+  console.log("[cesty] chodníky: " + swQ + " pásov, čiary: " + dsQ + " čiarok");
 }

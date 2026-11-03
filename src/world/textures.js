@@ -396,6 +396,128 @@ export function fBallast(){
   return f;
 }
 
+// TERRAKOTOVÁ ŠKRIDLA: rady valcových doštičiek s posunom o pol doštičky,
+// svetlé čelo a tmavý kus medzi radmi. Jeden prechod = výška (normálová
+// mapa), svetlosť (difúzia) a drsnosť, rovnaký vzor ako fAsphalt. Dlažba
+// textúry = 2,4 m (repeat 8/2,4 pri UV v metriach×0.125), takže rada aj
+// stĺpec škridlice je 0,30 m — vecná miera predkrytovej škridlice.
+
+export function fRoofTile(SZ){
+  const f = newField(SZ), rg = new Float32Array(SZ*SZ);
+  const ROWS = 8, COLS = 8, RH = SZ/ROWS, CW = SZ/COLS;
+  for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
+    const u = x/SZ, v = y/SZ, i = y*SZ + x;
+    const row = Math.floor(y/RH);
+    const xs = x + ((row % 2) ? CW*0.5 : 0);          // väzba o pol doštičky
+    const col = Math.floor((((xs % SZ) + SZ) % SZ)/CW);
+    const xp = (((xs % SZ) + SZ) % SZ)/CW;            // 0..1 naprieč doštičkou
+    const vp = (y % RH)/RH;                           // 0..1 od hornej hrany rady
+    // valec doštičky: polkruhový profil + stred tvrdší
+    const t = (xp*2) - 1;                             // -1..1
+    const arc = Math.sqrt(Math.max(0, 1 - t*t*0.62)); // výška profilu
+    const grain = tfbm(u, v, 128, 2, 701);
+    const mossy = sstep(0.62, 0.82, tfbm(u, v, 5, 2, 709));
+    const glaze = sstep(0.66, 0.86, tfbm(u, v, 64, 2, 719));
+    // výška: profil doštičky + tmavý krok medzi radmi (horzóntna drážka)
+    f.hf[i] = arc*0.55 + sstep(0.0, 0.38, vp)*0.30 + grain*0.15;
+    // svetlosť: čelo valca svetlé (svieti odhora), kus medzi radmi tmavý
+    // (tieň hornej doštičky)
+    const tone = 0.82 + (thash(col, row, 4096, 29)*0.36);    // rozdiel doštičiek
+    let l = 96 + arc*54 + vp*36 - (1 - vp)*30;               // profil + krok
+    l += (grain - 0.5)*22 + (thash(x, y, SZ, 37) - 0.5)*6;
+    l *= tone;
+    let r = l*1.00, gg = l*0.55, b = l*0.40;
+    if(mossy > 0.15){                                        // múchová patina
+      r = r*0.78 + 22; gg = gg*1.05 + 30; b = b*0.72 + 16;
+    }
+    l = Math.max(34, Math.min(215, l));
+    putField(f, i, Math.max(30, Math.min(215, r)), Math.max(26, Math.min(200, gg)), Math.max(20, Math.min(160, b)));
+    rg[i] = 0.92 - glaze*0.14 + mossy*0.05;                  // matná hlinka + glazúra
+  }
+  return { S:SZ, dif:commitField(f), hf:f.hf, rg:rg };
+}
+
+// DLÁŽDENIE CHODNÍKOV: betónové kocky 0,3 m v mriežke 8×8 na dlažbu 2,4 m,
+// väzba o pol kocky, škáry hlboké a tmavé.
+// Škáry sú hlboké zárezy - normálová mapa dŕži hranu, difúzia má tmavú jazvu.
+
+export function fPave(SZ){
+  const f = newField(SZ), rg = new Float32Array(SZ*SZ);
+  const N = 8, PW = SZ/N;
+  for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
+    const u = x/SZ, v = y/SZ, i = y*SZ + x;
+    const row = Math.floor(y/PW);
+    const xs = x + ((row % 2) ? PW*0.5 : 0);
+    const col = Math.floor((((xs % SZ) + SZ) % SZ)/PW);
+    const xp = (((xs % SZ) + SZ) % SZ)/PW, yp = (y % PW)/PW;
+    const gritX = tfbm(u, v, 192, 2, 811);
+    const grit2 = tfbm(u, v, 64, 2, 831);
+    const damp  = sstep(0.58, 0.88, tfbm(u, v, 4, 2, 853));  // vlhké fliahy
+    // kocky: škáry 8,5 % okraje kocky mierne zaoblené (chámfer)
+    const ej = Math.min(xp, 1 - xp, yp, 1 - yp);
+    const joint = ej < 0.085 ? 1 : (ej < 0.20 ? (0.20 - ej)/0.115 : 0);
+    const id = (thash(col, row, 4096, 41) - 0.5);            // per-kocka tonalita
+    f.hf[i] = -joint*0.85 + (1 - joint)*sstep(0, 0.5, ej)*0.30 + gritX*0.12;
+    let l = 172 + id*36 + gritX*14 + grit2*10 - joint*92 - damp*46;
+    l += (thash(x, y, SZ, 43) - 0.5)*7;
+    l = Math.max(20, Math.min(215, l));
+    putField(f, i, l, l*0.99, l*0.965);                      // kocky teplé
+    rg[i] = 0.93 + id*0.05 + joint*0.05 - damp*0.06;         // škáry drsnejšie
+  }
+  return { S:SZ, dif:commitField(f), hf:f.hf, rg:rg };
+}
+
+// OMOK PRE TRIMY (rímsy, partáče, štíty, komíny): svetlá hladká omietka
+// s jemným hrubým žula- zrnom. Neutrálny základ, vertex-tint odvedie farbu.
+
+export function fTrim(SZ){
+  const f = newField(SZ), rg = new Float32Array(SZ*SZ);
+  for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
+    const u = x/SZ, v = y/SZ, i = y*SZ + x;
+    const blot   = tfbm(u, v, 10, 3, 907);
+    const grit   = tfbm(u, v, 128, 2, 911);
+    const streak = tfbm(u*3, v, 32, 2, 929);                 // horizontálne striekance
+    f.hf[i] = blot*0.35 + grit*0.30 + streak*0.15;
+    let l = 214 + (blot - 0.5)*34 + (grit - 0.5)*14 + (streak - 0.5)*12;
+    l += (thash(x, y, SZ, 47) - 0.5)*8;
+    l = Math.max(40, Math.min(255, l));
+    putField(f, i, l, l*0.995, l*0.985);
+    rg[i] = 0.86 + (blot - 0.5)*0.07;
+  }
+  return { S:SZ, dif:commitField(f), hf:f.hf, rg:rg };
+}
+
+// ALFA KARTIČKA TRÁVNATKA: 9 listov do dvoch zväzkov prekrížených párov.
+// Pozadie zostáva TRANSPARENTNÉ (alphaTest 0,5 robí strih bez transparent).
+
+export function paintTuft(g, s){
+  const blade = (x0, x1, xC, top, w0, dark) => {
+    const gr = g.createLinearGradient(0, s, 0, s - top - 4);
+    gr.addColorStop(0, dark ? "#3f4a26" : "#55632f");
+    gr.addColorStop(0.55, dark ? "#5d6f35" : "#74853f");
+    gr.addColorStop(1, dark ? "#8b9a52" : "#a4b264");
+    g.fillStyle = gr;
+    g.beginPath();
+    g.moveTo(x0, s);
+    g.quadraticCurveTo(xC, s - top*0.55, x1, s - top);
+    g.lineTo(x1 + w0, s - top);
+    g.quadraticCurveTo(xC + w0*1.5, s - top*0.45, x0 + w0, s);
+    g.closePath(); g.fill();
+  };
+  // ľavý zväzok (mohutnejší)
+  blade(s*0.22, s*0.10, s*0.10, s*0.62, s*0.045, false);
+  blade(s*0.26, s*0.20, s*0.19, s*0.80, s*0.050, true);
+  blade(s*0.32, s*0.30, s*0.30, s*0.58, s*0.046, false);
+  blade(s*0.10, s*0.02, s*0.04, s*0.44, s*0.040, true);
+  // pravý zväzok
+  blade(s*0.72, s*0.60, s*0.62, s*0.70, s*0.052, false);
+  blade(s*0.78, s*0.70, s*0.66, s*0.48, s*0.045, true);
+  blade(s*0.84, s*0.86, s*0.92, s*0.62, s*0.048, false);
+  blade(s*0.70, s*0.82, s*0.78, s*0.86, s*0.040, true);
+  // stredný tenký list medzi zväzkami
+  blade(s*0.50, s*0.44, s*0.40, s*0.52, s*0.036, true);
+}
+
 // ---------- FASÁDA: mriežka okien + sprievodné mapy ODVODENÉ z obrázka ----------
 // Rozvradenie okien používa iba procedurálny fallback (paintFacade). Pre
 // FOTOGRAFIU je mriežka nepodstatná: sprievodné mapy sa odvodia z jasu samotného
@@ -406,12 +528,31 @@ export function winLayout(SZ){
   return { S:SZ, x:8*k, y:12*k, dx:40*k, dy:64*k, w:26*k, h:42*k,
            fr:2*k, balY:4*k, balH:6*k, rail:8*k, sill:5*k, foot:10*k };
 }
-// Omietka + okenná mriežka 3x2 + balkónový pás + odlesk skla. Takmer biela omietka
-// je neutrálny základ, ktorý vertex-tint (vertexColors) prefarbí do odtieňov
-// kategórií A-D. Zdieľaný s tools/gen_placeholders.mjs.
+// Omietka + okenná mriežka 3x2 + balkónové pásy + detaily okien (mulliony,
+// šambrána, parapet, deštrukt). Takmer biela omietka je neutrálny základ, ktorý
+// vertex-tint (vertexColors) prefarbí do odtieňov kategórií A-D. Rozloženie
+// okien (aj celé W) zostáva PRESNE pôvodné, takže UV mriežka a tiling 8 m sú
+// nedotknuté. facadeAux roughness/normal sa odvodzujú z jasu, takže detail
+// okien prechádza do sprievodných máp bez zmien.
 
 export function paintFacade(g,s,W){
   g.fillStyle = "#ece8e0"; g.fillRect(0,0,s,s);
+  // jemné omietkové fľaky: rozlične veľké škvrny zašpinenia (deštrukt)
+  g.globalAlpha = 0.06;
+  for(let i=0;i<Math.round(14*s/128);i++){
+    const pick = speckleHash(i*13)%97;
+    g.fillStyle = pick < 33 ? "#8d867c" : (pick < 66 ? "#f5f2ea" : "#aaa397");
+    g.beginPath(); g.arc(speckleHash(i*13+1)%s, speckleHash(i*13+2)%s,
+      W.fr + speckleHash(i*13+3)%(Math.round(20*s/64)), 0, 6.2832);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  // vertikálne dažďové stopy pod parapetmi (very faint)
+  g.globalAlpha = 0.05; g.fillStyle = "#55503f";
+  for(let i=0;i<Math.round(10*s/128);i++){
+    g.fillRect(speckleHash(i*29+7)%s, speckleHash(i*29+8)%(s-40), 1, 24+speckleHash(i*29+9)%30);
+  }
+  g.globalAlpha = 1;
   speckle(g,s,Math.round(260*s/128),0.08);
   for(let r=0;r<2;r++){
     // balkónový pás nad každým radom okien (štylizované balkóny panelákov)
@@ -419,16 +560,39 @@ export function paintFacade(g,s,W){
     g.fillStyle = "#c9cdd3"; g.fillRect(0, by, s, W.balH);
     g.fillStyle = "rgba(60,64,70,0.55)";
     for(let bx=0;bx<s;bx+=W.rail){ g.fillRect(bx, by, Math.max(1,W.rail/8), W.balH); } // zábradlie
+    // dolná hrana balkónového pásu: tmavá podhora (hlboká rímsa)
+    g.fillStyle = "rgba(0,0,0,0.14)"; g.fillRect(0, by+W.balH, s, Math.max(1,2*s/128));
     for(let c=0;c<3;c++){
       const x = W.x+c*W.dx, y = W.y+r*W.dy, w = W.w, h = W.h;
+      const v = speckleHash(c*7+r*31+5)%100;            // variácia tonality skla
       const lit = ((c*7+r*3)%5===0);
-      g.fillStyle = "#f5f2ea"; g.fillRect(x-W.fr, y-W.fr, w+2*W.fr, h+2*W.fr); // okenný rám
-      g.fillStyle = lit ? "#d8c86a" : "#232a33"; // sklo (svietiace / tmavé)
-      g.fillRect(x, y, w, h);
-      g.fillStyle = "rgba(255,255,255,0.20)"; // jemný odlesk skla hore
-      g.fillRect(x, y, w, W.sill);
-      g.fillStyle = "rgba(0,0,0,0.35)"; // parapetný tieň
-      g.fillRect(x-W.fr, y+h+W.fr, w+2*W.fr, 3*s/128);
+      // 1) okenná skupina: šambrána (ľahký betonový rám) + jambová stena
+      g.fillStyle = "#f5f2ea"; g.fillRect(x-W.fr-1, y-W.fr-1, w+2*W.fr+2, h+2*W.fr+2);
+      g.fillStyle = "rgba(0,0,0,0.30)";                  // tieň šambrány vonku hore
+      g.fillRect(x-W.fr-1, y-W.fr-1, w+2*W.fr+2, Math.max(1,2*s/128));
+      // 2) architrávový tmavý pás ako kapitálový predmostík
+      g.fillStyle = "#d9d5cb"; g.fillRect(x-W.fr, y-W.fr, w+2*W.fr, h+2*W.fr); // rám
+      // 3) sklo: gradient zhora svetlý odraz -> dole tmavá hĺbka, lutmi razne
+      const gr = g.createLinearGradient(x, y, x, y+h);
+      if(lit){ gr.addColorStop(0, "#f0d98d"); gr.addColorStop(0.45, "#d8c86a"); gr.addColorStop(1, "#a98f3e"); }
+      else{
+        const t0 = 0x2c + (v%14), t1 = 0x1a + (v%7);
+        gr.addColorStop(0, "rgb("+(t0+18)+","+(t0+26)+","+(t0+36)+")");
+        gr.addColorStop(0.5, "rgb("+(t0%28)+","+(t0%34)+","+(t0%46)+")");
+        gr.addColorStop(1, "rgb("+(t1%16)+","+(t1%19)+","+(t1%26)+")");
+      }
+      g.fillStyle = gr; g.fillRect(x, y, w, h);
+      // 4) mulliony: zvislá stredová ráma + každý 3. aj priečka (podhľad)
+      const mu = Math.max(1, Math.round(2*s/128));
+      g.fillStyle = "rgba(210,206,196,0.85)";
+      g.fillRect(x+w/2-mu/2, y, mu, h);
+      if((c+r*3)%3 === 0){ g.fillRect(x, y+h*0.32-mu/2, w, mu); }
+      // 5) odlesky a zapečené temné rohy skla
+      g.fillStyle = "rgba(255,255,255,0.22)"; g.fillRect(x, y, w, W.sill);
+      g.fillStyle = "rgba(0,0,0,0.18)"; g.fillRect(x, y+h-W.sill, w, W.sill);
+      // 6) parapet: svetlá destička + tmavý stín pod
+      g.fillStyle = "#e6e3da"; g.fillRect(x-W.fr, y+h+W.fr, w+2*W.fr, Math.max(1,W.sill/2));
+      g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x-W.fr, y+h+W.fr+Math.max(1,W.sill/2), w+2*W.fr, 3*s/128);
     }
   }
   g.fillStyle = "rgba(20,14,8,0.35)"; g.fillRect(0, s-W.foot, s, W.foot); // zapečený kontaktný tieň päty
@@ -597,21 +761,29 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   S.TEX.wall.needsUpdate = true;
   S.TEX.winRough.needsUpdate = S.TEX.winNormal.needsUpdate = true;
 
-  // Škridlový bump pre šikmé terakotové strechy (lineárny, do bumpMap).
-  S.TEX.roofTile = (function(){
-    const c = newCanvas(128);
-    const g = c.getContext("2d");
-    g.fillStyle = "#808080"; g.fillRect(0,0,128,128);
-    for(let y=0;y<128;y+=16){
-      g.fillStyle = "#3d3d3d"; g.fillRect(0, y, 128, 2); // rad škridiel
-      for(let x=0;x<128;x+=16){
-        const ox = ((y/16)%2) ? 8 : 0;
-        g.fillStyle = "#5a5a5a"; g.fillRect((x+ox)%128, y+2, 2, 14); // zvislá drážka
-        g.fillStyle = "rgba(255,255,255,0.25)"; g.fillRect((x+ox)%128+2, y+2, 12, 2); // hrana
-      }
-    }
-    return texFromCanvas(c, false);
-  })();
+  // ŠKRIDLOVÁ STRECHA: plnohodnotné PBR (difúzia + normálová + drsnosť) namiesto
+  // len bumpu. Dlažba 2,4 m: extrude UV sú v metriach×0.125, takže repeat = 8/2,4.
+  // Čisto procedurálny slot — žiadne fotky, vzor sa generuje synchrónne.
+  const RT = fRoofTile(HQ);
+  S.TEX.roofTile  = texSlotCanvas("roofTile",  null, commitField(RT), true,  [8/2.4, 8/2.4]);
+  S.TEX.roofTileN = texSlotCanvas("roofTileN", null, normalCanvas(RT.S, RT.hf, 1.6), false, [8/2.4, 8/2.4]);
+  S.TEX.roofTileR = texSlotCanvas("roofTileR", null, grayCanvas(RT.S, RT.rg), false, [8/2.4, 8/2.4]);
+  mark("škridlová strecha");
+  // CHODNÍKY: dláždenie kockami 0,3 m (dlažba 2,4 m). UV chodníkových pásov je
+  // v METROCH (vzor buildStrip), takže repeat je priamo 1/2,4 — meradlo sedí
+  // aj na mostných chodníkoch aj na mestských vo vozovkách.
+  const PA = fPave(HQ);
+  S.TEX.pave  = texSlotCanvas("pave",  null, commitField(PA), true,  [1/2.4, 1/2.4]);
+  S.TEX.paveN = texSlotCanvas("paveN", null, normalCanvas(PA.S, PA.hf, 1.9), false, [1/2.4, 1/2.4]);
+  S.TEX.paveR = texSlotCanvas("paveR", null, grayCanvas(PA.S, PA.rg), false, [1/2.4, 1/2.4]);
+  mark("dláždenie");
+  // OMIETKA PRE TRIMY: rímsy/partáče/štíty/komíny/ventily (dlažba 4 m, repeat 8/4).
+  const TR = fTrim(HQ);
+  S.TEX.trim = texSlotCanvas("trim", null, commitField(TR), true, [2, 2]);
+  mark("trim omietka");
+  // TRÁVNATKO: alfa kartička pre inštancované tufty po celom svete.
+  S.TEX.tuft = texSlot("tuft", null, 128, true, null, function(g,s){ paintTuft(g, s); });
+  mark("tufty");
   // Vlnitý plech pre priemysel/obchody (Kat. C).
   S.TEX.sheet = texSlot("sheet", null, 256, true, null, function(g,s){
     g.fillStyle = "#c3c9d1"; g.fillRect(0,0,s,s);
@@ -775,8 +947,12 @@ export function buildShared(){
   S.MAT.indWall = new THREE.MeshStandardMaterial({ map: S.TEX.sheet, color: 0xa0a8b0, roughness: 0.55, metalness: 0.35, vertexColors: true });
   // Kat. D - HISTORICKÉ: kameň/omietka (#d9cebe cez tint), zvýraznené kontúry (plný jas mapy).
   S.MAT.histWall = new THREE.MeshStandardMaterial({ map: S.TEX.winGrid, roughnessMap: S.TEX.winRough, normalMap: S.TEX.winNormal, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.9, metalness: 0.0, vertexColors: true });
-  // Strechy: šikmá terakotová škridla s bump vzorom vs. plochá štrková/asfaltová.
-  S.MAT.pitchedRoof = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.05, vertexColors: true, bumpMap: S.TEX.roofTile, bumpScale: 0.6 });
+  // Strechy: šikmá terakotová škridla (difúzia + normálová + drsnosť, 2,4 m
+  // dlažba, UV sú v metriach×0.125) vs. plochá štrková/asfaltová. BumpMap je
+  // ZRUŠENÁ — normálová mapa dá presný stín v škárach a na valcoch doštičiek.
+  S.MAT.pitchedRoof = new THREE.MeshStandardMaterial({ color: 0xffffff,
+    map: S.TEX.roofTile, normalMap: S.TEX.roofTileN, normalScale: new THREE.Vector2(0.8, 0.8),
+    roughnessMap: S.TEX.roofTileR, roughness: 1.0, metalness: 0.02, vertexColors: true });
   S.MAT.flatRoof = new THREE.MeshStandardMaterial({ map: S.TEX.gravel, roughness: 0.95, metalness: 0.0, vertexColors: true });
   // Spätné aliasy (kód mimo buildBuildings ich nepoužíva, buildBuildings ide na nové maty).
   S.MAT.facade  = S.MAT.panelWall;
@@ -793,7 +969,19 @@ export function buildShared(){
   S.MAT.facadeInd = S.MAT.indWall; // alias: priemyselné steny cez vlnitý plech
   S.MAT.white   = new THREE.MeshBasicMaterial({ color: 0xd8d8d2, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.rail    = new THREE.MeshStandardMaterial({ color: 0x1a5fb4, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide }); // mostná modrá
-  S.MAT.sidewalk = new THREE.MeshStandardMaterial({ color: 0xa3a8b0, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // CHODNÍKY: dláždenie (betónové kocky, dlažba 2,4 m — UV pásu je v metroch,
+  // takže repeat 1/2,4 drží meradlo na moste aj na uliciach). Bridge sidewalks
+  // na moste použitie ten istý materiál — dlažba na moste bude jemne dlažbová.
+  S.MAT.sidewalk = new THREE.MeshStandardMaterial({ map: S.TEX.pave,
+    normalMap: S.TEX.paveN, normalScale: new THREE.Vector2(0.7, 0.7),
+    roughnessMap: S.TEX.paveR, roughness: 1.0, metalness: 0.0,
+    side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // TRIMY budov: rímsy/partáče/štíty/komíny/ventily — svetlá omietka s UV v
+  // metriach×0.125 (dlažba 4 m), tint = farba stien danej budovy.
+  S.MAT.trim = new THREE.MeshStandardMaterial({ map: S.TEX.trim, vertexColors: true, roughness: 0.87, metalness: 0.0 });
+  // TRÁVNATKO: alfa kartičky (alphaTest, bez transparent — strih zostáva
+  // hlboko-ostý a do depth píše bez rizika hádok s triedením).
+  S.MAT.tuft = new THREE.MeshStandardMaterial({ map: S.TEX.tuft, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95, metalness: 0.0 });
   S.MAT.cycle   = new THREE.MeshStandardMaterial({ color: 0xa02828, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.pillar  = new THREE.MeshStandardMaterial({ map: S.TEX.concrete, normalMap: S.TEX.concreteN, normalScale: new THREE.Vector2(0.45, 0.45), color: 0xa8adb2, roughness: 0.9, metalness: 0.0 });
   S.MAT.island  = new THREE.MeshStandardMaterial({ color: 0x5c6248, roughness: 0.9, metalness: 0.0 });
