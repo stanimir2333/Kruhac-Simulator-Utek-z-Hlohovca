@@ -140,19 +140,15 @@ export function buildSkyDome(scene, renderer) {
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       cTop: { value: top }, cHor: { value: hor },
-      cSun: { value: sunC }, dSun: { value: sunDir },
+      cSun: { value: sunC }, dSun: { value: sunDir }, tex: { value: null }
     },
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: [
-      'varying vec3 vD; uniform vec3 cTop,cHor,cSun,dSun;',
+      'varying vec3 vD; uniform vec3 cTop,cHor,cSun,dSun; uniform sampler2D tex;',
       'void main(){',
-      '  float h = clamp(vD.y, -0.08, 1.0);',
-      '  vec3 c = mix(cHor, cTop, pow(max(h,0.0), 0.62));',
-      '  float s = max(dot(normalize(vD), normalize(dSun)), 0.0);',
-      '  c += cSun * (pow(s, 900.0)*1.4 + pow(s, 18.0)*0.16);',
-      '  gl_FragColor = vec4(c, 1.0);',
+      '  gl_FragColor = texture(tex, vec2(vD.x * 0.5 + 0.5, vD.y * 0.5 + 0.5);',
       '}',
-    ].join('\n'),
+    ].join('\n')
   });
   const dome = new THREE.Mesh(geo, mat);
   dome.frustumCulled = false;
