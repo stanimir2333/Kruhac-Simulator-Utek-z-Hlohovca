@@ -637,17 +637,22 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
 
   pre.finish();
   console.info(`[boot] ${VERSION} · route ${S.routeLen | 0} m · blds ${(osm.blds || []).length} · roads ${(osm.roads || []).length}`);
+  return { state, hud };
 }
 
 (async () => {
   const params = new URLSearchParams(location.search);
   const mapId = params.get('map') === 'drahovce' ? 'drahovce' : 'hlohovec';
+  const autoStart = params.get('go') === '1';
   document.title = mapId === 'drahovce'
     ? 'Kruháč Simulator: Drahovce'
     : 'Kruháč Simulator: Útek z Hlohovca';
-  const btn = document.getElementById('btn-start');
-  if (btn) btn.textContent = mapId === 'drahovce' ? 'ŠTARTOVAŤ DRAHOVCE' : 'ŠTARTOVAŤ ÚTEK (HLOHOVEC)';
-  await boot(mapId);
+  const { state: st, hud } = await boot(mapId);
+  if (autoStart) {
+    document.getElementById('ov-start')?.classList.add('hidden');
+    st.started = true;
+    try { hud.show(); } catch (e) { /* noop */ }
+  }
 })().catch((e) => {
   console.error(e);
   pre.step(1, 'CHYBA: ' + e.message + '\nSkús `npm run dev` a pozri konzolu.');
