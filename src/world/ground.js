@@ -72,9 +72,11 @@ export const GQ_MAX = 160;
 // slotové číslo treba preložiť na index budovy (`nid`). Ostatné mriežky
 // (cesty, voda) majú jeden slot na prvok a `nid` chýba - id je slot sám.
 export function gridQuery(g, x, z, ring, out){
+  if (!g || !g.head || !g.nx || !g.nz || !g.cs) return 0;
+  const ccx = Math.floor((x-S.GB.x0)/g.cs), ccz = Math.floor((z-S.GB.z0)/g.cs);
+  if (!Number.isFinite(ccx) || !Number.isFinite(ccz)) return 0;
   let n = 0;
   const nid = g.nid;
-  const ccx = Math.floor((x-S.GB.x0)/g.cs), ccz = Math.floor((z-S.GB.z0)/g.cs);
   for(let ax=-ring;ax<=ring;ax++){
     for(let az=-ring;az<=ring;az++){
       const cx = ccx+ax, cz = ccz+az;

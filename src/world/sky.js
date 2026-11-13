@@ -146,7 +146,7 @@ export function buildSkyDome(scene, renderer) {
     fragmentShader: [
       'varying vec3 vD; uniform vec3 cTop,cHor,cSun,dSun; uniform sampler2D tex;',
       'void main(){',
-      '  gl_FragColor = texture(tex, vec2(vD.x * 0.5 + 0.5, vD.y * 0.5 + 0.5);',
+      '  gl_FragColor = texture(tex, vec2(vD.x * 0.5 + 0.5, vD.y * 0.5 + 0.5));',
       '}',
     ].join('\n')
   });

@@ -10,10 +10,24 @@
 // `osmExtra.json` a tento modul ich načíta a zloží NAD mapData.
 import { fetchJsonAsync, nextFrame } from '../core/loader.js';
 
-const CANDIDATES = [
-  '/data/mapData.json', './data/mapData.json', 'data/mapData.json',
-  '/public/data/mapData.json', './public/data/mapData.json', 'public/data/mapData.json',
-];
+const MAP_FILES = {
+  hlohovec: 'mapData.json',
+  drahovce: 'mapData-drahovce.json',
+};
+const EXTRA_FILES = {
+  hlohovec: 'osmExtra.json',
+  drahovce: 'osmExtra-drahovce.json',
+};
+
+function mapFile(mapId) { return MAP_FILES[mapId] || MAP_FILES.hlohovec; }
+function extraFile(mapId) { return EXTRA_FILES[mapId] || EXTRA_FILES.hlohovec; }
+
+function candidatesFor(name) {
+  return [
+    '/data/' + name, './data/' + name, 'data/' + name,
+    '/public/data/' + name, './public/data/' + name, 'public/data/' + name,
+  ];
+}
 
 // Pre assets/ platí ten istý zoznam (repo koreň aj Pages servírujú /assets/…;
 // len na *projektovej* stránke absolútne kandidáty spadnú, lebo chýba /<repo>/).
@@ -34,7 +48,9 @@ export const TINY_FALLBACK = {
 // (pruneOSM odstránená: nikdy sa nezavolala — extrakcia z monolitu už zháňa
 //  zbytočné tagy a kvantizáciu robí priamo.)
 
-export async function loadMapData(onProgress) {
+export async function loadMapData(onProgress, mapId) {
+  const name = mapFile(mapId);
+  const CANDIDATES = candidatesFor(name);
   for (const url of CANDIDATES) {
     try {
       // fetchJsonAsync vracia aj `bytes` — veľkosť payloadu z reálneho fetchu,
@@ -52,12 +68,9 @@ export async function loadMapData(onProgress) {
 // ---------- NADSTAVY Z NOVÉHO OSM EXPORTU (osmExtra.json) ----------
 // Budovy (5 681 z exportu + 500 zo základu mimo jeho bounding boxu), body
 // `ele=` a body stromov. Generuje ich `python3 tools/gen_osm_extra.py`.
-const EXTRA_CANDIDATES = [
-  '/data/osmExtra.json', './data/osmExtra.json', 'data/osmExtra.json',
-  '/public/data/osmExtra.json', './public/data/osmExtra.json', 'public/data/osmExtra.json',
-];
-
-async function loadExtra(onProgress) {
+async function loadExtra(onProgress, mapId) {
+  const name = extraFile(mapId);
+  const EXTRA_CANDIDATES = candidatesFor(name);
   for (const base of EXTRA_CANDIDATES) {
     try {
       const { data, bytes } = await fetchJsonAsync(base, (p) => onProgress?.(p, `vrstvy OSM: ${(p * 100) | 0} %`));
@@ -89,7 +102,8 @@ async function fetchAsset(name) {
   return null;
 }
 
-async function loadHeightmap() {
+async function loadHeightmap(mapId) {
+  if (mapId && mapId !== 'hlohovec') return null;
   const metaBlob = await fetchAsset('terrain/hlohovec_dem.json');
   if (!metaBlob) return null;
   let meta;
@@ -141,19 +155,19 @@ async function loadHeightmap() {
  * Načíta všetko, čo potrebuje world: mapData + vrstvy z nového exportu + DEM.
  * Vracia `osm` objekt pripravený na S.osm.
  */
-export async function loadWorld(onProgress) {
-  const res = await loadMapData(onProgress);
+export async function loadWorld(onProgress, mapId) {
+  const res = await loadMapData(onProgress, mapId);
   const osm = res.data, url = res.url, fallback = res.fallback;
-  const extra = await loadExtra(onProgress);
+  const extra = await loadExtra(onProgress, mapId);
   if (extra) {
     // zámena, nie doplnenie: export je novší zdroj pravdy pre tieto vrstvy
     if (Array.isArray(extra.blds) && extra.blds.length) osm.blds = extra.blds;
     if (Array.isArray(extra.elev) && extra.elev.length) osm.elev = extra.elev;
     if (extra.trees) osm.trees = extra.trees;
   } else {
-    console.warn('[map] osmExtra.json chýba → staré vrstvy (python3 tools/gen_osm_extra.py)');
+    console.warn('[map] osmExtra chýba → staré vrstvy');
   }
-  const dem = await loadHeightmap();
+  const dem = await loadHeightmap(mapId);
   if (!dem && !fallback) console.warn('[DEM] výšková mapa chýba → terén bez podkladu (len body ele + zvlnenie). Spusti python3 tools/build_dem.py');
   return { osm, url, fallback, dem };
 }

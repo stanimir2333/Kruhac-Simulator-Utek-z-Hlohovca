@@ -64,7 +64,8 @@ const ROUTE_PROJECTION_INTERVAL = 1 / PERF.routeProjectionHz;
 const HUD_INTERVAL = 1 / PERF.hudHz;
 const FPS_STATS_INTERVAL = 1 / PERF.fpsHz;
 
-async function boot() {
+async function boot(mapId) {
+  mapId = mapId || 'hlohovec';
   pre.step(0.04, 'inicializujem renderer…');
   await nextFrame();
 
@@ -178,7 +179,7 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   // 1) MAPA + vrstvy z nového OSM exportu + výšková mapa (všetko async s progresom)
   pre.step(0.08, 'sťahujem mapu Hlohovca…');
   const { osm, fallback, dem } = await loadWorld((p, msg) =>
-    pre.step(0.08 + p * 0.22, msg ?? `mapa ${(p * 100) | 0} %`));
+    pre.step(0.08 + p * 0.22, msg ?? `mapa ${(p * 100) | 0} %`), mapId);
   assertMapShape(osm);
   S.osm = osm;
   state.map = osm;
@@ -638,7 +639,27 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   console.info(`[boot] ${VERSION} · route ${S.routeLen | 0} m · blds ${(osm.blds || []).length} · roads ${(osm.roads || []).length}`);
 }
 
-boot().catch((e) => {
+function showMapSelect() {
+  return new Promise((resolve) => {
+    const el = document.getElementById('map-select');
+    if (!el) { resolve('hlohovec'); return; }
+    el.classList.remove('hidden');
+    el.querySelectorAll('button[data-map]').forEach((b) => {
+      b.addEventListener('click', () => {
+        el.classList.add('hidden');
+        resolve(b.dataset.map || 'hlohovec');
+      }, { once: true });
+    });
+  });
+}
+
+(async () => {
+  const mapId = await showMapSelect();
+  document.title = mapId === 'drahovce'
+    ? 'Kruháč Simulator: Drahovce'
+    : 'Kruháč Simulator: Útek z Hlohovca';
+  await boot(mapId);
+})().catch((e) => {
   console.error(e);
   pre.step(1, 'CHYBA: ' + e.message + '\nSkús `npm run dev` a pozri konzolu.');
 });

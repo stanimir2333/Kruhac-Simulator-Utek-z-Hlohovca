@@ -18,6 +18,7 @@ export function putBox(mat, sx, sy, sz, x, y, z, ry){
 }
 
 export function buildStrip(ptsFlat, halfW, y, mat, lat, sArr){
+  if (!ptsFlat || ptsFlat.length < 4) return null;
   const n = ptsFlat.length/2;
   const LO = lat || 0;
   const pos = new Float32Array(n*2*3);
@@ -266,8 +267,10 @@ export function mergedBoxes(list, mat, tpl){
 export function routeSamplesFlat(s0, s1, step){
   const pts = [];
   const sArr = [];
+  if (s1 < 0 || s0 > S.routeLen) return [pts, sArr];
   const i0 = Math.max(0, Math.floor(s0/S.routeLen*S.ROUTE_N));
   const i1 = Math.min(S.ROUTE_N, Math.ceil(s1/S.routeLen*S.ROUTE_N));
+  if (i1 < i0) return [pts, sArr];
   for(let i=i0;i<=i1;i+=step){ pts.push(S.routeX[i], S.routeZ[i]); sArr.push(i*S.routeLen/S.ROUTE_N); }
   if(pts.length < 4){ pts.push(S.routeX[i1], S.routeZ[i1]); sArr.push(i1*S.routeLen/S.ROUTE_N); }
   return [pts, sArr];
@@ -425,22 +428,24 @@ export function buildRoundabouts(){
     S.scene.add(isl);
     staticDone(isl, true, true);
   }
-  // pamätník stojacej kolóny na jednotke (prvý v smere úniku)
-  const r0 = S.osm.roundabouts[order[0][1]];
-  const mgy = groundRayY(r0[0], r0[1], getTerrainHeight(r0[0], r0[1])); // Raycaster kotva
-  const mon = new THREE.Mesh(S.GEO.cone, S.MAT.concrete);
-  mon.scale.set(3, 5, 3);
-  mon.position.set(r0[0], mgy+3.0, r0[1]);
-  S.scene.add(mon);
-  staticDone(mon, true, true);
-  const ball = new THREE.Mesh(S.GEO.box, S.MAT.brakeOn);
-  ball.scale.set(0.8,0.8,0.8);
-  ball.position.set(r0[0], mgy+5.8, r0[1]);
-  S.scene.add(ball);
-  staticDone(ball, false, false);
-  for(let i=0;i<S.osm.roundabouts.length;i++){
-    const r = S.osm.roundabouts[i];
-    regLabel("KRUHÁČ " + (numerals[rank[i]] || "?"), 0.9, r[0], getTerrainHeight(r[0], r[1])+9.5, r[1], true);
+  // pamätník stojacej kolóny na jednotke (prvý v smere úniku) — len ak existuje kruháč
+  if (S.osm.roundabouts && S.osm.roundabouts.length) {
+    const r0 = S.osm.roundabouts[order[0][1]];
+    const mgy = groundRayY(r0[0], r0[1], getTerrainHeight(r0[0], r0[1])); // Raycaster kotva
+    const mon = new THREE.Mesh(S.GEO.cone, S.MAT.concrete);
+    mon.scale.set(3, 5, 3);
+    mon.position.set(r0[0], mgy+3.0, r0[1]);
+    S.scene.add(mon);
+    staticDone(mon, true, true);
+    const ball = new THREE.Mesh(S.GEO.box, S.MAT.brakeOn);
+    ball.scale.set(0.8,0.8,0.8);
+    ball.position.set(r0[0], mgy+5.8, r0[1]);
+    S.scene.add(ball);
+    staticDone(ball, false, false);
+    for(let i=0;i<S.osm.roundabouts.length;i++){
+      const r = S.osm.roundabouts[i];
+      regLabel("KRUHÁČ " + (numerals[rank[i]] || "?"), 0.9, r[0], getTerrainHeight(r[0], r[1])+9.5, r[1], true);
+    }
   }
 }
 
