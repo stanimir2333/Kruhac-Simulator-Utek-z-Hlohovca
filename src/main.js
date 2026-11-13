@@ -648,7 +648,6 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     ? 'Kruháč Simulator: Drahovce'
     : 'Kruháč Simulator: Útek z Hlohovca';
   const { state: st, hud } = await boot(mapId);
-  console.log('[autostart] autoStart=', autoStart, 'st=', !!st, 'hud=', !!hud);
   if (autoStart) {
     document.getElementById('ov-start')?.classList.add('hidden');
     st.started = true;
