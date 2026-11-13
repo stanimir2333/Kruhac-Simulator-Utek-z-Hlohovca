@@ -295,23 +295,26 @@ export function buildRoads(){
   buildStrip(pre, 0.15, lY, S.MAT.white, 0, preS);             // stredová čiara
   buildStrip(post, S.ROAD_HW, rY, S.MAT.routeAsphalt, 0, postS);
   buildStrip(post, 0.15, lY, S.MAT.white, 0, postS);
-  const [deck] = routeSamplesFlat(S.bridgeS0-2, S.bridgeS1+2, 2);
-  buildStrip(deck, 4.5, S.DECK_Y, S.MAT.bridge);          // mostovka 9 m, tmavý asfalt
-  buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, 2.85); // červené cyklopruhy
-  buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, -2.85);
-  buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, 3.8); // svetlé chodníky
-  buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, -3.8);
-  // zábradlá sprevádzajú aj nájazdy (y0 = terén, y1 = vozovka + 1 m)
-  const [rail, railS] = routeSamplesFlat(S.bridgeS0-S.RAMP_LEN, S.bridgeS1+S.RAMP_LEN, 2);
-  const railTop = function(x, z, s){ return routeDeckY(x, z, s)+1.0; };
-  buildWall(rail, 4.35, rY, railTop, S.MAT.rail, railS);  // modré zábradlá
-  buildWall(rail, -4.35, rY, railTop, S.MAT.rail, railS);
-  // piliere POD mostovkou až na dno koryta Váhu (dno z OSM koryta)
-  for(let k=0;k<5;k++){
-    const s = S.bridgeS0 + (S.bridgeS1-S.bridgeS0)*(0.12 + k*0.19);
-    routePose(s, S._v1, S._hWrap, 0);
-    const bot = riverBedY(S._v1.x, S._v1.z)-1.2;
-    putBox(S.MAT.pillar, 7, S.DECK_Y-bot, 3, S._v1.x, (S.DECK_Y+bot)/2, S._v1.z, S._hWrap.v);
+  // mostovka, zábradlá a piliere — len ak existuje skutočný most (dĺžka > 0)
+  if(S.bridgeS1 > S.bridgeS0){
+    const [deck] = routeSamplesFlat(S.bridgeS0-2, S.bridgeS1+2, 2);
+    buildStrip(deck, 4.5, S.DECK_Y, S.MAT.bridge);          // mostovka 9 m, tmavý asfalt
+    buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, 2.85); // červené cyklopruhy
+    buildStrip(deck, 0.45, S.DECK_Y+0.03, S.MAT.cycle, -2.85);
+    buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, 3.8); // svetlé chodníky
+    buildStrip(deck, 0.5, S.DECK_Y+0.06, S.MAT.sidewalk, -3.8);
+    // zábradlá sprevádzajú aj nájazdy (y0 = terén, y1 = vozovka + 1 m)
+    const [rail, railS] = routeSamplesFlat(S.bridgeS0-S.RAMP_LEN, S.bridgeS1+S.RAMP_LEN, 2);
+    const railTop = function(x, z, s){ return routeDeckY(x, z, s)+1.0; };
+    buildWall(rail, 4.35, rY, railTop, S.MAT.rail, railS);  // modré zábradlá
+    buildWall(rail, -4.35, rY, railTop, S.MAT.rail, railS);
+    // piliere POD mostovkou až na dno koryta Váhu (dno z OSM koryta)
+    for(let k=0;k<5;k++){
+      const s = S.bridgeS0 + (S.bridgeS1-S.bridgeS0)*(0.12 + k*0.19);
+      routePose(s, S._v1, S._hWrap, 0);
+      const bot = riverBedY(S._v1.x, S._v1.z)-1.2;
+      putBox(S.MAT.pillar, 7, S.DECK_Y-bot, 3, S._v1.x, (S.DECK_Y+bot)/2, S._v1.z, S._hWrap.v);
+    }
   }
   const [esc] = routeSamplesFlat(S.routeLen-14, S.routeLen-4, 1); // úniková brána
   buildStrip(esc, 4, function(x, z){ return getTerrainHeight(x, z)+0.21; }, S.MAT.escape);

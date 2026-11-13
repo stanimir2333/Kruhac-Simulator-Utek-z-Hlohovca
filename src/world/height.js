@@ -685,6 +685,7 @@ export function roadLift(x, z){ return roadDist2(x, z) < 30 ? 0.15 : 0; }
 
 // plynulý nájazd/zjazd mosta z oboch strán (ramp interpolation, žiadny skok Y)
 export function deckBlend(s){
+  if(S.bridgeS0 >= S.bridgeS1) return 0; // žiadny most (nulová dĺžka)
   const R = S.RAMP_LEN;
   if(s <= S.bridgeS0-R || s >= S.bridgeS1+R) return 0;
   if(s >= S.bridgeS0 && s <= S.bridgeS1) return 1;
