@@ -15,10 +15,27 @@
 </head>
 <body>
 
-<div id="preloader">
+<div id="map-select" class="overlay">
   <div class="card panel">
     <h1>KRUHÁČ SIMULATOR</h1>
-    <h2>ÚTEK Z HLOHOVCA · načítavam mesto…</h2>
+    <h2>VYBER LOKALITU</h2>
+    <p>Si zapichnutý v kolóne a mieriš na juh. Jazdi <b>kam chceš</b> — celé mesto je otvorené.
+    Pozor: státie varí motor, ťukance varia motor aj nervy.</p>
+    <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
+    A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
+    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
+    <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
+    <br>
+    <button class="btn big" id="map-hlohovec" data-map="hlohovec">HLOHOVEC · ÚTEK Z MESTA</button>
+    <br><br>
+    <button class="btn big" id="map-drahovce" data-map="drahovce">DRAHOVCE · OBEC</button>
+  </div>
+</div>
+
+<div id="preloader" class="off">
+  <div class="card panel">
+    <h1>KRUHÁČ SIMULATOR</h1>
+    <h2 id="pre-title">NAČÍTAVAM MESTO…</h2>
     <div id="pre-bar"><i></i></div>
     <div id="pre-log">štart…</div>
     <div id="pre-tip">Mapa (0.5 MB) + textúry sa načítavajú asynchrónne — UI nikdy nefreezeuje.</div>
@@ -200,28 +217,6 @@
     <div class="tcol"><button class="tbtn" id="t-fire">PÁL</button><span class="tlab">STREĽBA</span></div>
     <div class="tcol"><button class="tbtn" id="t-swap">ZBRAŇ</button><span class="tlab">PREPNÚŤ</span></div>
     <div class="tcol"><button class="tbtn" id="t-use">VYSTÚPIŤ</button><span class="tlab">AUTO</span></div>
-  </div>
-</div>
-
-<div id="ov-start" class="overlay">
-  <div class="card panel">
-    <h1>KRUHÁČ SIMULATOR</h1>
-    <h2>ÚTEK Z HLOHOVCA · CELÉ MESTO 1:1 · voľná jazda · 4,5 km misia · TRI kruháče · most 362 m</h2>
-    <p>Piatočná špička. Si zapichnutý v kolóne <b>od Šulekova (pri Tescu)</b> a mieriš na juh.
-    Jazdi <b>kam chceš</b> — celé mesto je otvorené: sídliská, polia aj Váh.
-    Misia: <b>kruháč pri moste</b>, <b>most ponad Váh (362 m)</b>, druhý kruháč,
-    <b>Námestie sv. Michala</b>, <b>Slov. nár. povstania</b>, <b>Nitrianska</b> a von z mesta.</p>
-    <p>Pozor: státie varí motor. Ťukance varia motor aj nervy.
-    Plynulo sa plížiť = chladenie zadarmo.</p>
-    <p style="font-size:12px;">Pri štarte kolóny máva <b>Peter</b> — zastav pri ňom a stlač <b>F</b>, zadá ti misie.</p>
-    <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
-    A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
-    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
-    <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
-    <br>
-    <button class="btn" onclick="location.search='?map=hlohovec&go=1'">ŠTARTOVAŤ HLOHOVEC</button>
-    <br><br>
-    <button class="btn" onclick="location.search='?map=drahovce&go=1'">ŠTARTOVAŤ DRAHOVCE</button>
   </div>
 </div>
 

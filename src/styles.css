@@ -309,6 +309,8 @@
 #preloader{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
   background:#0b0906;transition:opacity .4s;}
 #preloader.done{opacity:0;pointer-events:none;}
+#preloader.off{display:none;}
+.btn.big{font-size:22px;padding:18px 44px;margin-top:20px;}
 #preloader .card{max-width:520px;width:92vw;padding:28px;text-align:center;}
 #pre-bar{height:14px;border:1px solid var(--amber);background:#1a1204;margin-top:14px;overflow:hidden;}
 #pre-bar>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ffb000,#39ff6a);transition:width .15s;}

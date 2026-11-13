@@ -58,6 +58,10 @@ import { wireGarage } from './ui/garage.js';
 
 const pre = createPreloader();
 const state = createState();
+// Zvuk vzniká už pred bootom sveta: WebAudio kontext sa musí odomknúť V RÁMEČI
+// kliknutia na tlačidlo mapy (autoplay politika prehliadača). Kontext sa vytvorí
+// oneskorene, ale unlock() je bezpečný aj po tom (ensure() je idempotentný).
+const sfx = createSfx();
 const _v3 = new THREE.Vector3();
 const _hWrap = { v: 0 };
 const ROUTE_PROJECTION_INTERVAL = 1 / PERF.routeProjectionHz;
@@ -95,7 +99,6 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   const hud = createHUD(state);
   const dash = createDashboard();
   const engineViz = createEngineViz();
-  const sfx = createSfx();
   // PREPÍNAČ MOTORA ZANIKOL (B29): motor patrí typu auta (CARS[car].engine —
   // Octavia → 1.9 TDI, RX-7 → 4-ROTOR WANKEL). Výber auta má na starosti
   // garáž [G] (ui/garage.js), prepínanie všetkých vrstiev zvláda jediná
@@ -316,6 +319,10 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   const unlock = () => { sfx.unlock(); };
   addEventListener('pointerdown', unlock, { once: true });
   addEventListener('keydown', unlock, { once: true });
+  // Hudba musí začať v RÁMEČI kliknutia na tlačidlo mapy (gesto používateľa),
+  // inak ju prehliadač zablokuje (autoplay). Stanica sa spustí, keď dorazí
+  // manifest (radio.js drží "pending" požiadavku).
+  radio.play(0);
 
   // Prepínač zvuku [X] — zdieľaný medzi klávesou a tlačidlom #snd-btn, ktoré
   // malo pointer-events:auto a kurzor, ale NEMALO žiadny handler (klikal sa do
@@ -391,7 +398,6 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
       hud.toast('Bloom: ' + ['VYP.', 'SLABÝ', 'JASNÝ'][bloom.getMode()]);
     }
   });
-  document.getElementById('btn-start')?.addEventListener('click', () => radio.play(0), { once: true });
   // #radio-prev / #radio-next mali pointer-events:auto ako klikateľné, ale žiadny
   // handler — myšou sa nedalo prepnúť stanicu (fungovalo len Q/E). Obidve
   // tlačidlá teraz volajú tie isté metódy rádia ako klávesy.
@@ -640,19 +646,51 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   return { state, hud };
 }
 
-(async () => {
+// ---------- HLAVNÉ MENU: DVE LOKALITY ----------
+// Jedno kliknutie = mapa sa načíta a hra sa rovno spustí. Žiadne ďalšie
+// tlačidlo na "štart", žiadne čakanie na ďalšie kliknutie.
+const MAPS = {
+  hlohovec: {
+    title: 'Kruháč Simulator: Útek z Hlohovca',
+    pre: 'ÚTEK Z HLOHOVCA · načítavam mesto…',
+  },
+  drahovce: {
+    title: 'Kruháč Simulator: Drahovce',
+    pre: 'DRAHOVCE · načítavam obec…',
+  },
+};
+
+// Vracia Promise s ID mapy. Ak je v URL `?map=...`, mapa sa vyberie priamo
+// (bez menu) — to používajú priame odkazy na lokalitu.
+function pickMap() {
   const params = new URLSearchParams(location.search);
-  const mapId = params.get('map') === 'drahovce' ? 'drahovce' : 'hlohovec';
-  const autoStart = params.get('go') === '1';
-  document.title = mapId === 'drahovce'
-    ? 'Kruháč Simulator: Drahovce'
-    : 'Kruháč Simulator: Útek z Hlohovca';
+  const fromUrl = params.get('map');
+  if (fromUrl && MAPS[fromUrl]) return Promise.resolve(fromUrl);
+  return new Promise((resolve) => {
+    const sel = document.getElementById('map-select');
+    if (!sel) { resolve('hlohovec'); return; }
+    sel.classList.remove('hidden');
+    sel.querySelectorAll('button[data-map]').forEach((b) => {
+      b.addEventListener('click', () => {
+        sel.classList.add('hidden');
+        resolve(b.dataset.map || 'hlohovec');
+      }, { once: true });
+    });
+  });
+}
+
+(async () => {
+  const mapId = await pickMap();
+  const meta = MAPS[mapId] || MAPS.hlohovec;
+  document.title = meta.title;
+  // Preloader sa zobrazí až po výbere mapy — predtým je viditeľné menu.
+  document.getElementById('preloader')?.classList.remove('off');
+  const pt = document.getElementById('pre-title');
+  if (pt) pt.textContent = meta.pre;
   const { state: st, hud } = await boot(mapId);
-  if (autoStart) {
-    document.getElementById('ov-start')?.classList.add('hidden');
-    st.started = true;
-    try { hud.show(); } catch (e) { console.error('hud.show err', e); }
-  }
+  // Rovno do hry — používateľ už nič ďalšie netlačí.
+  st.started = true;
+  try { hud.show(); } catch (e) { console.error('hud.show err', e); }
 })().catch((e) => {
   console.error(e);
   pre.step(1, 'CHYBA: ' + e.message + '\nSkús `npm run dev` a pozri konzolu.');

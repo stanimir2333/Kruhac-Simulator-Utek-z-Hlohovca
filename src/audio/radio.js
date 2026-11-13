@@ -18,13 +18,19 @@ export function createRadio(audioEl) {
   // Vypnutá hudba = element pauznutý (nežerie dáta ani baterku), motor a zvuky
   // idú ďalej. Q/E pri vypnutej hudbe len prepne stanicu potichu (src + label).
   let musicOn = true;
-  async function setList(manifest, manifestBase) { list = manifest; base = manifestBase; updateLabel(); }
+  // Stanica si "vyčká" na manifest: play(0) pred načítaním manifestu len
+  // zapíše záujem a rozbehne sa hneď, ako prijde zoznam (autoštart z menu).
+  let pending = null;
+  async function setList(manifest, manifestBase) {
+    list = manifest; base = manifestBase; updateLabel();
+    if (pending !== null) { const p = pending; pending = null; play(p); }
+  }
   function updateLabel() {
     const el = document.getElementById('radio-name');
     if (el) el.textContent = (list[idx]?.name ?? 'RÁDIO HLOHOVEC (offline)') + (musicOn ? '' : ' · VYP.');
   }
   function play(i) {
-    if (!list.length) return false;
+    if (!list.length) { pending = i || 0; return false; }
     idx = (i + list.length) % list.length;
     const st = list[idx];
     try {

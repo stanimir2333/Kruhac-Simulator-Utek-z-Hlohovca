@@ -164,15 +164,12 @@ def main():
             la=float(n.get("lat")); lo=float(n.get("lon"))
             pois.append([round(wx(lo),1), round(wz(la),1), t.get("name","") or "Drahovce"])
 
-    # streets: primary road name
+    # streets: primary road name — rozsah pozdĺž trasy (v metroch, ako v Hlohovci)
     streets = []
-    # name of primary road
     pname = None
     for wid,(refs,t) in ways.items():
         if t.get("highway")=="primary" and t.get("name"):
             pname = t["name"]; break
-    if pname:
-        streets = [[0, 1, pname]]  # will be scaled; placeholder s-range
 
     # greens: landuse polygons (format [cx,cz,w,h, name?, flag?, ring...])
     greens = []
@@ -214,6 +211,8 @@ def main():
         "rbridges": [],
         "greens": greens,
         "bbox": bbox,
+        "mapName": "DRAHOVCE",
+        "destLabel": "VON Z OBCE",
     }
 
     # length: cumulative route length
@@ -221,6 +220,9 @@ def main():
     for i in range(2,len(route_pts),2):
         L += math.hypot(route_pts[i]-route_pts[i-2], route_pts[i+1]-route_pts[i-1])
     osm["length"] = round(L,1) if L>0 else 1
+    # ulice: rozsah pozdĺž trasy (v rovnakých jednotkách ako length)
+    if pname:
+        osm["streets"] = [[0, osm["length"], pname]]
 
     with open(args.out,"w",encoding="utf-8") as f:
         json.dump(osm, f, separators=(",",":"), ensure_ascii=False)

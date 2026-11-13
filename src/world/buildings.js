@@ -813,12 +813,15 @@ export function buildBuildings(){
     routePose((st[0]+st[1])/2, S._v1, S._hWrap, 14);
     regLabel(st[2], 0.9, S._v1.x, getTerrainHeight(S._v1.x, S._v1.z)+10, S._v1.z, true);
   }
-  routePose((S.bridgeS0+S.bridgeS1)/2, S._v1, S._hWrap, 0);
-  regLabel("MOST VÁH " + Math.round(S.bridgeLen) + " m", 1.0, S._v1.x, 9, S._v1.z, true);
+  // mostovka — len ak most existuje (bridgeLen > 0)
+  if(S.bridgeLen && S.bridgeLen > 0){
+    routePose((S.bridgeS0+S.bridgeS1)/2, S._v1, S._hWrap, 0);
+    regLabel("MOST VÁH " + Math.round(S.bridgeLen) + " m", 1.0, S._v1.x, 9, S._v1.z, true);
+  }
   for(let i=0;i<S.osm.pois.length;i++){
     const p = S.osm.pois[i];
     regLabel(p[2], 0.8, p[0], getTerrainHeight(p[0], p[1])+9, p[1], true);
   }
   routePose(S.routeLen-8, S._v1, S._hWrap, 0);
-  regLabel("ÚNIK >> VON", 1.0, S._v1.x, getTerrainHeight(S._v1.x, S._v1.z)+7, S._v1.z, true);
+  regLabel((S.osm.destLabel || "ÚNIK >> VON"), 1.0, S._v1.x, getTerrainHeight(S._v1.x, S._v1.z)+7, S._v1.z, true);
 }
