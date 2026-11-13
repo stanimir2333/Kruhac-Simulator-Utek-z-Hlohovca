@@ -639,22 +639,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   console.info(`[boot] ${VERSION} · route ${S.routeLen | 0} m · blds ${(osm.blds || []).length} · roads ${(osm.roads || []).length}`);
 }
 
-function showMapSelect() {
-  return new Promise((resolve) => {
-    const el = document.getElementById('map-select');
-    if (!el) { resolve('hlohovec'); return; }
-    el.classList.remove('hidden');
-    el.querySelectorAll('button[data-map]').forEach((b) => {
-      b.addEventListener('click', () => {
-        el.classList.add('hidden');
-        resolve(b.dataset.map || 'hlohovec');
-      }, { once: true });
-    });
-  });
-}
-
 (async () => {
-  const mapId = await showMapSelect();
+  const params = new URLSearchParams(location.search);
+  const mapId = params.get('map') === 'drahovce' ? 'drahovce' : 'hlohovec';
   document.title = mapId === 'drahovce'
     ? 'Kruháč Simulator: Drahovce'
     : 'Kruháč Simulator: Útek z Hlohovca';

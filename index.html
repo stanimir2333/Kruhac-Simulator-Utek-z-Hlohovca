@@ -15,18 +15,6 @@
 </head>
 <body>
 
-<div id="map-select" class="overlay">
-  <div class="card panel">
-    <h1>KRUHÁČ SIMULATOR</h1>
-    <h2>VYBER MAPU</h2>
-    <p>Zvoľ si mesto, v ktorom chceš unikať.</p>
-    <br>
-    <button class="btn" data-map="hlohovec">HLOHOVEC · ÚTEK Z MESTA</button>
-    <br><br>
-    <button class="btn" data-map="drahovce">DRAHOVCE · OBEC</button>
-  </div>
-</div>
-
 <div id="preloader">
   <div class="card panel">
     <h1>KRUHÁČ SIMULATOR</h1>
@@ -231,7 +219,9 @@
     M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
     <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
     <br>
-    <button class="btn" id="btn-start">ŠTARTOVAŤ ÚTEK</button>
+    <button class="btn" id="btn-start">ŠTARTOVAŤ ÚTEK (HLOHOVEC)</button>
+    <br><br>
+    <button class="btn" onclick="location.search='?map=drahovce'">ŠTARTOVAŤ DRAHOVCE</button>
   </div>
 </div>
 
