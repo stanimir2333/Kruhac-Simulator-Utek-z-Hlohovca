@@ -645,6 +645,8 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   document.title = mapId === 'drahovce'
     ? 'Kruháč Simulator: Drahovce'
     : 'Kruháč Simulator: Útek z Hlohovca';
+  const btn = document.getElementById('btn-start');
+  if (btn) btn.textContent = mapId === 'drahovce' ? 'ŠTARTOVAŤ DRAHOVCE' : 'ŠTARTOVAŤ ÚTEK (HLOHOVEC)';
   await boot(mapId);
 })().catch((e) => {
   console.error(e);
