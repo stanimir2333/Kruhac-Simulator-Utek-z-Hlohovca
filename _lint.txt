@@ -1,0 +1,52 @@
+﻿deno : [0m[1m[31merror[no-unused-vars][0m: [0m[1m`houseRoofs` is never used[0m
+At line:1 char:1
++ deno lint _kollar_check.mjs 2>&1 | Out-File -Encoding utf8 _lint.txt; ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([0m[1m[31mer... never used[0m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   [0m[38;5;12m-->[0m 
+[0m[36mC:\Users\jerry\Kruhac-Simulator-Utek-z-Hlohovca\_kollar_check.mjs[0m[0m[33m:748:7[0m
+   [0m[38;5;12m | [0m
+[0m[38;5;12m748 | [0mconst houseRoofs = [];
+   [0m[38;5;12m | [0m      [0m[1m[31m^^^^^^^^^^[0m
+    [0m[38;5;12m=[0m [0m[1mhint[0m: If this is intentional, prefix it with an underscore like `_houseRoofs`
+
+  [0m[38;5;12mdocs[0m: https://docs.deno.com/lint/rules/no-unused-vars
+
+
+[0m[1m[31merror[no-unused-vars][0m: [0m[1m`i` is never used[0m
+    [0m[38;5;12m-->[0m 
+[0m[36mC:\Users\jerry\Kruhac-Simulator-Utek-z-Hlohovca\_kollar_check.mjs[0m[0m[33m:1094:22[0m
+    [0m[38;5;12m | [0m
+[0m[38;5;12m1094 | [0m  clouds.forEach((c, i) => {
+    [0m[38;5;12m | [0m                     [0m[1m[31m^[0m
+     [0m[38;5;12m=[0m [0m[1mhint[0m: If this is intentional, prefix it with an underscore like `_i`
+
+  [0m[38;5;12mdocs[0m: https://docs.deno.com/lint/rules/no-unused-vars
+
+
+[0m[1m[31merror[no-unused-vars][0m: [0m[1m`c` is never used[0m
+    [0m[38;5;12m-->[0m 
+[0m[36mC:\Users\jerry\Kruhac-Simulator-Utek-z-Hlohovca\_kollar_check.mjs[0m[0m[33m:1311:9[0m
+    [0m[38;5;12m | [0m
+[0m[38;5;12m1311 | [0m  const c = CHAPTERS[CHAPTERS.length - 1];
+    [0m[38;5;12m | [0m        [0m[1m[31m^[0m
+     [0m[38;5;12m=[0m [0m[1mhint[0m: If this is intentional, prefix it with an underscore like `_c`
+
+  [0m[38;5;12mdocs[0m: https://docs.deno.com/lint/rules/no-unused-vars
+
+
+[0m[1m[31merror[no-unused-vars][0m: [0m[1m`sk` is never used[0m
+    [0m[38;5;12m-->[0m 
+[0m[36mC:\Users\jerry\Kruhac-Simulator-Utek-z-Hlohovca\_kollar_check.mjs[0m[0m[33m:1330:9[0m
+    [0m[38;5;12m | [0m
+[0m[38;5;12m1330 | [0m  const sk = skyAt(0);
+    [0m[38;5;12m | [0m        [0m[1m[31m^^[0m
+     [0m[38;5;12m=[0m [0m[1mhint[0m: If this is intentional, prefix it with an underscore like `_sk`
+
+  [0m[38;5;12mdocs[0m: https://docs.deno.com/lint/rules/no-unused-vars
+
+
+Found 4 problems
+Checked 1 file
