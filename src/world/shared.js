@@ -77,8 +77,23 @@ export const S = {
     }, // <- legacy @7476
 };
 
+// ---------- RASPBERRY REŽIM (nízky výkon; číta sa TU, nie v settings.js) ----------
+// shared.js sa vyhodnocuje skôr ako ui/settings.js aj ako ťažké moduly
+// (textúry/vegetácia/doprava vedia svoje počty ako konstanty pri importe), takže
+// vlajku si musí prečítať sám z rovnakého kľúča úložiska ('kruhac-set', pole ras).
+// Plný efekt má až po obnovení stránky — svet sa stavia len raz pri boote.
+// LOW_END = dotyk OR raspberry: jednotné hradlo pre počty, hustotu a veľkosti
+// textúr. NEdotká sa dotykových ovládacích prvkov (tie ostávajú len na IS_MOBILE).
+let _ras = false;
+try {
+  const _st = JSON.parse(localStorage.getItem('kruhac-set') || 'null');
+  _ras = !!(_st && _st.ras === 1);
+} catch (_e) { /* noop: súkromný režim bez localStorage */ }
+S.RASPBERRY = _ras;
+S.LOW_END = S.IS_MOBILE || _ras;
+
 // Odvodené hodnoty AŽ po literáli (vnútri literálu by S čítalo samo seba = TDZ!).
-S.LABEL_MAX = S.IS_MOBILE ? 10 : 40;
+S.LABEL_MAX = S.LOW_END ? 10 : 40;
 S.routeX = new Float32Array(S.ROUTE_N + 1);
 S.routeZ = new Float32Array(S.ROUTE_N + 1);
 S.routeH = new Float32Array(S.ROUTE_N + 1);

@@ -72,7 +72,7 @@ export function createBloom(renderer, scene, camera) {
       const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
       const rt = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.HalfFloatType,
-        samples: S.IS_MOBILE ? 0 : 2,
+        samples: S.LOW_END ? 0 : 2,
       });
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());

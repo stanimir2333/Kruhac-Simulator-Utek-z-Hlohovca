@@ -700,7 +700,7 @@ export function buildTextures(){
   // dlažbu každé 4 m: 512 px / 4 m = 128 px/m. Zrno asfaltu čitateľné z kabíny.
   const ROAD_TILE = 4;
   const ROAD_REP = [1/ROAD_TILE, 1/ROAD_TILE];
-  const HQ = S.IS_MOBILE ? 256 : 512;   // mobil: 256 px = ~64 px/m, stalejsi grafika
+  const HQ = S.LOW_END ? 256 : 512;   // mobil/raspberry: 256 px = ~64 px/m, stalejsi grafika
   const A = fAsphalt(HQ);
   S.TEX.asphalt  = texSlotCanvas("asphalt",  "road/asphalt_diffuse.jpg",   A.dif, true,  ROAD_REP);
   S.TEX.asphaltN = texSlotCanvas("asphaltN", "road/asphalt_normal.png", normalCanvas(A.S, A.hf, 1.4), false, ROAD_REP);
@@ -734,7 +734,7 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   const BR = fBrick();
   S.TEX.brick  = texSlotCanvas("brick",  "buildings/brick.jpg", commitField(BR), true, [3, 12]);
   S.TEX.brickN = texSlotCanvas("brickN", "buildings/brick_normal.png", normalCanvas(BR.size, BR.hf, 2.2), false, [3, 12]);
-  const WD = fWood(S.IS_MOBILE ? 128 : 256);
+  const WD = fWood(S.LOW_END ? 128 : 256);
   S.TEX.wood  = texSlotCanvas("wood",  "buildings/wood.png", commitField(WD), true, [1, 3]);
   S.TEX.woodN = texSlotCanvas("woodN", "buildings/wood_normal.png", normalCanvas(WD.size, WD.hf, 1.8), false, [1, 3]);
   mark("betón+tehla+drevo");

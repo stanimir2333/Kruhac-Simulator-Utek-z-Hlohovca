@@ -223,7 +223,7 @@ export const PS = {
 export function buildParticles(sceneParam) {
   const scene = sceneParam ?? S.scene;
   if (!scene) return;
-  const n = S.IS_MOBILE ? 120 : PSMOKE_N;
+  const n = S.LOW_END ? 120 : PSMOKE_N;
   PS.n = n;
   PS.pos = new Float32Array(n * 3);
   PS.col = new Float32Array(n * 3);
@@ -369,7 +369,7 @@ export function updateExhaustFlames(dt, car = {}, throttle = 0, rpm01 = 0, boost
   const tz = cz - EXH_X * fx + EXH_Z * fz;
   const ty = cy + EXH_Y;
   const power = (0.7 + r * 0.6) * (boost > 0 ? boost : 1);
-  const burstN = S.IS_MOBILE ? 2 : (bursting ? 3 + ((psRnd() * 2) | 0) : 2);
+  const burstN = S.LOW_END ? 2 : (bursting ? 3 + ((psRnd() * 2) | 0) : 2);
   const n = Math.max(1, Math.round(burstN * (boost > 0 ? boost : 1)));
   for (let k = 0; k < n; k++) {
     const sp = (5 + psRnd() * 6) * power;

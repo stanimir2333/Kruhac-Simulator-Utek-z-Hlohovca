@@ -136,7 +136,7 @@ function lumpyCrown(src, amt){
 
 export function ensureVegShapes(){
   if(S.GEO.trunkV) return;   // idempotentné: geometrie sa vytvoria len raz
-  const crownDetail = S.IS_MOBILE ? 1 : 2;
+  const crownDetail = S.LOW_END ? 1 : 2;
   S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 9);
   S.GEO.trunkV.translate(0, 1.3, 0);
   S.GEO.crownV = lumpyCrown(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
@@ -146,7 +146,7 @@ export function ensureVegShapes(){
   const tiers = [[1.7, 2.2, 1.6], [1.3, 1.8, 3.4], [0.9, 1.4, 4.8]];
   const coneParts = [];
   for(let t=0;t<3;t++){
-    const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.IS_MOBILE ? 9 : 12);
+    const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.LOW_END ? 9 : 12);
     tg.translate(0, tiers[t][2] + tiers[t][1]/2, 0);
     coneParts.push(tg);
   }
@@ -226,7 +226,7 @@ export function buildVegInstanced(){
     ch.cx += x; ch.cz += z; ch.n++;
     kept++;
   }
-  const step = S.IS_MOBILE ? 2 : 1; // mobil: polovičná hustota
+  const step = S.LOW_END ? 2 : 1; // mobil/raspberry: polovičná hustota
   const TD = S.osm.trees || { A:[], B:[], C:[], AVE:[], T:[] };
   if(!S.osm.trees) console.warn('[VEG] S.osm.trees chýba — bez stromov (python3 tools/gen_osm_extra.py)');
   const VA = TD.A, VB = TD.B, VC = TD.C, VV = TD.AVE, VT = TD.T;
@@ -290,8 +290,8 @@ export function buildVegInstanced(){
 // userData NEMÁ `veg`, takže snapVegetationToTerrain ich necháva stáť
 // (výška je už zapísaná pri rozptyle).
 function buildGrassTufts(rndSource){
-  const cnt = S.IS_MOBILE ? 900 : 2600;         // cieľový počet kariet
-  const attempts = S.IS_MOBILE ? 8000 : 24000;  // strop pokusov (rozptyl po mape)
+  const cnt = S.LOW_END ? 900 : 2600;         // cieľový počet kariet
+  const attempts = S.LOW_END ? 8000 : 24000;  // strop pokusov (rozptyl po mape)
   if(!S.GEO.tuftV){
     const tpl = new THREE.PlaneGeometry(0.9, 0.55);
     tpl.translate(0, 0.275, 0);   // päta karty sedí na teréne

@@ -77,7 +77,7 @@ async function boot() {
   renderer.toneMappingExposure = 1.0;
   // Anizotropia 16x je na mobilných GPU drahá a pri 1.5x DPR už nie je vidieť
 // rozdiel voči 4x. Desktop ostáva na maxime (až 16x) pre ostré cesty v diaľke.
-S.TEX_ANISO = Math.max(1, Math.min(S.IS_MOBILE ? 4 : 16, renderer.capabilities.getMaxAnisotropy()));
+S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.getMaxAnisotropy()));
   scene.background = new THREE.Color(S.SKY_HORIZON);
   scene.fog = new THREE.FogExp2(S.SKY_FOG, 0.0008);
   // near 0.1 (nie 0.5): v prvej osobe je zbraň "viewmodel" 30 cm od očí —

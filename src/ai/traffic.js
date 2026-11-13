@@ -30,9 +30,9 @@ import { driveY, LANE_OFF, getTerrainHeight, wheelGroundY } from '../world/heigh
 // ---------- POČTY ÁUT (lokálne consty; legacy js 3775–3777: IS_MOBILE→S.IS_MOBILE) ----------
 // Zvýšené (2026-10): instancie = 1 draw call na diel, takže GPU to necíti;
 // CPU update je O(n) s lacným early-outom (collideWorld, LOD pásma).
-export const TRAFFIC_N = S.IS_MOBILE ? 26 : 44;
-export const INCOMING_N = S.IS_MOBILE ? 8 : 12;
-export const AMBIENT_N = S.IS_MOBILE ? 12 : 18;
+export const TRAFFIC_N = S.LOW_END ? 26 : 44;
+export const INCOMING_N = S.LOW_END ? 8 : 12;
+export const AMBIENT_N = S.LOW_END ? 12 : 18;
 export const PARKED_N = 14; // zaparkované z townRoads blízko štartu (modulárna extenzia; legacy ich nemal)
 // Legacy MAXC = 51 (30+8+12+1); rozšírené o PARKED_N, aby sa ALL_CARS vrátane
 // zaparkovaných vošlo do InstancedMesh (inak OOB zápis matíc = neviditeľné autá).

@@ -372,9 +372,9 @@ let _wctx = { renderer: null, scene: null, camera: null, skyDome: null, viewDist
 
 function waterInitReflection() {
   const { scene, camera } = _wctx;
-  const hi = (WAT.level >= 2) && !S.IS_MOBILE;
-  const rw = hi ? 512 : (S.IS_MOBILE ? 128 : 256), rh = Math.round(rw * 0.5625);
-  WAT.every = hi ? 2 : (S.IS_MOBILE ? 4 : 3);
+  const hi = (WAT.level >= 2) && !S.LOW_END;
+  const rw = hi ? 512 : (S.LOW_END ? 128 : 256), rh = Math.round(rw * 0.5625);
+  WAT.every = hi ? 2 : (S.LOW_END ? 4 : 3);
   WAT.reflRT = new THREE.WebGLRenderTarget(rw, rh, {
     type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     depthBuffer: true, generateMipmaps: false,

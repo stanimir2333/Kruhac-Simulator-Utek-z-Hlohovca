@@ -3,7 +3,7 @@ import { S } from '../world/shared.js';
 import { getTerrainHeight } from '../world/height.js';
 import { gridQuery, GQ_MAX } from '../world/ground.js';
 
-const PED_COUNT = S.IS_MOBILE ? 20 : 46;
+const PED_COUNT = S.LOW_END ? 20 : 46;
 const RELOCATE_D2 = 280 * 280;
 const FLEE_RADIUS = 68;
 const PED_GQ = new Int32Array(GQ_MAX);

@@ -11,7 +11,7 @@ import { S } from './shared.js';
 // komentáre sľubovali "distance culling (2 Hz)" a neexistoval. Chunk sa vypne,
 // keď je hráč ďalej než (polomer + dosah); vracia počet prepnutých chunkov
 // (0 = nič sa nemenilo), aby main vedel, či treba niečo hlásiť.
-const CHUNK_REACH_M = 700; // m nad polomer chunku: budovy aj stromy ostávajú vidieť
+const CHUNK_REACH_M = S.LOW_END ? 350 : 700; // m nad polomer chunku: budovy aj stromy ostávajú vidieť (raspberry: polovica → menej viditeľných meshov aj draw callov)
 const CHUNK_CULL_INTERVAL = 1 / PERF.cullHz;
 const CULL_RECHECK_DISTANCE_M = 20;
 const CULL_RECHECK_DISTANCE2 = CULL_RECHECK_DISTANCE_M * CULL_RECHECK_DISTANCE_M;

@@ -27,6 +27,7 @@ export const settings = {
   car: 'octavia', // auto hráča: id kľúča CARS (garáž [G] mení aj engine)
   engine: 'tdi', // motor: ODVODENÝ od auta (CARS[car].engine) — výbor vypnutý
   sens: 1, // citlivosť pohľadu pešo (násobka, 0.02–4)
+  ras: 0, // RASPBERRY režim: 1 = nízky výkon (plný efekt až po obnovení stránky)
 };
 // Mená motorov pre label (bez importu fyziky — settings nesmie ťahať vehicle).
 const ENGINE_NAME = { tdi: '1.9 TDI', wankel: '4-ROTOR' };
@@ -72,7 +73,7 @@ const RT_TIER_FROM_SHADOW = [0, 1, 2, 2];
 // (max 1× za 3 s, drag slideru nekaskáduje): najprv tiene.
 // Monolit potom ustupoval aj RT škálou a bloom lowRes — VYNECHANÉ
 // (RT/bloom engine sa neportuje). Vždy s toastom, nikdy potichu.
-const VRAM_BUDGET = (S.IS_MOBILE ? 350 : 900) * 1048576;
+const VRAM_BUDGET = (S.LOW_END ? 350 : 900) * 1048576;
 let vramT = 0;
 let setOpen = false;
 let _ctx = null;
@@ -138,7 +139,7 @@ export function vramGuard(ctx, say) {
   if (now - vramT < 3000) return;
   if (vramEstimate(ctx) < VRAM_BUDGET) return;
   vramT = now;
-  if (shadowTier > (S.IS_MOBILE ? 1 : 2)) {
+  if (shadowTier > (S.LOW_END ? 1 : 2)) {
     applyShadowTier(ctx, shadowTier - 1);
     saveSettings();
     if (say) say('VRAM strážca: tiene o stupeň nižšie.');
@@ -208,6 +209,7 @@ export function saveSettings() {
       car: settings.car, // auto hráča: id z CARS (garáž [G])
       eng: settings.engine, // motor — DERIVED podľa auta (úložisko pre čitateľa)
       sen: settings.sens, // citlivosť pohľadu pešo (násobka)
+      ras: settings.ras, // raspberry režim 1/0 — číta ho shared.js pri boote (S.LOW_END)
     }));
   } catch (_e) { /* noop: súkromný režim bez localStorage */ }
 }
@@ -260,6 +262,7 @@ export function loadSettings() {
     }
     settings.engine = CARS[settings.car] ? CARS[settings.car].engine : 'tdi';
     settings.sens = storedNum(s.sen, 0.02, 4, settings.sens);
+    if (s.ras === 0 || s.ras === 1) settings.ras = s.ras;
     settings.shq = shadowTier;
   } catch (_e) { /* noop: poškodený JSON ignoruj */ }
 }
@@ -333,6 +336,14 @@ export function syncSettingsUI(ctx) {
   }
   const musV = $('set-music-v');
   if (musV) musV.textContent = settings.music === 1 ? 'ZAP.' : 'VYP.';
+  // --- RASPBERRY režim (nízky výkon) ---
+  const rasT = $('set-ras-toggle');
+  if (rasT) {
+    rasT.classList.toggle('on', settings.ras === 1);
+    rasT.textContent = settings.ras === 1 ? 'RASPBERRY ZAPNUTÝ' : 'ZAPNÚŤ RASPBERRY';
+  }
+  const rasV = $('set-ras-v');
+  if (rasV) rasV.textContent = settings.ras === 1 ? 'ZAP.' : 'VYP.';
   // --- motor (READ-ONLY): motor patrí typu auta — volí sa v garáži [G] ---
   // Segmentový výber motora ZANIKOL (B29): panel už len vypíše, ktorý motor
   // jazdí, a preklik cez `#set-car-open` otvorí garáž.
@@ -477,6 +488,44 @@ export function wireSettingsUI(ctx, toast) {
     try { c?.audio?.toggleMusic?.(); } catch (_e) { /* noop */ }
     syncSettingsUI(c);
     saveSettings();
+  });
+
+  // ---------- RASPBERRY REŽIM (nízky výkon: slabý GPU/RAM, aj Raspberry Pi) ----------
+  // Jeden prepínač = celý nízkonákladový preset. Časť sa uplatní OKAMŽITE
+  // (rozlíšenie, FPS limit, dohľad, bloom, voda, tieňová mapa) a časť až po
+  // obnovení stránky — svet sa stavia raz pri boote a počty/hustoty sú konstanty
+  // modulov, ktoré si vlajku S.LOW_END (shared.js, kľúč `ras` v úložisku) prečítajú
+  // pri importe: textúry 256 px, polovičná vegetácia, menej áut/chodcov/dažďa,
+  // žiadne MSAA ani DPR > 1, polovičný dosah chunkov, menší odraz Váhu.
+  $('set-ras-toggle')?.addEventListener('click', () => {
+    const on = settings.ras !== 1;
+    settings.ras = on ? 1 : 0;
+    if (on) {
+      // Preset „prežije to aj Pi": render ~polovičný, 30 FPS, dohľad 150 m,
+      // žiadne žiarenie ani odrazy, tienová mapa 1K (najmenší VRAM náklad).
+      settings.res = 0.5;
+      settings.fps = 30;
+      settings.dist = 150;
+      settings.bloom = 0;
+      settings.water = 0;
+      settings.rtQl = 1;
+      applyShadowTier(c, 0);
+    } else {
+      // VYP: návrat na vyvážené predvolené hodnoty (užívateľ si to potom
+      // doladí slidermi; uložisko drží len tieto polia, žiadny druhý preset).
+      settings.res = 1;
+      settings.fps = 60;
+      settings.dist = 220;
+      settings.bloom = 1;
+      settings.water = 2;
+      settings.rtQl = 1;
+      applyShadowTier(c, 2);
+    }
+    applyAll(c);
+    saveSettings();
+    say(on
+      ? 'RASPBERRY režim ZAP. Grafika okamžite; svet (textúry, vegetácia, doprava) po obnovení stránky (F5).'
+      : 'RASPBERRY režim VYP. Plné detaily sa vráti po obnovení stránky (F5).');
   });
 
   // Motor: výber ZANIKOL (B29) — motor je zviazaný s typom auta a mení ho

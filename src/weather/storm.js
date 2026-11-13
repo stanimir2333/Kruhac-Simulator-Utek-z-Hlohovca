@@ -120,7 +120,7 @@ export function createStormManager() {
 
   // ---------- DÁŽĎ ----------
   function buildRain() {
-    rainN = S.IS_MOBILE ? 900 : 1800;
+    rainN = S.LOW_END ? 900 : 1800;
     rainPos = new Float32Array(rainN * 3);
     rainSpd = new Float32Array(rainN);
     for (let i = 0; i < rainN; i++) {
