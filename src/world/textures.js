@@ -522,6 +522,43 @@ export function paintTuft(g, s){
   blade(s*0.50, s*0.44, s*0.40, s*0.52, s*0.036, true);
 }
 
+// ALFA KARTIČKA LISTA: javorový list so žilnatinou (src/world/leaves.js).
+// Priehľadné pozadie — strih robí alphaTest, nie transparent.
+// TELESO JE BIELE: farbu listu dodáva instanceColor (jesenná paleta),
+// takže jedna textúra obslúži všetky odtiene (žltý, oranžový, hnedý).
+export function paintLeafCard(g, s){
+  const cx = s * 0.5;
+  const grd = g.createLinearGradient(0, s * 0.05, 0, s * 0.97);
+  grd.addColorStop(0, "#ffffff");
+  grd.addColorStop(0.55, "#f2f2ec");
+  grd.addColorStop(1, "#dcdcd2");
+  g.fillStyle = grd;
+  // teleso listu (dva lúčové oblúky)
+  g.beginPath();
+  g.moveTo(cx, s * 0.05);
+  g.bezierCurveTo(s * 0.95, s * 0.30, s * 0.90, s * 0.78, cx, s * 0.97);
+  g.bezierCurveTo(s * 0.10, s * 0.78, s * 0.05, s * 0.30, cx, s * 0.05);
+  g.closePath(); g.fill();
+  // hlavná žilka
+  g.strokeStyle = "rgba(90, 80, 40, 0.45)";
+  g.lineWidth = Math.max(1, s * 0.022);
+  g.beginPath(); g.moveTo(cx, s * 0.08); g.lineTo(cx, s * 0.95); g.stroke();
+  // bočné žilky
+  g.lineWidth = Math.max(1, s * 0.012);
+  for(let i = 1; i < 6; i++){
+    const y = s * (0.15 + i * 0.13);
+    const w = s * 0.30 * Math.sin((i / 6) * Math.PI);
+    g.beginPath(); g.moveTo(cx, y);
+    g.quadraticCurveTo(cx + w * 0.6, y - s * 0.03, cx + w, y - s * 0.09); g.stroke();
+    g.beginPath(); g.moveTo(cx, y);
+    g.quadraticCurveTo(cx - w * 0.6, y - s * 0.03, cx - w, y - s * 0.09); g.stroke();
+  }
+  // stopka
+  g.strokeStyle = "#8a6a3a";
+  g.lineWidth = Math.max(1, s * 0.03);
+  g.beginPath(); g.moveTo(cx, s * 0.94); g.lineTo(cx, s * 1.0); g.stroke();
+}
+
 // ---------- FASÁDA: mriežka okien + sprievodné mapy ODVODENÉ z obrázka ----------
 // Rozvradenie okien používa iba procedurálny fallback (paintFacade). Pre
 // FOTOGRAFIU je mriežka nepodstatná: sprievodné mapy sa odvodia z jasu samotného
@@ -788,6 +825,9 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   // TRÁVNATKO: alfa kartička pre inštancované tufty po celom svete.
   S.TEX.tuft = texSlot("tuft", null, 128, true, null, function(g,s){ paintTuft(g, s); });
   mark("tufty");
+  // LIST: alfa kartička padajúcich listov (src/world/leaves.js). Slot, aby sa
+  // dala neskôr nahradiť vlastnou fotkou bez zásahu do kódu.
+  S.TEX.leafCard = texSlot("leafCard", null, 64, true, null, function(g,s){ paintLeafCard(g, s); });
   // Vlnitý plech pre priemysel/obchody (Kat. C).
   S.TEX.sheet = texSlot("sheet", null, 256, true, null, function(g,s){
     g.fillStyle = "#c3c9d1"; g.fillRect(0,0,s,s);
@@ -1003,6 +1043,16 @@ export function buildShared(){
   S.MAT.chrome = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.22, metalness: 0.9, envMapIntensity: 1.0 }); // lišty + puklice
   S.MAT.tail = new THREE.MeshStandardMaterial({ color: 0x7a0f0f, roughness: 0.4, metalness: 0.2 }); // kryty zadných svetiel
   S.MAT.plate = new THREE.MeshStandardMaterial({ color: 0xe8e8e4, roughness: 0.6, metalness: 0.0 }); // EČV
+  // ---------- MOBILIÁR A DROBNOSTI (src/world/props.js) ----------
+  // Päť košov podľa triedy POVRCHU. Farba je vo vertex colors (každý prop má
+  // vlastný odtieň), spoločný je len typ povrchu — a ten určuje, ako sa
+  // povrch lesní: kov je lesklý, omietka matná, drevo drsné, listie mäkké.
+  S.MAT.propMetal = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.40, metalness: 0.72, envMapIntensity: 1.15 });
+  S.MAT.propMatte = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.86, metalness: 0.00, envMapIntensity: 0.60 });
+  S.MAT.propWood  = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xffffff, vertexColors: true, roughness: 0.90, metalness: 0.00, envMapIntensity: 0.35 });
+  S.MAT.propLeaf  = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.93, metalness: 0.00, envMapIntensity: 0.40 });
+  S.MAT.propGlass = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.10, metalness: 0.60, envMapIntensity: 1.40 });
+  S.MAT.propGlow  = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true });
   const palette = [0xb03030, 0x2b5aa0, 0xc7c7c7, 0x303035, 0xc07a20, 0x3f7a3f, 0x7a7a8a, 0xd42a1e];
   for(let i=0;i<palette.length;i++){ S.CAR_COLORS.push(new THREE.Color(palette[i])); }
 }

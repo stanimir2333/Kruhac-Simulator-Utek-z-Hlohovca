@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { S } from '../world/shared.js';
 import { setSkyVariant } from '../world/sky.js';
+import { setSurfaceWetTarget } from '../world/surface.js';
 
 // ---------- KONFIG ----------
 const RAIN_W = 70;          // šírka dažďovej škatule (m)
@@ -28,13 +29,9 @@ const BOLT_MIN_LIFE = 0.05; // životnosť blesku (s)
 const BOLT_MAX_LIFE = 0.1;  // životnosť blesku (s)
 const STRIKE_MIN_GAP = 2.5; // min. pauza medzi údermi (s)
 const STRIKE_MAX_GAP = 8;   // max. pauza medzi údermi (s)
-const WET_ROUGH = 0.18;     // cieľová drsnosť mokrej vozovky
-const WET_ROUGH_SIDE = 0.35;// chodníky / cyklopruhy ostávajú matnejšie
-// Ktoré zdieľané materiály zmoknú (všetky cesty idú cez ne — stačí prepnúť raz).
-const WET_MATS = [
-  ['asphalt', WET_ROUGH], ['routeAsphalt', WET_ROUGH], ['bridge', 0.22],
-  ['sidewalk', WET_ROUGH_SIDE], ['cycle', WET_ROUGH_SIDE],
-];
+// Mokrosť povrchov má JEDINÝ zdroj pravdy: src/world/surface.js (profil
+// drsnosti materiálu + kaluže v shaderi). Tu sa len hovorí, koľko vody je —
+// prechod do mokra aj do sucha je vtedy plynulý.
 
 // Hlasný hrom: špičky držia ~1.0, kompresor to zlepí bez clippingu.
 const THUNDER_MASTER = 0.9;
@@ -79,9 +76,6 @@ export function createStormManager() {
   // vtedy hrá čisto procedurálny fallback v thunder().
   let sampleBufs = [], samplesLoading = false;
   const pendingTimers = [];
-
-  // Pôvodné drsnosti ciest na obnovu po stop().
-  const wetOrig = new Map();
 
   // ---------- POMOCNÉ ----------
   function later(fn, ms) {
@@ -368,20 +362,11 @@ export function createStormManager() {
   }
 
   // ---------- MOKRÉ CESTY ----------
+  // Mokrosť povrchov má JEDINÝ zdroj pravdy: src/world/surface.js (profil
+  // drsnosti + kaluže v shaderi). Tu sa len hovorí, koľko vody je — prechod
+  // do mokra aj do sucha je vtedy plynulý.
   function setWet(on) {
-    for (const [key, rough] of WET_MATS) {
-      const m = S.MAT[key];
-      if (!m) continue;
-      if (on) {
-        if (!wetOrig.has(key)) wetOrig.set(key, { r: m.roughness, e: m.envMapIntensity });
-        m.roughness = rough;          // mokré = zrkadlí svetlá aj blesky
-        m.envMapIntensity = 1.2;
-      } else if (wetOrig.has(key)) {
-        const o = wetOrig.get(key);
-        m.roughness = o.r;
-        m.envMapIntensity = o.e;
-      }
-    }
+    setSurfaceWetTarget(on ? 1 : 0);
   }
 
   // ---------- VEREJNÉ API ----------

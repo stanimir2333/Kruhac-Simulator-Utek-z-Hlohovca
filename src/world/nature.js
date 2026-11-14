@@ -191,6 +191,7 @@ export function ensureVegShapes(){
 export function buildVegInstanced(){
   vegBuildWater();
   ensureVegShapes();
+  S.VEG_TREES.length = 0;   // zoznam listnatých stromov pre padajúce listy
   let seed = 770031;
   function rnd(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; }
   const rounds = S.osm.rounds;
@@ -223,6 +224,11 @@ export function buildVegInstanced(){
     const it = { x:x, y:y-0.25, z:z, s:sc, sy:0.85+rnd()*0.4, rot:rnd()*6.2832, ci:(rnd()*4)|0 };
     if(v === 2){ ch.c.push(it); }
     else { ch.tr.push(it); if(v === 1) ch.b.push(it); else ch.a.push(it); }
+    // LISTNATÉ STROMY (v 0 = listnáč/alej, v 3 = zmapovaný strom) idú do zoznamu
+    // pre padajúce listy (src/world/leaves.js). Ide o TEN ISTÝ objekt, ktorý
+    // nesie inštanciu — snapVegetationToTerrain() mu prepíše y, takže list
+    // padá z aktuálnej koruny a nie zo starej výšky.
+    if(v === 0 || v === 3) S.VEG_TREES.push(it);
     ch.cx += x; ch.cz += z; ch.n++;
     kept++;
   }

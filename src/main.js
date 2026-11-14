@@ -21,6 +21,9 @@ import {
 import { buildRiver, initWater, updateWater, waterResize, setWaterQuality } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
+import { applySurfaces, updateSurfaceWet } from './world/surface.js';
+import { buildProps } from './world/props.js';
+import { initLeaves, updateLeaves } from './world/leaves.js';
 import { buildSkyDome, cullChunks } from './world/sky.js';
 import { cullLabels } from './world/labels.js';
 import {
@@ -217,7 +220,15 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   await step(0.75, 'koľaje + zeleň…'); buildRails(); buildGreens(); buildCemetery(); beat('koľaje + zeleň');
   await step(0.80, 'budovy…');        await photoPreload(); buildBuildings(); beat('budovy');
   await step(0.86, 'stromy + lampy…'); buildLampsTrees(); buildVegInstanced(); snapVegetationToTerrain(); beat('vegetácia');
-  await step(0.88, 'efekty + misie…');
+  // Odrázy povrchov podľa materiálu + kaluže: až teraz existujú VŠETKY
+  // materiály (vegCrown z vegetácie, propMetal z mobiliáru), takže profil
+  // drsnosti a envMapIntensity sa aplikuje na celý svet naraz.
+  await step(0.87, 'odrazy povrchov…'); applySurfaces(); beat('odrazy povrchov');
+  // MOBILIÁR: lavičky, lampy, koše, stĺpy, zastávky, ploty… (viac poly).
+  await step(0.88, 'mobiliár…'); buildProps(); beat('mobiliár');
+  // PADAJÚCE LISTY: pool inštancií, ktoré sa rodia v korunách blízkych stromov.
+  initLeaves(scene);
+  await step(0.90, 'efekty + misie…');
   buildParticles(scene);
   buildCheckpoints();
   buildPeter();
@@ -451,6 +462,11 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   engine.onTick((dt, t) => {
     state.time = t;
     S.UNI.time.value = t; // vietor v korunách (src/world/nature.js), jedna uniforma
+    // Mokrosť povrchov (src/world/surface.js): búrka nastavuje cieľ, prechod
+    // do mokra/do sucha je plynulý. Beží aj v menu — mokré cesty nechajú vyschnúť.
+    updateSurfaceWet(dt);
+    // Padajúce listy: rodia sa v korunách stromov okolo kamery.
+    updateLeaves(dt, camera.position.x, camera.position.z);
     if (!state.started || state.paused) {
       // menu orbitka okolo štartu
       const a = t * 0.12;

@@ -382,10 +382,13 @@ function waterInitReflection() {
   WAT.reflRT.texture.wrapS = WAT.reflRT.texture.wrapT = THREE.ClampToEdgeWrapping;
   WAT.mat.uniforms.tRefl.value = WAT.reflRT.texture;
   WAT.reflCam = new THREE.PerspectiveCamera(68, camera.aspect, 0.5, 900);
-  // svetlá MUSIA vidieť aj odrazovú vrstvu, inak by bol odraz čierny
+  // svetlá MUSIA vidieť aj odrazovú vrstvu, inak by bol odraz čierny.
+  // Odraz sa kreslí z pohľadu zrkadla: všetky vodorovné povrchy, ktoré
+  // ležia nad hladinou, sa v nej zrkadlia — vrátane asfaltu, aby sa most
+  // a nábrežie zrkadlili ako celok.
   const REFL_MATS = new Set([S.MAT.ground, S.MAT.houseWall, S.MAT.panelWall, S.MAT.histWall,
     S.MAT.indWall, S.MAT.pitchedRoof, S.MAT.flatRoof, S.MAT.bridge, S.MAT.rail, S.MAT.sidewalk,
-    S.MAT.lampOn, S.MAT.head]);
+    S.MAT.asphalt, S.MAT.routeAsphalt, S.MAT.lampOn, S.MAT.head]);
   scene.traverse(function (o) {
     if (o.isLight) { o.layers.enable(REFL_LAYER); return; }
     if (!(o.isMesh || o.isInstancedMesh)) return;

@@ -42,10 +42,11 @@ export const S = {
   MAT: {}, // <- legacy @3844
   TEX: {}, // <- legacy @3845
   DYN_GEO: [], // <- legacy @3846
-  // Jediná zdieľaná uniforma pre vlastné vertex shadery (dnes vietor v korunách,
-  // src/world/nature.js). Drží sa TU, aby ju tick v main.js aktualizoval raz za
-  // snímok — nie raz za materiál ani za inštanciu.
-  UNI: { time: { value: 0 } },
+  // Zdieľané uniformy pre vlastné shadery. `time` poháňa vietor v korunách
+  // (src/world/nature.js), `wet` mokrosť povrchov (src/world/surface.js —
+  // kaluže na asfalte). Obidve sa aktualizujú raz za snímok, nie raz za
+  // materiál ani za inštanciu.
+  UNI: { time: { value: 0 }, wet: { value: 0 } },
   ROUTE_N: 1600, // <- legacy @3855
   routeX: null, // <- legacy @3856 (alokuje sa nižšie — S nesmie čítať S.ROUTE_N v literáli!)
   routeZ: null, // <- legacy @3857
@@ -67,6 +68,10 @@ export const S = {
   VEG_GREENS: [0x5da24a, 0x4a8f3f, 0x3f7a3f, 0x2d5022], // <- legacy @6438
   VEG_OLIVE: [0x6b7a3a, 0x5a6b35, 0x7a8a45], // <- legacy @6439
   VEGW: { map:null }, // <- legacy @6440
+  // POLOHY LISTNATÝCH STROMOV (src/world/nature.js) — zoznam objektov {x,y,z,s,sy}.
+  // Z neho čerpá padajúce listy (src/world/leaves.js): nájsť strom v okolí
+  // kamery a odpustiť z jeho koruny nový list. Priebojný stav, nie konfigurácia.
+  VEG_TREES: [],
   DYN_IM: [], // <- legacy @6694
   CAR_COLORS: [], // <- legacy @6698
   BLOOM: {

@@ -6,11 +6,11 @@ import * as THREE from 'three';
 import { PERF } from '../core/config.js';
 import { S } from './shared.js';
 
-// ---------- DISTANCE CULLING CHUNKOV (budovy + vegetácia, 2 Hz) ----------
-// S.CHUNKS bol plnený v buildings.js aj nature.js, ale nikto ho nečítal —
-// komentáre sľubovali "distance culling (2 Hz)" a neexistoval. Chunk sa vypne,
-// keď je hráč ďalej než (polomer + dosah); vracia počet prepnutých chunkov
-// (0 = nič sa nemenilo), aby main vedel, či treba niečo hlásiť.
+// ---------- DISTANCE CULLING CHUNKOV (budovy + vegetácia + mobiliár, 2 Hz) ----------
+// S.CHUNKS bol plnený v buildings.js, nature.js aj props.js, ale nikto ho nečítal
+// — komentáre sľubovali "distance culling (2 Hz)" a neexistoval. Chunk sa
+// vypne, keď je hráč ďalej než (polomer + dosah); vracia počet prepnutých
+// chunkov (0 = nič sa nemenilo), aby main vedel, či treba niečo hlásiť.
 const CHUNK_REACH_M = S.LOW_END ? 350 : 700; // m nad polomer chunku: budovy aj stromy ostávajú vidieť (raspberry: polovica → menej viditeľných meshov aj draw callov)
 const CHUNK_CULL_INTERVAL = 1 / PERF.cullHz;
 const CULL_RECHECK_DISTANCE_M = 20;

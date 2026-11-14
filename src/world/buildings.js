@@ -192,6 +192,8 @@ export const ZROOF = [
   [0xa8b2bc]
 ];
 export function hx3(c){ return [((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255]; }
+// Farba kovových detailov budovy (zvody, zábradlá, antény).
+const MCOL = hx3(0x555b60);
 
 // ---------- NOVÉ DETAILY: rímsy, partáče, sedlové strechy, komíny, ventily ----------
 // Každá budova dostane k existujúcim hmotám čisto nové detaily:
@@ -323,6 +325,94 @@ function pushParapetRing(dst, pts, yb, hh, tin, cr, cg, cb){
     bldQuadV(dst, [Ri.rx[i], yb+hh, Ri.rz[i]], [Ri.rx[j], yb+hh, Ri.rz[j]],
              [Ro.rx[j], yb+hh, Ro.rz[j]], [Ro.rx[i], yb+hh, Ro.rz[i]],
       [0, 1, 0], cr, cg, cb, [ux0, dyt], [ux1, dyt], [ux1, dyt], [ux0, dyt]);
+  }
+}
+
+// SOKLÍK: pás po celom obvode pri päte (výška 0,45 m, previs 7 cm vonku).
+// Bez neho budova vyzerá ako kváder položený na zem; so soklíkom má viditeľný
+// základ a zadaný tieň pod okrajom omietky.
+function pushPlinthRing(dst, pts, yb, hh, off, cr, cg, cb){
+  const n = pts.length/2, R = ringOut(pts, off), K = UVK;
+  const dyb = yb*K, dyt = (yb+hh)*K;
+  let acc = 0;
+  for(let i=0;i<n;i++){
+    if(i > 0) acc += Math.hypot(pts[i*2]-pts[(i-1)*2], pts[i*2+1]-pts[(i-1)*2+1]);
+    const j = (i+1)%n;
+    const ex = pts[j*2]-pts[i*2], ez = pts[j*2+1]-pts[i*2+1];
+    const nl = Math.hypot(ex, ez) || 1;
+    const nxo = (R.sgn*ez)/nl, nzo = -(R.sgn*ex)/nl;
+    const ux0 = acc*K, ux1 = (acc + nl)*K;
+    // 1) vonkajšia stena soklíka
+    bldQuadV(dst, [R.rx[i], yb, R.rz[i]], [R.rx[j], yb, R.rz[j]],
+             [R.rx[j], yb+hh, R.rz[j]], [R.rx[i], yb+hh, R.rz[i]],
+      [nxo, 0, nzo], cr, cg, cb, [ux0, dyb], [ux1, dyb], [ux1, dyt], [ux0, dyt]);
+    // 2) horná doska (vrúbka medzi omietkou a soklíkom)
+    bldQuadV(dst, [R.rx[i], yb+hh, R.rz[i]], [R.rx[j], yb+hh, R.rz[j]],
+             [pts[j*2], yb+hh, pts[j*2+1]], [pts[i*2], yb+hh, pts[i*2+1]],
+      [0, 1, 0], cr*0.86, cg*0.86, cb*0.86, [ux0, dyt], [ux1, dyt], [ux1, dyt], [ux0, dyt]);
+  }
+}
+
+// ZVODY: zrážkové rúry v rohoch budovy (od rímsy až do základu). Kovový
+// odtieň, tenký box 13 cm — z ulice to vyzerá ako odtok z fasády.
+function pushDownpipes(dst, pts, yb, y1, r, cr, cg, cb){
+  const R = ringOut(pts, 0.11);
+  const i = 0;                                    // jeden zvod (najkratší roh)
+  const x = R.rx[i], z = R.rz[i];
+  bldBox(dst, x, yb, z, r, y1-yb, r, 0, cr, cg, cb);
+  bldBox(dst, x, yb, z, r*1.5, 0.28, r*1.5, 0, cr*0.8, cg*0.8, cb*0.8);
+}
+
+// ANTÉNY na plochých strechách: stožiar + priečka. Detail, ktorý dá streche
+// siluetu a hnedom sa zbadá z dialky.
+function pushRoofAerial(dst, cx, cz, topY, rv, rng){
+  const h = 1.5 + rng()*1.5;
+  bldBox(dst, cx, topY, cz, 0.07, h, 0.07, 0, rv[0]*0.55, rv[1]*0.55, rv[2]*0.55);
+  bldBox(dst, cx, topY + 0.45, cz, 1.05, 0.045, 0.045, 0,
+    rv[0]*0.55, rv[1]*0.55, rv[2]*0.55);
+  bldBox(dst, cx, topY + 0.95, cz, 0.75, 0.045, 0.045, 0,
+    rv[0]*0.55, rv[1]*0.55, rv[2]*0.55);
+}
+
+// BALKÓNY na panelákoch: doska + zábradlie na najdlhšej fasáde, každé
+// podlažie. Smer von určuje orientácia obrysu (signed area v rovine XZ).
+// Doska má farbu omietky, zábradlie kovový odtieň — obe idú do koša trimu
+// (farba je vo vertex colors), takže žiadny ďalší draw call.
+function pushBalconies(dstTrim, k, baseY, wv, floors, mc){
+  const np = (k.fp.length - 5)/2;
+  if(np < 3) return;
+  let bi = 0, bl = 0;
+  for(let p=0;p<np;p++){
+    const q = (p+1)%np;
+    const L = Math.hypot(k.fp[5+q*2]-k.fp[5+p*2], k.fp[5+q*2+1]-k.fp[5+p*2+1]);
+    if(L > bl){ bl = L; bi = p; }
+  }
+  if(bl < 7) return;
+  let area = 0;
+  for(let p=0;p<np;p++){
+    const q = (p+1)%np;
+    area += k.fp[5+p*2]*k.fp[5+q*2+1] - k.fp[5+q*2]*k.fp[5+p*2+1];
+  }
+  const sgn = area >= 0 ? 1 : -1;
+  const ax = k.fp[5+bi*2], az = k.fp[5+bi*2+1];
+  const bx = k.fp[5+((bi+1)%np)*2], bz = k.fp[5+((bi+1)%np)*2+1];
+  const ex = bx-ax, ez = bz-az, L = Math.hypot(ex, ez) || 1;
+  const ux = ex/L, uz = ez/L;
+  const nx = sgn*uz, nz = -sgn*ux;      // vonkajšia normála hrany
+  const rot = Math.atan2(-uz, ux);      // lokálne X hrany = dĺžka balkóna
+  const count = Math.max(1, Math.min(4, Math.floor(bl/5.5)));
+  for(let f=1; f<floors; f++){
+    const y = baseY + f*3.05;
+    for(let c=0;c<count;c++){
+      const t = (c + 0.5)/count;
+      const px = ax + ex*t, pz = az + ez*t;
+      // doska (3,4 m šírka, 1,25 m hĺbka, vyčnieva 0,62 m zo steny)
+      bldBox(dstTrim, px + nx*0.62, y, pz + nz*0.62, 3.40, 0.18, 1.25, rot,
+        wv[0]*0.94, wv[1]*0.94, wv[2]*0.94);
+      // zábradlie (tmavý kovový pás 1,05 m na vonkajšom okraji dosky)
+      bldBox(dstTrim, px + nx*1.16, y + 0.18, pz + nz*1.16, 3.30, 1.05, 0.06, rot,
+        mc[0], mc[1], mc[2]);
+    }
   }
 }
 
@@ -677,6 +767,23 @@ export function buildBuildings(){
         if(k.zone >= 1) pushParapetRing(ch.wTrim, pts, topY, 0.5, 0.06, wv[0], wv[1], wv[2]);
       }
       if(!gable) pushRoofVents(ch.wTrim, k.x, k.z, pts, topY, wPad, dPad, area2, rv, rng);
+      // ---------- DETAILY FASÁDY (soklík, zvody, balkóny, antény) ----------
+      // SOKLÍK: pás pri päte — budova nesedí ako holý kváder na zemi.
+      // Len domy, paneláky a historické budovy (priemysel a haly ho nemajú).
+      if(k.zone === 0 || k.zone === 1 || k.zone === 3){
+        pushPlinthRing(ch.wTrim, pts, k.baseY, 0.45, 0.07, wv[0]*0.86, wv[1]*0.86, wv[2]*0.86);
+      }
+      // ZVODY: rúra v rohu (kovový odtieň, ale v tom istom koši — žiadny
+      // ďalší draw call; z 13 m diaľky sa textúra trimu nerozliší).
+      if(k.h > 6) pushDownpipes(ch.wTrim, pts, k.baseY, topY - 0.30, 0.13, MCOL[0], MCOL[1], MCOL[2]);
+      // ANTÉNY: na plochých strechách (nie na sedlovených), len u časti budov.
+      if(!gable && area2 > 200 && rng() < 0.45) pushRoofAerial(ch.wTrim,
+        k.x + (rng()-0.5)*wPad*0.5, k.z + (rng()-0.5)*dPad*0.5, topY, rv, rng);
+      // BALKÓNY: paneláky (zóna 1) majú podlažie 3,05 m.
+      if(k.zone === 1 && k.h > 12){
+        const floors = Math.max(1, Math.min(4, Math.floor((k.h - 1.6)/3.05)));
+        pushBalconies(ch.wTrim, k, k.baseY, wv, floors, MCOL);
+      }
     }
   }
   // Kostol sv. Michala: veža (sokel + teleso + zvonica + helma + kríž), inak je to len garáž
