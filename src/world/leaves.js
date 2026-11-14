@@ -17,7 +17,7 @@ import { getTerrainHeight } from './height.js';
 const NEAR_R = 58;          // polomer hľadania stromov okolo kamery (m)
 const RESCAN = 0.45;        // ako často prehľadať stromy (s)
 const LIFE = 13;            // životnosť listu vo vzduchu (s)
-const GROUND_LIFE = 8;      // ako dlho leží na zemi (s)
+const GROUND_LIFE = 5;      // ako dlho leží na zemi (s) — kratšie = častejšie padanie
 const FADE = 1.0;           // zhasnutie pred recykláciou (s)
 const FALL = 0.74;          // rýchlosť pádu (m/s)
 const FLUTTER = 0.62;       // amplitúda kolísania listu vo vetre (m/s)
@@ -173,9 +173,15 @@ export function updateLeaves(dt, cx, cz){
       const s = sp[i] * dt;
       rx[i] += ax[i] * s; ry[i] += ay[i] * s; rz[i] += az[i] * s;
       const gy = getTerrainHeight(px[i], pz[i]);
-      if(py[i] <= gy + 0.05){ land(i); }
+      // List pristane, keď je blízko zeme ALEBO keď už letel príliš dlho
+      // (inak sa listy zaseknú nad strmým svahom a nikdy nepadnú — "padnú raz").
+      const flown = LIFE - lt[i];
+      if(py[i] <= gy + 0.05 || flown > 4.0){
+        land(i);
+        if(py[i] > gy + 0.05) py[i] = gy + 0.03;
+      }
       lt[i] -= dt;
-      if(lt[i] <= 0) lt[i] = 0.0001;
+      if(lt[i] <= 0) lt[i] = 0;   // 0 → ďalší snímok sa list znova rodí
     } else {
       // Na zemi: list sa pomaly posúva s vetrom a zhasne, potom sa recykluje.
       px[i] += wx * 0.08 * dt;
