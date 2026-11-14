@@ -778,28 +778,41 @@ export function buildRoadDetails(){
         if(L < 0.3) continue;
         const nx = -ez/L, nz = ex/L;
         const o1 = side*(R.hw+0.8), o2 = side*(R.hw+2.4);
-        const a1x = ax+nx*o1, a1z = az+nz*o1, a2x = ax+nx*o2, a2z = az+nz*o2;
-        const b1x = bx+nx*o1, b1z = bz+nz*o1, b2x = bx+nx*o2, b2z = bz+nz*o2;
-        const mx = (a1x+b2x)/2, mz = (a1z+b2z)/2;
+        const mx = (ax + bx)/2 + nx*(o1+o2)/2, mz = (az + bz)/2 + nz*(o1+o2)/2;
         // križovatka: stred offsetového segmentu blízko inej cesty = preskočiť
         if(dGridNear(mx, mz, 0.5, li)) continue;
         if(detailRoundSkip(mx, mz)) continue;
-        const c0x = a1x, c0z = a1z, c1x = b1x, c1z = b1z;
-        const c2x = a2x, c2z = a2z, c3x = b2x, c3z = b2z;
-        const y0 = getTerrainHeight(c0x, c0z)+0.16, y1 = getTerrainHeight(c1x, c1z)+0.16;
-        const y2 = getTerrainHeight(c2x, c2z)+0.16, y3 = getTerrainHeight(c3x, c3z)+0.16;
+        // SUBDIVÍZIA: jeden segment sa rozdelí na menšie kúsky (max ~4 m),
+        // aby chodník nasledoval terén a neplával. Každý kúsok sa samostatne
+        // pritiahne k terénu (getTerrainHeight na všetkých 4 rohoch).
+        const steps = Math.max(1, Math.ceil(L/4));
         const v0 = R.cum[i-1], v1 = R.cum[i];
-        // UV v metroch: u 0 (vnútro) .. 1.6 (vonko), v = celková dĺžka po ceste
-        swPos.push(c0x, y0, c0z, c1x, y1, c1z, c2x, y2, c2z, c3x, y3, c3z);
-        swUV.push(0, v0, 0, v1, 1.6, v0, 1.6, v1);
-        // poradie indexov: side +1 → [0,2,1, 1,2,3]; side −1 → zrkadlo [0,1,2, 1,3,2]
-        const b4 = swQ*4;
-        if(side > 0){
-          swIdx.push(b4, b4+2, b4+1, b4+1, b4+2, b4+3);
-        } else {
-          swIdx.push(b4, b4+1, b4+2, b4+1, b4+3, b4+2);
+        for(let st=0; st<steps; st++){
+          const t0 = st/steps, t1 = (st+1)/steps;
+          const a0x = ax + ex*t0, a0z = az + ez*t0;
+          const a1x = ax + ex*t1, a1z = az + ez*t1;
+          const i0x = a0x + nx*o1, i0z = a0z + nz*o1;
+          const i1x = a1x + nx*o1, i1z = a1z + nz*o1;
+          const o0x = a0x + nx*o2, o0z = a0z + nz*o2;
+          const o1x = a1x + nx*o2, o1z = a1z + nz*o2;
+          const yI0 = getTerrainHeight(i0x, i0z) + 0.16;
+          const yI1 = getTerrainHeight(i1x, i1z) + 0.16;
+          const yO0 = getTerrainHeight(o0x, o0z) + 0.16;
+          const yO1 = getTerrainHeight(o1x, o1z) + 0.16;
+          // UV v metroch: u 0 (vnútro) .. 1.6 (vonko), v = celková dĺžka po ceste
+          const vv0 = v0 + (v1-v0)*t0;
+          const vv1 = v0 + (v1-v0)*t1;
+          swPos.push(i0x, yI0, i0z, i1x, yI1, i1z, o0x, yO0, o0z, o1x, yO1, o1z);
+          swUV.push(0, vv0, 0, vv1, 1.6, vv0, 1.6, vv1);
+          // poradie indexov: side +1 → [0,2,1, 1,2,3]; side −1 → zrkadlo [0,1,2, 1,3,2]
+          const b4 = swQ*4;
+          if(side > 0){
+            swIdx.push(b4, b4+2, b4+1, b4+1, b4+2, b4+3);
+          } else {
+            swIdx.push(b4, b4+1, b4+2, b4+1, b4+3, b4+2);
+          }
+          swQ++;
         }
-        swQ++;
       }
     }
   }
