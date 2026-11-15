@@ -25,6 +25,8 @@ import { applySurfaces, updateSurfaceWet } from './world/surface.js';
 import { buildProps } from './world/props.js';
 import { initLeaves, updateLeaves } from './world/leaves.js';
 import { buildSkyDome, cullChunks } from './world/sky.js';
+import { initDayNight, updateDayNight } from './world/daynight.js';
+import { buildBridgeLights, updateBridgeLights } from './world/bridgelights.js';
 import { cullLabels } from './world/labels.js';
 import {
   buildPlayerMesh, syncMesh, disposeCarMesh,
@@ -77,7 +79,7 @@ async function boot(mapId) {
   await nextFrame();
 
   const engine = createEngine(document.getElementById('game'));
-  const { renderer, scene, camera, sun } = engine;
+  const { renderer, scene, camera, sun, fill } = engine;
   S.scene = scene;
   // Vernosť legacy vzhľadu: ACES + sRGB + tiene + hmla
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -226,6 +228,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   await step(0.87, 'odrazy povrchov…'); applySurfaces(); beat('odrazy povrchov');
   // MOBILIÁR: lavičky, lampy, koše, stĺpy, zastávky, ploty… (viac poly).
   await step(0.88, 'mobiliár…'); buildProps(); beat('mobiliár');
+  // DÚHOVÉ SVETLÁ MOSTA (Caramelldansen): potrebuje S.bridgeS0/S1 (buildRoute),
+  // výšky decku (buildGround + buildElevModel) aj S._v1/_hWrap scratch.
+  await step(0.89, 'svetlá mosta…'); buildBridgeLights(scene); beat('svetlá mosta');
   // PADAJÚCE LISTY: pool inštancií, ktoré sa rodia v korunách blízkych stromov.
   initLeaves(scene);
   await step(0.90, 'efekty + misie…');
@@ -237,6 +242,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   loadDriftBest();
   enableTiles();
   await step(0.90, 'obloha…');        const skyDome = buildSkyDome(scene, renderer);
+  // DEŇ/NOC: cyklus (celý deň = 10 min) — jediný vlastník svetiel/oblohy.
+  // cheatmi DENNY/NOCNY/STOPCAS sa dá fázu nastaviť alebo zamrznúť.
+  initDayNight({ scene, sun, fill });
   engine.onResizeExtra(() => waterResize());
 
   // 3) AUTÁ
@@ -593,6 +601,11 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     // búrka: dážď okolo auta + blesky + hromy + prítmie (za pauzou sa nevolá —
     // tick sa vrátil skôr, takže dážď pri pauze stojí rovnako ako zvyšok sveta)
     storm.update(dt, walking ? onfoot.foot : car);
+    // deň/noc: beh cyklu (10 min) + aplikácia svetiel/oblohy. Musí ísť PO
+    // storm.update — zlepuje aj prítmie búrky, ktoré storm nastavil setSkyGloom.
+    updateDayNight(dt);
+    // dúhové svetlá mosta + Caramelldansen do rytmu pesničky (hráč pri moste)
+    updateBridgeLights(dt, t, focusX, focusZ, playerS, playerLat, state.muted, toastFn);
 
     // dynamické tiene: frustum cestuje s hráčom (RT toggle v nastaveniach)
     if (settings.rt) {
@@ -681,7 +694,11 @@ const MAPS = {
 function pickMap() {
   const params = new URLSearchParams(location.search);
   const fromUrl = params.get('map');
-  if (fromUrl && MAPS[fromUrl]) return Promise.resolve(fromUrl);
+  if (fromUrl && MAPS[fromUrl]) {
+    // Menu sa defaultne zobrazuje — priamy odkaz ho musí sám skryť.
+    document.getElementById('map-select')?.classList.add('hidden');
+    return Promise.resolve(fromUrl);
+  }
   return new Promise((resolve) => {
     const sel = document.getElementById('map-select');
     if (!sel) { resolve('hlohovec'); return; }

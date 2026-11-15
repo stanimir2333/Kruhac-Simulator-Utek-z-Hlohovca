@@ -7,6 +7,7 @@ import { routePose } from '../world/roads.js';
 import { nearestRoute } from '../ai/traffic.js';
 import { warpLandmark, warpCar, clearOfBuildings, toggleTurbo, LM_CASTLE, LM_URBAN, LM_STATION, WARP } from './missions.js';
 import { driveY } from '../world/height.js';
+import { setDayPhase, isDay, toggleTimeFreeze } from '../world/daynight.js';
 
 const CHEAT_DEFS = [
   { code: 'NOCLIP', name: 'GHOST CAM' },
@@ -19,6 +20,12 @@ const CHEAT_DEFS = [
   { code: 'HESOYAM', name: 'REPAIR + RIGHT' },
   { code: 'TURBO', name: 'TURBO BOOST' },
   { code: 'BURKA', name: 'BÚRKA' },
+  // Deň/noc (src/world/daynight.js): skok priamo do poludnia/polnoci.
+  // Kódy KONČIA písmenom bez single-key skratky (H/M/X/Q/E/R/T/G/B/C/F/V),
+  // inak by posledný stisk spustil aj skratku (pozri handler v main.js).
+  { code: 'DENNY', name: 'DEŇ' },
+  { code: 'NOCNY', name: 'NOC' },
+  { code: 'STOPCAS', name: 'ZASTAV ČAS' },
 ];
 let CHEAT_MAX = 6;
 for (const d of CHEAT_DEFS) {
@@ -145,6 +152,14 @@ export function runCheat(i, api) {
     case 6: case 7: fixCar(car, toast); break;
     case 8: toggleTurbo(toast); break;
     case 9: api?.toggleStorm?.(); break;
+    case 10: setDayPhase(0); toast?.('Deň: poludnie — slnko svieti'); break;
+    case 11: setDayPhase(0.5); toast?.('Noc: polnoc — most sa rozsvieti dúhovými svetlami'); break;
+    case 12: {
+      const fz = toggleTimeFreeze();
+      toast?.(fz ? 'Čas ZASTAVENÝ — deň/noc mení len cheat (teraz ' + (isDay() ? 'deň' : 'noc') + ')'
+                 : 'Čas beží ďalej');
+      break;
+    }
   }
   cheatToast(d.name);
   // warp zmení pozíciu mimo slučku — daj vedieť main loopu

@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { S } from '../world/shared.js';
 import { setSkyVariant } from '../world/sky.js';
 import { setSurfaceWetTarget } from '../world/surface.js';
+import { setSkyGloom } from '../world/daynight.js';
 
 // ---------- KONFIG ----------
 const RAIN_W = 70;          // šírka dažďovej škatule (m)
@@ -48,10 +49,10 @@ const THUNDER_CANDS = [
 
 export function createStormManager() {
   // ---------- STAV (všetko v closure, žiadne globály) ----------
-  let scene = null, camera = null, sun = null;
-  let hemi = null, amb = null;
-  let hemiBase = 0.7, sunBase = 2.4;
-  let bgBase = null, fogBase = null, fogDensityBase = 0.0008;
+  // Svietidlá a oblohu vlastní src/world/daynight.js (jediný vlastník) —
+  // búrka jej len posiela prítmie (gloom) a záblesk (flash) cez setSkyGloom.
+  // Tým búrka nesvieti dennou intenzitou, keď ju hráč preklopí cheatmi do noci.
+  let scene = null, camera = null;
   let active = false, ready = false, muted = false;
   let flash = 0, restrikeT = -1;   // obálka záblesku + dvojitý blik
   let strikeT = 3;                 // odpočet do ďalšieho úderu
@@ -92,25 +93,6 @@ export function createStormManager() {
     pendingTimers.length = 0;
   }
   function rnd(a, b) { return a + Math.random() * (b - a); }
-
-  // ---------- SVETLÁ + OBLOHA ----------
-  function grabLights() {
-    hemi = null;
-    scene.traverse((o) => { if (!hemi && o && o.isHemisphereLight) hemi = o; });
-    if (hemi) hemiBase = hemi.intensity;
-    if (sun) sunBase = sun.intensity;
-    if (!amb) {
-      amb = new THREE.AmbientLight(0xcdd8ff, 0);
-      scene.add(amb);
-    }
-    if (!bgBase && scene.background && scene.background.isColor) bgBase = scene.background.clone();
-    if (scene.fog && scene.fog.isFogExp2) {
-      if (!fogBase) fogBase = scene.fog.color.clone();
-      fogDensityBase = scene.fog.density;
-    } else if (scene.fog && scene.fog.isFog) {
-      if (!fogBase) fogBase = scene.fog.color.clone();
-    }
-  }
 
   // ---------- DÁŽĎ ----------
   function buildRain() {
@@ -373,9 +355,9 @@ export function createStormManager() {
   function init(opts) {
     scene = opts?.scene || null;
     camera = opts?.camera || null;
-    sun = opts?.sun || null;
+    // sun tu nie je (svetlá vlastní daynight.js) — opts.sun sa akceptuje pre
+    // kompatibilitu volania, ale nepoužíva sa.
     if (!scene) return false;
-    grabLights();
     if (!rainPts) buildRain();
     if (!flashEl) {
       flashEl = document.createElement('div');
@@ -419,23 +401,12 @@ export function createStormManager() {
     carRef = car || carRef;
     // Prítmie oblohy: plynulý nábeh pri štarte, ústup po stop().
     gloom += Math.sign((active ? 1 : 0) - gloom) * Math.min(Math.abs((active ? 1 : 0) - gloom), dt * 0.5);
-    if (scene.background && scene.background.isColor && bgBase) {
-      scene.background.copy(bgBase).multiplyScalar(1 - 0.55 * gloom);
-    }
-    if (scene.fog && fogBase) {
-      scene.fog.color.copy(fogBase).multiplyScalar(1 - 0.35 * gloom);
-      if (scene.fog.isFogExp2) scene.fog.density = fogDensityBase * (1 + 0.6 * gloom);
-    }
-    // Slnko len stlmíme (intenzita = uniforma, žiadny prepočet tieňov).
-    // Pozícia ani tieňová mapa sa NIKDY nehýbu — to je celé kúzlo výkonu.
-    if (sun) sun.intensity = sunBase * (1 - 0.45 * gloom);
-    updateRain(dt);
-    updateBolts(dt);
     if (!active) {
-      // Dobeh: záblesk dohasne aj po stop(), svetlá sa vrátia.
+      // Dobeh: záblesk dohasne aj po stop(), svetlá sa vrátia (daynight.js).
       flash = Math.max(0, flash - FLASH_DECAY * dt);
-      if (hemi) hemi.intensity = hemiBase + flash * 3;
-      if (amb) amb.intensity = flash * 2.5;
+      setSkyGloom(gloom, flash);
+      updateRain(dt);
+      updateBolts(dt);
       if (flashEl) flashEl.style.opacity = String(flash * 0.55);
       return;
     }
@@ -447,10 +418,13 @@ export function createStormManager() {
       restrikeT -= dt;
       if (restrikeT < 0) flash = Math.max(flash, 0.65);
     }
-    // Obálka záblesku: svetlá + DOM prekryv.
+    // Obálka záblesku: svetlá (cez setSkyGloom) + DOM prekryv.
     flash = Math.max(0, flash - FLASH_DECAY * dt);
-    if (hemi) hemi.intensity = hemiBase + flash * 3;
-    if (amb) amb.intensity = flash * 2.5;
+    // Svetlá, pozadie, hmla aj nočný tón oblohy zlepuje daynight.js — búrka jej
+    // len vypočíta svoje prítmie a obálku záblesku.
+    setSkyGloom(gloom, flash);
+    updateRain(dt);
+    updateBolts(dt);
     if (flashEl) flashEl.style.opacity = String(flash * 0.55);
   }
 
@@ -476,15 +450,8 @@ export function createStormManager() {
       b.mesh.material.dispose();
     }
     bolts.length = 0;
-    if (amb) { scene?.remove(amb); amb = null; }
     if (flashEl) { flashEl.remove(); flashEl = null; }
-    if (hemi) hemi.intensity = hemiBase;
-    if (sun) sun.intensity = sunBase;
-    if (scene?.background?.isColor && bgBase) scene.background.copy(bgBase);
-    if (scene?.fog && fogBase) {
-      scene.fog.color.copy(fogBase);
-      if (scene.fog.isFogExp2) scene.fog.density = fogDensityBase;
-    }
+    // Svetlá/pozadie/hmla nechajú daynight.js — ten ich riadi aj po zrušení búrky.
     try { actx?.close?.(); } catch { /* noop */ }
     actx = null; stormMaster = null; rainGain = null; echoBus = null; noiseBuf = null;
     sampleBufs = []; samplesLoading = false;

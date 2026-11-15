@@ -87,7 +87,7 @@ export function createEngine(container) {
   };
 
   return {
-    renderer, scene, camera, sun,
+    renderer, scene, camera, sun, fill,
     stats,
     onTick(fn) { listeners.tick.push(fn); },
     setRenderOverride(fn) { renderOverride = fn; },

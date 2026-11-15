@@ -50,6 +50,41 @@ let currentVariant = 'normal';
 const skyTextures = { normal: null, thunder: null };
 let envRendererRef = null, envSceneRef = null, envRTRef = null;
 
+// ---------- DENNÝ TÓN KUPOLY (cyklus dňa/noci, src/world/daynight.js) ----------
+// Kupola (textúra aj gradientový fallback) sa v noci stmaví multiplikatívnym
+// tónom — jedna farba na materiál, žiadna nová textúra ani bake na snímok.
+// PMREM IBL sa napekie nanovo len pri skoku tónu (denne ~7x), nie každý snímok.
+const TINT_DAY = new THREE.Color(0xffffff);
+const TINT_NIGHT = new THREE.Color(0x39466f);
+// Bázy gradientového fallbacku (multiplikácia by inak bola kumulatívna).
+const baseGrad = { top: null, hor: null, sun: null };
+let daynessVal = 1, bakedDayness = 1;
+const _tint = new THREE.Color(), _gc = new THREE.Color();
+
+function applySkyTint() {
+  if (!domeRef) return;
+  _tint.copy(TINT_NIGHT).lerp(TINT_DAY, daynessVal);
+  const m = domeRef.material;
+  if (m && m.isMeshBasicMaterial) {
+    m.color.copy(_tint);
+  } else if (m && m.uniforms && m.uniforms.cTop && baseGrad.top) {
+    m.uniforms.cTop.value.copy(baseGrad.top).multiply(_tint);
+    m.uniforms.cHor.value.copy(baseGrad.hor).multiply(_tint);
+    m.uniforms.cSun.value.copy(baseGrad.sun).multiply(_tint);
+  }
+}
+
+export function setSkyDayness(v) {
+  daynessVal = Math.max(0, Math.min(1, Number(v) || 0));
+  applySkyTint();
+  // PMREM: IBL zo stmavenej kupoly, aby nočné PBR odrazy neostali denné.
+  // Bake je drahý (celá scéna do RT), preto len pri dostatočnom skoku tónu.
+  if (Math.abs(daynessVal - bakedDayness) > 0.16) {
+    bakedDayness = daynessVal;
+    bakeEnv();
+  }
+}
+
 function candidateUrls(file) {
   return SKY_BASES.map((b) => b + file);
 }
@@ -91,6 +126,8 @@ function applyVariant(v) {
     bakeEnv();
   }
   // ak textúra ešte nie je načítaná, ostáva aktuálny materiál (gradient fallback)
+  // — v oboch prípadoch musí nový materiál niesť aktuálny nočný tón.
+  applySkyTint();
 }
 
 // Znovu napečie IBL z aktuálneho materiála kupoly. far = 5000 je nutné:
@@ -135,6 +172,9 @@ export function buildSkyDome(scene, renderer) {
   const top = new THREE.Color(S.SKY_ZENITH);
   const hor = new THREE.Color(S.SKY_HORIZON);
   const sunC = new THREE.Color(S.SKY_SUN);
+  // Bázy gradientu pre nočný tón (setSkyDayness multiplikuje KÓPIE — inak by
+  // sa opakovaným stmavovaním gradient zblčol do čierneho).
+  baseGrad.top = top.clone(); baseGrad.hor = hor.clone(); baseGrad.sun = sunC.clone();
   const sunDir = new THREE.Vector3(S.SUN_OFF.x, S.SUN_OFF.y, S.SUN_OFF.z).normalize();
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
