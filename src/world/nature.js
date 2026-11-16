@@ -137,7 +137,7 @@ function lumpyCrown(src, amt){
 export function ensureVegShapes(){
   if(S.GEO.trunkV) return;   // idempotentné: geometrie sa vytvoria len raz
   const crownDetail = S.LOW_END ? 1 : 2;
-  S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 9);
+  S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 12);
   S.GEO.trunkV.translate(0, 1.3, 0);
   S.GEO.crownV = lumpyCrown(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
   S.GEO.crownV.translate(0, 3.7, 0);

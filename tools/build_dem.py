@@ -10,7 +10,7 @@ kopeč v teréne bol fiktívny a hra sa hrala na vymyslenom svahu.
 
 Riešenie: stiahnuť dlaždice SRTM (Mapzen terrarium), zošiť ich do jednej
 matice a prehustiť na ROZSAHN terénu. Výstup je 16-bitová sivá PNG
-(`assets/terrain/hlohovec_dem.png`) s rozlišením presne TER_SEG+1 = 257
+(`assets/terrain/hlohovec_dem.png`) s rozlišením presne TER_SEG+1 = 513
 v smere X aj Z — teda JEDEN bod DEM == JEDEN vrchol terénovej mriežky.
 Žiadna interpolácia, žiadny posun: fyzika aj raster čítajú tie isté hodnoty.
 
@@ -97,7 +97,7 @@ def tile_window(lon_a, lat_a, lon_b, lat_b, zoom, pad=1):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zoom", type=int, default=14)
-    ap.add_argument("--px", type=int, default=257, help="velikost DEM (257 == TER_SEG+1)")
+    ap.add_argument("--px", type=int, default=513, help="veľkosť DEM (513 == TER_SEG+1 pri 512 segmentoch)")
     ap.add_argument("--bbox", type=float, nargs=4, metavar=("X0", "Z0", "X1", "Z1"),
                     default=DEFAULT_BBOX)
     ap.add_argument("--cache", default="/tmp/opencode/demtiles")

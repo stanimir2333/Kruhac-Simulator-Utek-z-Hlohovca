@@ -9,8 +9,8 @@ export const S = {
   scene: null, // THREE.Scene (nastavuje main.js pred build*)
   ROAD_HW: 3.5, // <- legacy @2933
   groundHoleOK: true, // <- legacy @2938
-  TER_SEG: 256, // <- legacy @2963
-  TER_CELL: 20, // <- legacy @2966
+  TER_SEG: 512, // <- legacy @2963; 512: mriežka 513×513 (bunka ~10 m) — 4× viac poly terénu, DEM sedí 1:1 (build_dem.py --px 513)
+  TER_CELL: 20, // <- legacy @2966 (dopočítava computeBounds())
   TER_FBM_F: 1/498, // <- legacy @2966
   TER_DET_F: 1/166, // <- legacy @2966
   DECK_Y: 0.16, // <- legacy @2968

@@ -2,7 +2,7 @@
 // Nové detaily mesta (chodníky, stredové čiary) sú na konci: buildRoadDetails().
 import * as THREE from 'three';
 import { S } from './shared.js';
-import { getTerrainHeight, riverBedY, meshSample, wheelGroundY } from './height.js';
+import { getTerrainHeight, riverBedY, meshSample, wheelGroundY, sxNoise } from './height.js';
 import { groundRayY, staticDone, gridAdd, gridQuery, GQ_MAX } from './ground.js';
 import { makeLabel } from './textures.js';
 import { regLabel } from './labels.js';
@@ -424,10 +424,27 @@ export function buildRoundabouts(){
     m.position.set(all[i][0], rgy+0.16, all[i][1]);
     S.scene.add(m);
     staticDone(m, false, true);
-    const isl = new THREE.Mesh(S.GEO.cyl, S.MAT.island);
-    isl.scale.set((all[i][2]-3)*2, 0.5, (all[i][2]-3)*2);
+    // ostrovček: vlastná kruhová platňa namiesto zdieľaného valca — tak dostane
+    // plánarne UV v metroch/16 a vertex-tint (rovnaká tráva ako parky) namiesto
+    // roztiahnutej dlažby z texelov valca.
+    const ir = all[i][2]-2.9;
+    const islGeo = new THREE.CircleGeometry(ir, 40);
+    islGeo.rotateX(-Math.PI/2);
+    const iu = islGeo.attributes.uv, ip = islGeo.attributes.position;
+    const ivc = new Float32Array(ip.count*3);
+    for(let v=0;v<ip.count;v++){
+      const wx = all[i][0]+ip.getX(v), wz = all[i][1]+ip.getZ(v);
+      iu.setXY(v, wx/16, wz/16);
+      const nv = 0.92+(sxNoise(wx*0.013+9.1, wz*0.013-4.4)*0.5+0.5)*0.16;
+      ivc[v*3] = 0.967*nv; ivc[v*3+1] = 1.473*nv; ivc[v*3+2] = 0.920*nv;
+    }
+    iu.needsUpdate = true;
+    islGeo.setAttribute("color", new THREE.BufferAttribute(ivc, 3));
+    islGeo.computeVertexNormals();
+    S.DYN_GEO.push(islGeo);
     // Raycaster zhora nadol: ostrovček presne na terén
-    isl.position.set(all[i][0], groundRayY(all[i][0], all[i][1], rgy)+0.25, all[i][1]);
+    const isl = new THREE.Mesh(islGeo, S.MAT.island);
+    isl.position.set(all[i][0], groundRayY(all[i][0], all[i][1], rgy)+0.30, all[i][1]);
     S.scene.add(isl);
     staticDone(isl, true, true);
   }
@@ -527,7 +544,12 @@ export function buildGreens(){
       tris = f;
     }
     // 2) delenie na trojuholníky s hranou <= CELL, každý vrchol zavesený na terén
+    // Trávniková paleta = GCPAL.grass (ground.js: tcol(0x4a7c36) = 0.967/1.473/0.920),
+    // rovnaký svetelný tint ako terén; UV v metroch/16 sedí na parkGrass klon
+    // (repeat 1,1 = jedna dlažba na 16 m, zátka rovnaká ako na ostrovčekoch).
     const pos = [], idx = [], vmap = new Map();
+    const uv = [], vc = [];
+    const GRASS_TONE = [0.967, 1.473, 0.920];
     const vtx = (x, z) => {
       const kk = ((x*8)|0)+'|'+((z*8)|0);   // 12.5 cm raster: spoločné vrcholy sa spoja
       let id = vmap.get(kk);
@@ -535,6 +557,9 @@ export function buildGreens(){
         id = pos.length/3;
         vmap.set(kk, id);
         pos.push(x, getTerrainHeight(x, z)+LIFT, z);
+        uv.push(x/16, z/16);
+        const nv = 0.92+(sxNoise(x*0.013+9.1, z*0.013-4.4)*0.5+0.5)*0.16;
+        vc.push(GRASS_TONE[0]*nv, GRASS_TONE[1]*nv, GRASS_TONE[2]*nv);
       }
       return id;
     };
@@ -569,6 +594,8 @@ export function buildGreens(){
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(vc, 3));
       geo.setIndex(idx);
       geo.computeVertexNormals();
       const mesh = new THREE.Mesh(geo, S.MAT.park);

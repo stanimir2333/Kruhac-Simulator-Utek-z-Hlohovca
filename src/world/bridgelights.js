@@ -64,7 +64,7 @@ export function buildBridgeLights(scene) {
   }
   routePose((S.bridgeS0 + S.bridgeS1) / 2, S._v1, S._hWrap, 0);
   midX = S._v1.x;
-  midZ = S._v1.z;  const geo = new THREE.SphereGeometry(BULB_R, 10, 8);
+  midZ = S._v1.z;  const geo = new THREE.SphereGeometry(BULB_R, 14, 10);
   const mat = new THREE.MeshBasicMaterial({
     color: 0xffffff, toneMapped: false, fog: false,
   });

@@ -385,19 +385,51 @@ export function fBrick(){
   return f;
 }
 
-// ŠTRK / BALLAST (železničné lôžko, ploché strechy).
+// ŠTRK / BALLAST (železničné lôžko, ploché strechy). Jeden prechod = výška
+// (normálová mapa), svetlosť (difúzia) a drsnosť — vzor fAsphalt: kamene sú
+// menej drsné (vyhĺtené) a zmes medzi nimi matná s prachom.
 
 export function fBallast(){
-  const SZ = 256, f = newField(SZ);
+  const SZ = 256, f = newField(SZ), rg = new Float32Array(SZ*SZ);
   for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
     const u = x/SZ, v = y/SZ, i = y*SZ + x;
     const st = sstep(0.52, 0.74, tfbm(u, v, 72, 2, 503));       // jednotlivé kamene
     const base = tfbm(u, v, 16, 2, 509);
+    const grit = tfbm(u, v, 144, 2, 521);                      // prach medzi kameňmi
     f.hf[i] = base*0.25 + st*0.75;
-    const l = 96 + base*26 + st*56;
+    const l = 96 + base*26 + st*56 + (grit - 0.5)*10;
     putField(f, i, l*1.0, l*0.99, l*0.96);
+    rg[i] = 0.97 - st*0.22 + (grit - 0.5)*0.06;                // kameň 0.75 / zmes 0.97
   }
-  return f;
+  return { S:SZ, dif:commitField(f), hf:f.hf, rg:rg };
+}
+
+// VLNITÝ PLECH (Kat. C — priemysel/obchody). Doteraz boli len farebné pruhy
+// bez normálovej mapy → povrch vyzeral ako natretý plast. Teraz plnohodnotné
+// PBR z jedného prechodu (vzor fAsphalt): sínusové rebríky po X (perioda
+// SZ/8 px = 1,0 m pri dlažbe 8 m — UV plechu je v metriach×0.125, repeat 1),
+// špinenie, prach a hrdza stékajúca VODOM (streaks sú zúžené v u).
+export function fSheet(SZ){
+  const f = newField(SZ), rg = new Float32Array(SZ*SZ);
+  const RIB = SZ/8;                                  // px na jednu vlnu (1 m)
+  for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
+    const u = x/SZ, v = y/SZ, i = y*SZ + x;
+    const rib  = Math.sin((x/RIB)*6.2832);           // -1 priehlbina .. +1 hrebeň
+    const grime= sstep(0.55, 0.90, tfbm(u, v, 24, 3, 751));      // špinenie
+    const rust = sstep(0.66, 0.88, tfbm(u*5, v, 48, 2, 761));    // hrdzavé stoky
+    const grit = tfbm(u, v, 192, 2, 771);
+    f.hf[i] = rib*0.5 + grit*0.06;
+    let l = 196 + rib*30 - grime*46 - rust*52 + (grit - 0.5)*10;
+    let r = l*0.97, g = l*1.00, b = l*1.04;          // zinočnatý plech je studený
+    if(rust > 0.15){                                  // hrdza: teplá hnedočervená
+      const t = rust*0.85;
+      r = r*(1-t) + 128*t; g = g*(1-t) + 62*t; b = b*(1-t) + 38*t;
+    }
+    const j = (thash(x, y, SZ, 73) - 0.5)*6;
+    putField(f, i, r + j, g + j, b + j);
+    rg[i] = 0.44 + (1 - rib)*0.14 + grime*0.16 + rust*0.30;      // hrebeň lesklý
+  }
+  return { S:SZ, dif:commitField(f), hf:f.hf, rg:rg };
 }
 
 // TERRAKOTOVÁ ŠKRIDLA: rady valcových doštičiek s posunom o pol doštičky,
@@ -754,13 +786,22 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   const GRASS_TILE = 16;
   const GRASS_REP = [Math.max(8, Math.round(TW/GRASS_TILE)), Math.max(8, Math.round(TD/GRASS_TILE))];
   const G = fGrass(HQ);
-  S.TEX.grass   = texSlotCanvas("grass",   "terrain/grass_diffuse.jpg", commitField(G), true, GRASS_REP);
-  S.TEX.terrainN = texSlotCanvas("terrainN", "terrain/terrain_normal.png",
-                               normalCanvas(256, fTerrainN(), 6.0), false, GRASS_REP);
+  const grassCanvas = commitField(G);
+  const terrNCanvas = normalCanvas(256, fTerrainN(), 6.0);
+  S.TEX.grass   = texSlotCanvas("grass",   "terrain/grass_diffuse.jpg", grassCanvas, true, GRASS_REP);
+  S.TEX.terrainN = texSlotCanvas("terrainN", "terrain/terrain_normal.png", terrNCanvas, false, GRASS_REP);
+  // PARKY + OSTROVČEKY KRUHÁČOV: tá istá tráva a zvlnenie, ale v UV SVETA
+  // (m/16, repeat 1). Terén má repeat odvodený z rozlohy mapy a UV 0..1,
+  // parkové meshy nesú UV priamo v metroch/16 — preto klony bez GRASS_REP.
+  S.TEX.parkGrass  = texFromCanvas(grassCanvas, true,  [1, 1]);
+  S.TEX.parkGrassN = texFromCanvas(terrNCanvas, false, [1, 1]);
   // TEX.dirt je DVE mapy naraz: 2. vrstva terénu (scale berie z tDirtX v shadere
   // MAT.ground) a povrch nespevnených ciest (tu berie vlastný repeat 1/6 m).
   const D = fDirt(HQ);
   S.TEX.dirt    = texSlotCanvas("dirt",    "terrain/dirt_diffuse.png", commitField(D), true, [1/6, 1/6]);
+  // Normálová mapa hliny (kamienky/zrno sú v hf fDirt, ktorú doteraz nikto
+  // nečítal): polné cesty a brehy prestanú byť hladkým plastom.
+  S.TEX.dirtN   = texSlotCanvas("dirtN",   null, normalCanvas(D.size, D.hf, 2.0), false, [1/6, 1/6]);
   mark("trávnik+hlina");
 
   // ---------- BUILDINGS: betón + tehla ----------
@@ -828,18 +869,26 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   // LIST: alfa kartička padajúcich listov (src/world/leaves.js). Slot, aby sa
   // dala neskôr nahradiť vlastnou fotkou bez zásahu do kódu.
   S.TEX.leafCard = texSlot("leafCard", null, 64, true, null, function(g,s){ paintLeafCard(g, s); });
-  // Vlnitý plech pre priemysel/obchody (Kat. C).
-  S.TEX.sheet = texSlot("sheet", null, 256, true, null, function(g,s){
-    g.fillStyle = "#c3c9d1"; g.fillRect(0,0,s,s);
-    for(let x=0;x<s;x+=16){
-      g.fillStyle = "rgba(255,255,255,0.30)"; g.fillRect(x, 0, 2, s);
-      g.fillStyle = "rgba(40,46,54,0.30)"; g.fillRect(x+8, 0, 3, s);
-    }
-    speckle(g,s,300,0.08);
-  });
-  // Štrková/asfaltová plochá strecha (Kat. B/C) - tá istá textúra železničného lôžka.
+  // Vlnitý plech pre priemysel/obchody (Kat. C): plnohodnotné PBR (difúzia +
+  // normálová + drsnosť). Dlažba 8 m (UV metriach×0.125, repeat 1) nesie 8 vĺn
+  // = perioda 1 m. Čisto procedurálny slot — žiadny súbor na disku.
+  const SHEET = fSheet(HQ);
+  S.TEX.sheet  = texSlotCanvas("sheet",  null, SHEET.dif, true,  [1, 1]);
+  S.TEX.sheetN = texSlotCanvas("sheetN", null, normalCanvas(SHEET.S, SHEET.hf, 2.6), false, [1, 1]);
+  S.TEX.sheetR = texSlotCanvas("sheetR", null, grayCanvas(SHEET.S, SHEET.rg), false, [1, 1]);
+  // Štrková/asfaltová plochá strecha (Kat. B/C) a koľajnové lôžko — tá istá
+  // textúra v DVOCH meradlách: ploché strechy majú UV ×0.125 (1 UV = 8 m,
+  // repeat 1 → dlažba 8 m), lôžko má UV v metroch (repeat 1/2,4 → dlažba 2,4 m).
+  // Klony zdieľajú obrazok; mení sa len tiling, takže jedno meradlo nepadne na
+  // druhé. PBR je teraz plné: difúzia + normálová + drsnosť z fBallast().
   const BA = fBallast();
-  S.TEX.gravel = texSlotCanvas("gravel", "buildings/gravel.png", commitField(BA), true, null);
+  S.TEX.gravel  = texSlotCanvas("gravel",  "buildings/gravel.png", BA.dif, true,  [1, 1]);
+  S.TEX.gravelN = texSlotCanvas("gravelN", null, normalCanvas(BA.S, BA.hf, 2.4), false, [1, 1]);
+  S.TEX.gravelR = texSlotCanvas("gravelR", null, grayCanvas(BA.S, BA.rg), false, [1, 1]);
+  const bRep = [1/2.4, 1/2.4];
+  S.TEX.ballast  = texSlotCanvas("ballast",  null, BA.dif, true,  bRep);
+  S.TEX.ballastN = texSlotCanvas("ballastN", null, normalCanvas(BA.S, BA.hf, 2.4), false, bRep);
+  S.TEX.ballastR = texSlotCanvas("ballastR", null, grayCanvas(BA.S, BA.rg), false, bRep);
   S.TEX.facade = S.TEX.winGrid; // spätná kompatibilita (starý názov -> nová mriežka)
   S.TEX.bridge = texSlot("bridge", null, 256, true, [1/8, 1/8], function(g,s){
     g.fillStyle="#6f6f72"; g.fillRect(0,0,s,s);
@@ -909,15 +958,17 @@ export function buildShared(){
   const rbox = (w, h, d, r, seg = 3) =>
     new RoundedBoxGeometry(w, h, d, seg, Math.max(0.005, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01)));
   S.GEO.box   = new THREE.BoxGeometry(1,1,1);
-  S.GEO.cyl   = new THREE.CylinderGeometry(0.5,0.5,1,10);
-  S.GEO.cone  = new THREE.ConeGeometry(0.5,1,8);
+  // Valec 10→16 a kužeľ 8→12 plôch: stĺpy lamp, kmeny v mestských skupinách,
+  // pamätník na kruháči a ostrovčeky už nemajú viditeľný hranatý profil.
+  S.GEO.cyl   = new THREE.CylinderGeometry(0.5,0.5,1,16);
+  S.GEO.cone  = new THREE.ConeGeometry(0.5,1,12);
   S.GEO.body  = rbox(1.8, 0.65, 4.2, 0.14);
   S.GEO.bodyP = S.GEO.body.clone(); // klon LEN pre hráča (deformácia damage, AI zdieľa GEO.body)
   S.GEO.bodyP.userData.base = S.GEO.bodyP.attributes.position.array.slice(); // panenský stav pre reset
   S.GEO.cabin = rbox(1.6, 0.55, 2.0, 0.08, 2);
-  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 24);
+  S.GEO.wheel = new THREE.CylinderGeometry(0.33, 0.33, 0.25, 28);
   S.GEO.light = new THREE.BoxGeometry(0.42, 0.22, 0.12);
-  S.GEO.blob  = new THREE.CircleGeometry(1.2, 16);
+  S.GEO.blob  = new THREE.CircleGeometry(1.2, 24);
   S.GEO.blob.rotateX(-Math.PI/2); // tieňová elipsa naležato
 
   // VOZOVKA: difúzia + normálová mapa (zrno/trhliny reálne menia smer svetla) +
@@ -934,15 +985,18 @@ export function buildShared(){
   roadPBR.polygonOffsetFactor = -4; roadPBR.polygonOffsetUnits = -8;
   S.MAT.routeAsphalt = new THREE.MeshStandardMaterial(roadPBR);
   // nespevnené cesty: tá istá hlina ako 2. vrstva terénu, dlažka 6 m (repeat 1/6)
-  S.MAT.dirt    = new THREE.MeshStandardMaterial({ map: S.TEX.dirt, color: 0xffffff, roughness: 0.97, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  S.MAT.ballast = new THREE.MeshStandardMaterial({ color: 0x55524e, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  S.MAT.park    = new THREE.MeshStandardMaterial({ color: 0x4a6b3f, roughness: 0.9, metalness: 0.0,
+  // + normálová mapa (kamienky vyčnievajú, kaluže po daždi majú čo prelomiť).
+  S.MAT.dirt    = new THREE.MeshStandardMaterial({ map: S.TEX.dirt, normalMap: S.TEX.dirtN, normalScale: new THREE.Vector2(0.8, 0.8), color: 0xffffff, roughness: 0.97, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // KOĽAJNOVÉ LÔŽKO: štrková dlažba 2,4 m (UV v metroch) + normálová/drsnosť —
+  // doteraz to bola jednofarebná plastová šedá.
+  S.MAT.ballast = new THREE.MeshStandardMaterial({ map: S.TEX.ballast, normalMap: S.TEX.ballastN, normalScale: new THREE.Vector2(0.9, 0.9), roughnessMap: S.TEX.ballastR, color: 0xbdb9b4, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  S.MAT.park    = new THREE.MeshStandardMaterial({ map: S.TEX.parkGrass, normalMap: S.TEX.parkGrassN, normalScale: new THREE.Vector2(0.45, 0.45), color: 0xffffff, vertexColors: true, roughness: 0.95, metalness: 0.0,
                      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   // TERÉN = DVE VRSTVY, nie jedna dlažba. Tráva (map) a hlina (tDirt) sa miešajú
   // podľa aBlend z výšky/sklonu/poľa, každá v INOM meradle a pod INÝM uhlom
   // (34°) - dve periodicité sa nedajú spoĺať do jednej viditeľnej mriežky.
   // repeat trávnika je 1 dlažba / ~32 m (odvodené v buildTextures z bbox mapy).
-  S.MAT.ground  = new THREE.MeshStandardMaterial({ map: S.TEX.grass, normalMap: S.TEX.terrainN, normalScale: new THREE.Vector2(0.35, 0.35), roughness: 1.0, metalness: 0.0, vertexColors: true, dithering: true });
+  S.MAT.ground  = new THREE.MeshStandardMaterial({ map: S.TEX.grass, normalMap: S.TEX.terrainN, normalScale: new THREE.Vector2(0.55, 0.55), roughness: 1.0, metalness: 0.0, vertexColors: true, dithering: true });
   // DETAIL FADE PODĽA SKUTOČNEJ MINIFIKÁCIE. Pri pohľade nízko po zemi alebo
   // z výšky pokrýva jeden pixel v hĺbke aj desiatky metrov terénu, ale naprieč
   // len desiatky centimetrov. Akákoľkova 2D textúra sa tak vertikálne spriemeruje,
@@ -988,7 +1042,9 @@ export function buildShared(){
   // Kat. B - PANELÁKY: slovenské odtiene + okenná mriežka s balkónmi + jemný odlesk skiel.
   S.MAT.panelWall = new THREE.MeshStandardMaterial({ map: S.TEX.winGrid, roughnessMap: S.TEX.winRough, normalMap: S.TEX.winNormal, normalScale: new THREE.Vector2(0.55, 0.55), roughness: 0.9, metalness: 0.08, vertexColors: true });
   // Kat. C - PRIEMYSEL/OBCHODY: svetlosivý vlnitý plech + betón (#a0a8b0), plochá strecha.
-  S.MAT.indWall = new THREE.MeshStandardMaterial({ map: S.TEX.sheet, color: 0xa0a8b0, roughness: 0.55, metalness: 0.35, vertexColors: true });
+  // Plnohodnotné PBR plechu: rebríky v normálovej mape, hrdza drsnejšia —
+  // doteraz to bola natretá plastová doska (roughnessMap chýbala úplne).
+  S.MAT.indWall = new THREE.MeshStandardMaterial({ map: S.TEX.sheet, normalMap: S.TEX.sheetN, normalScale: new THREE.Vector2(1.1, 1.1), roughnessMap: S.TEX.sheetR, color: 0xa0a8b0, roughness: 0.55, metalness: 0.35, vertexColors: true });
   // Kat. D - HISTORICKÉ: kameň/omietka (#d9cebe cez tint), zvýraznené kontúry (plný jas mapy).
   S.MAT.histWall = new THREE.MeshStandardMaterial({ map: S.TEX.winGrid, roughnessMap: S.TEX.winRough, normalMap: S.TEX.winNormal, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.9, metalness: 0.0, vertexColors: true });
   // Strechy: šikmá terakotová škridla (difúzia + normálová + drsnosť, 2,4 m
@@ -997,7 +1053,7 @@ export function buildShared(){
   S.MAT.pitchedRoof = new THREE.MeshStandardMaterial({ color: 0xffffff,
     map: S.TEX.roofTile, normalMap: S.TEX.roofTileN, normalScale: new THREE.Vector2(0.8, 0.8),
     roughnessMap: S.TEX.roofTileR, roughness: 1.0, metalness: 0.02, vertexColors: true });
-  S.MAT.flatRoof = new THREE.MeshStandardMaterial({ map: S.TEX.gravel, roughness: 0.95, metalness: 0.0, vertexColors: true });
+  S.MAT.flatRoof = new THREE.MeshStandardMaterial({ map: S.TEX.gravel, normalMap: S.TEX.gravelN, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: S.TEX.gravelR, roughness: 0.95, metalness: 0.0, vertexColors: true });
   // Spätné aliasy (kód mimo buildBuildings ich nepoužíva, buildBuildings ide na nové maty).
   S.MAT.facade  = S.MAT.panelWall;
   S.MAT.facade2 = new THREE.MeshStandardMaterial({ map: S.TEX.winGrid, normalMap: S.TEX.winNormal, normalScale: new THREE.Vector2(0.55, 0.55), color: 0xe6d9c2, roughness: 0.85, metalness: 0.02 });
@@ -1028,7 +1084,9 @@ export function buildShared(){
   S.MAT.tuft = new THREE.MeshStandardMaterial({ map: S.TEX.tuft, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95, metalness: 0.0 });
   S.MAT.cycle   = new THREE.MeshStandardMaterial({ color: 0xa02828, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.pillar  = new THREE.MeshStandardMaterial({ map: S.TEX.concrete, normalMap: S.TEX.concreteN, normalScale: new THREE.Vector2(0.45, 0.45), color: 0xa8adb2, roughness: 0.9, metalness: 0.0 });
-  S.MAT.island  = new THREE.MeshStandardMaterial({ color: 0x5c6248, roughness: 0.9, metalness: 0.0 });
+  // OSTROVČEK KRUHÁČA: trávniková dlažba (UV sveta m/16) + vertex farby —
+  // doteraz jednofarebný plastový tanier. Geometriu mení roads.js (planárne UV).
+  S.MAT.island  = new THREE.MeshStandardMaterial({ map: S.TEX.parkGrass, normalMap: S.TEX.parkGrassN, normalScale: new THREE.Vector2(0.45, 0.45), color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0.0 });
   S.MAT.trunk   = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xc8b49c, roughness: 0.96, metalness: 0.0 });
   S.MAT.leaf    = new THREE.MeshStandardMaterial({ color: 0x3d5231, roughness: 0.9, metalness: 0.0 });
   S.MAT.leafDark = new THREE.MeshStandardMaterial({ color: 0x2d5022, roughness: 0.95, metalness: 0.0 });

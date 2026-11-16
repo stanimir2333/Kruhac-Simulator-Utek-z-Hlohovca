@@ -1,23 +1,17 @@
 // src/world/ground.js — heightfield mesh + snap mriežky (verbatim port, js 3608–3633 + 5094–5440).
 import * as THREE from 'three';
 import { S } from './shared.js';
-import { getTerrainHeight, heightAtAnalytic, smooth01, sxNoise } from './height.js';
+import { getTerrainHeight, heightAtAnalytic, meshSample, smooth01, sxNoise } from './height.js';
 import { ss01, sstep } from './textures.js';
 
-const _ray = new THREE.Raycaster();
-const _rayO = new THREE.Vector3(), _rayD = new THREE.Vector3(0,-1,0);
-
-// Raycaster zhora nadol (Y=1000 -> Y=-1000): Y terénu pre kotvenie objektov
+// Výška na povrchu terénu pre kotvenie objektov. Kedže terén je teraz 513×513
+// vrcholov (524k trojuholníkov), Raycaster zhora nadol by pri každom dotaze
+// bruteforce prebehol celú mriežku — a netreba ho: meshSample() interpoluje
+// tú istú mriežku, ktorú GPU vykresľuje (presná bilineárna/triangulová
+// interpolácia podľa height.js), takže výsledok je zhodný s raycastom.
+// Fallback (analytický model) ostáva pre fázu pred buildGround().
 export function groundRayY(x, z, fallback){
-  try{
-    if(S.terrainMesh){
-      _rayO.set(x, 1000, z); // zhora nadol: Y=1000 -> Y=-1000
-      _ray.set(_rayO, _rayD);
-      _ray.far = 2000;
-      const hit = _ray.intersectObject(S.terrainMesh, false);
-      if(hit && hit.length) return hit[0].point.y;
-    }
-  }catch(e){}
+  if(S.meshReady && S.meshGrid) return meshSample(x, z);
   return (fallback !== undefined) ? fallback : getTerrainHeight(x, z);
 }
 
@@ -154,7 +148,7 @@ export function groundColor(h, x, z, urbD2){
 }
 
 // ---------- MAPA Z OSM ----------
-// Výšková mriežka terénu 256x256 z OSM dát: nadmorské výšky (ele), koryto rieky,
+// Výšková mriežka terénu 513x513 z OSM dát: nadmorské výšky (ele), koryto rieky,
 // výškové profily ciest a ploché podložie budov. (LEN v init)
 const BLD_APRON = 14;    // mimo obvodu budovy ešte zostane terén urobený do roviny
 const TER_MAX_SLOPE = 0.40; // tvrdý limit sklonu terénu (40 %) medzi vrcholmi mriežky
