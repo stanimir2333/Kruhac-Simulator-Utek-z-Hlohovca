@@ -14,22 +14,15 @@ const BACK_SPEED = 2.9;
 const JUMP_SPEED = 5.2;
 const GRAVITY = 18;
 const EYE_H = 1.62;        // výška očí nad zemou (kamera = prvá osoba)
-// Citlivosť pohľadu: rad/px. S unadjustedMovement sú delty RAW counts, takže
-// pocit závisí od DPI myši (800/1600/3200/6400 DPI). História 0.0032 → … →
-// 0.00018 bola vždy "stále hnalá" — pri 3200–6400 DPI myši je CS-pocit až
-// ~0.00009. Rozsah slidera 2–400 % pokrýva DPI od 800 po 12800.
-const LOOK_SENS = 0.00009;
-// Mäkký strop rýchlosti pohľadu: rozpočet dopĺňa REÁLNY ČAS (px/ms), takže
-// je nezávislý od FPS aj od počtu mousemove eventov (125 Hz aj 1000 Hz myš
-// otáča rovnako rýchlo). Normálny pohyb (≤ ~20 px/ms pri 1600 DPI) ide 1:1;
-// strop chytí len obrieventy z akcelerácie OS v fallback režime.
-const LOOK_RATE = 30;   // dopĺňané px za ms
-const LOOK_BUDGET = 60; // max delta použitá na jeden event (px)
-// Pitch: fyzický clamp ±60° (kamera je v hlave — nižšie by hlodal do trupu).
-// Mäkká zóna nad ~46° tlmením nechá pohľad plynule dopadnúť namiesto trhnutia
-// na doraz ("zamknuté na oblohu/zemi").
+// Citlivosť pohľadu: rad/px. 0.0022 je 1:1 prevzaté z tatra-labyrinth.html
+// (mousemove → rotation -= movement * 0.0022), kde hráčovi pocit sedí presne.
+// Žiadne delenie ani strop — delty idú surovo z eventu, jedinú korekciu robí
+// slider settings.sens (100 % = presne pocit z tatry).
+const LOOK_SENS = 0.0022;
+// Pitch: tvrdý clamp ±60° (kamera je v hlave — nižšie by hlodal do trupu;
+// tatra má ±1.45, ale nemá telo pod kamerou). Bez mäkkej zóny — pohyb je
+// lineárny až po doraz, rovnako ako v tatre.
 const PITCH_MAX = 1.05;
-const PITCH_SOFT = 0.8;
 const TOUCH_SENS = 0.0022; // rad/px (dotyk — prst ide po pixeloch, nie po palcoch)
 const FOOT_GQ = new Int32Array(GQ_MAX);
 
@@ -165,9 +158,6 @@ export function createOnFoot(opts = {}) {
   };
   let touchLook = -1;
   let touchX = 0, touchY = 0;
-  // Časový rozpočet rýchlosti myši (pozri LOOK_RATE vyžšie). Čas posledného
-  // mousemove a nenaplnený rozpočet px; používajú sa v handleri nižšie.
-  let lastMoveT = 0, budgetPx = 0;
   // Pointer lock zablokovaný prehliadačom → myš otáča pohľad aj bez locku.
   let lockFailed = false;
   let lockFails = 0;
@@ -334,8 +324,6 @@ export function createOnFoot(opts = {}) {
     foot.grounded = true;
     foot.phase = 0;
     foot.moveSpeed = 0;
-    lastMoveT = 0;
-    budgetPx = 0;
     car.speed = 0;
     car.steer = 0;
     root.visible = true;
@@ -484,38 +472,23 @@ export function createOnFoot(opts = {}) {
       if (foot.active && e.button === 0) weapons.releaseTrigger();
     });
     addEventListener('mousemove', (e) => {
-      // Priemyselný čas: rozpočet sa dopĺňa od posledného eventu (px/ms),
-      // takže strop je nezávislý od FPS aj od hustoty eventov.
-      const ts = typeof e.timeStamp === 'number' && e.timeStamp > 0 ? e.timeStamp : performance.now();
-      const gap = lastMoveT ? Math.max(0, ts - lastMoveT) : 16;
-      lastMoveT = ts;
       // Pauza (nastavenia/veľká mapa/skrytý tab): pohľad NESMIE rotovať — inak
       // sa pohľad zmení pod prekrytím a po zavretí menu je posunutý.
-      if (!foot.active || (opts.paused && opts.paused())) { budgetPx = 0; return; }
+      if (!foot.active || (opts.paused && opts.paused())) return;
       const locked = document.pointerLockElement === canvas;
       // Bez pointer locku myš neotáča (A/D otáčajú), kým sa lock nepodarí.
       // Ak ho prehliadač zablokuje (lockFailed), funguje relatívny pohyb
       // myši ako fallback — hráč sa aspoň dá otočiť.
-      if (!locked && !lockFailed) { budgetPx = 0; return; }
+      if (!locked && !lockFailed) return;
+      // Surové delty bez strihu a bez stropu — 1:1 ako v tatra-labyrinth.html.
       // Aplikácia HNEĎ v handleri (žiadna latencia na ďalší snímok).
-      budgetPx = Math.min(LOOK_BUDGET, budgetPx + gap * LOOK_RATE);
       const s = LOOK_SENS * sensFactor();
-      const tx = Math.max(-budgetPx, Math.min(budgetPx, e.movementX || 0));
-      const ty = Math.max(-budgetPx, Math.min(budgetPx, e.movementY || 0));
-      budgetPx -= Math.abs(tx) + Math.abs(ty);
       // yaw rastie = otočka DOĽAVA (rovnaká konvencia ako auto: A = doľava),
       // takže myš vpravo musí yaw znížiť. Predtým bolo plus → myš bola
       // obrátená (pohyb vpravo otáčal pohľad doľava).
-      foot.yaw -= tx * s;
-      // Mäkká zóna pitchu: znamienko kroku zostáva, magnitude sa pri blížení
-      // k clampu tlmení — žiadny trh už nenadosadí pitch natvrdo na ±PITCH_MAX.
-      let np = foot.pitch - ty * s;
-      const over = Math.abs(np) - PITCH_SOFT;
-      if (over > 0) {
-        const k = Math.max(0.12, 1 - (over / (PITCH_MAX - PITCH_SOFT)) * 0.88);
-        np = foot.pitch + (np - foot.pitch) * k;
-      }
-      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, np));
+      foot.yaw -= (e.movementX || 0) * s;
+      // Pitch: tvrdý clamp, bez mäkkej zóny (v tatre žiadna nie je).
+      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, foot.pitch - (e.movementY || 0) * s));
     });
     addEventListener('wheel', (e) => {
       if (!foot.active) return;
@@ -536,13 +509,7 @@ export function createOnFoot(opts = {}) {
       const s = TOUCH_SENS * sensFactor();
       // Rovnaké znamienko ako myš: prst vpravo = pohľad vpravo.
       foot.yaw -= dx * s;
-      let np = foot.pitch - dy * s;
-      const over = Math.abs(np) - PITCH_SOFT;
-      if (over > 0) {
-        const k = Math.max(0.12, 1 - (over / (PITCH_MAX - PITCH_SOFT)) * 0.88);
-        np = foot.pitch + (np - foot.pitch) * k;
-      }
-      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, np));
+      foot.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, foot.pitch - dy * s));
     });
     const endTouch = (e) => { if (touchLook === e.pointerId) touchLook = -1; };
     canvas.addEventListener('pointerup', endTouch);
