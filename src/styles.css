@@ -111,6 +111,12 @@
   #bigmap-canvas{display:block;width:100%;background:#0b0906;border:1px solid var(--amber-dim);}
   #bigmap-legend{font-size:12px;color:#ffd97a;line-height:1.9;margin-top:10px;text-align:left;
     display:inline-block;}
+  /* ---------- LABYRINT (dvere pri kostole sv. Michala) ----------
+     Fullscreen iframe s tatra-labyrinth.html, nad veľkou mapou (z-index 70).
+     Otvára/zaviera src/game/labyrinth.js — pauza cez state.paused. */
+  #lab{position:fixed;inset:0;z-index:80;background:#05070c;}
+  #lab.hidden{display:none;}
+  #lab iframe{display:block;width:100%;height:100%;border:0;}
   #toast{position:absolute;top:76px;left:50%;transform:translateX(-50%);
     padding:10px 22px;font-size:16px;font-weight:bold;text-align:center;
     max-width:88vw;opacity:0;transition:opacity .3s;white-space:pre-wrap;}

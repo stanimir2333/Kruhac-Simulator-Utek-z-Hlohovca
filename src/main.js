@@ -52,6 +52,7 @@ import {
 } from './game/missions.js';
 import { buildPeter, updatePeter, peterTalk, peterReset, PETER } from './game/peter.js';
 import { createOnFoot } from './game/onfoot.js';
+import { createLabyrinth, labOpen } from './game/labyrinth.js';
 import { createPreloader } from './ui/preloader.js';
 import { createHUD } from './ui/hud.js';
 import { createDashboard } from './ui/dashboard.js';
@@ -301,6 +302,27 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     toast: (m) => hud.toast(m),
   });
 
+  // LABYRINT — dvere pred kostolom sv. Michala: fullscreen iframe s tatrou.
+  // Vstup (blízkosť portálu, pešo aj autom) = pauza sveta; výhra alebo
+  // "SPÄŤ DO HLOHOVCA" (postMessage z iframe) = návrat presne na miesto,
+  // kde svet zamrzol — hráč aj auto ostávajú pri dverách.
+  const lab = createLabyrinth({
+    scene, car,
+    onFoot: () => onfoot.active,
+    onEnter: () => {
+      // Pointer lock MUSÍ klesnúť — inak by myš ostala zamknutá v hlavnej hre
+      // a hráč by nemohol kliknúť do iframe (štart labirintu).
+      if (document.pointerLockElement) document.exitPointerLock?.();
+      state.paused = true;
+      hud.toast('Dvere do labirintu sa otvorili…', 2600);
+    },
+    onLeave: (won) => {
+      state.paused = false;
+      car.speed = 0; // po labirinte nech auto neodíde samo starou rýchlosťou
+      hud.toast(won ? 'LABYRINT VYRIEŠENÝ ✔ · si späť v Hlohovci' : 'Si späť v Hlohovci · labirint čaká', 3200);
+    },
+  });
+
   // GARÁŽ [G] — menu výberu auta so štatistikami. Motor patrí typu auta, takže
   // apply → setPlayerCar vymení mesh aj profil motora v jednom kroku.
   const garage = wireGarage(state, hud, { apply: setPlayerCar, carId: () => settings.car });
@@ -376,6 +398,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     toggleStorm,
   };
   addEventListener('keydown', (e) => {
+    // Labirint otvorený: klávesy patria iframe (štart/esc tatry) — žiadne
+    // skratky, cheat buffer ani R reštart nesmú bežať pod overlayom.
+    if (labOpen()) return;
     // cheat buffer: písmená a–z (WASD šliapu ďalej, pohyb sa nikdy nefiltruje)
     if (!e.repeat && e.key && e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
       cheatKey(e.key.toLowerCase(), cheatApi);
@@ -440,7 +465,8 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
       hud.toast('PAUZA — vráť sa do tabu.');
     } else if (!document.hidden && pausedByTab) {
       pausedByTab = false;
-      state.paused = false;
+      // Ak je otvorený labirint (ten drží pauzu sám), tab návrat neodomkne.
+      if (!lab.isOpen()) state.paused = false;
     }
   });
 
@@ -539,6 +565,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     const focusX = walking ? onfoot.foot.x : car.x;
     const focusY = walking ? onfoot.foot.y : car.y;
     const focusZ = walking ? onfoot.foot.z : car.z;
+
+    // — dvere do labirintu: blízkosť portálu spustí iframe (pešo aj autom) —
+    lab.update(dt, focusX, focusZ);
 
     // — projekcia na trasu (10 Hz): s + priečna odchýlka pre mostovku —
     slowAcc += dt;

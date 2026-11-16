@@ -18,6 +18,7 @@
 import { S } from '../world/shared.js';
 import { setShadowRangeScale } from '../fx/sunshadow.js';
 import { VERSION, CARS } from '../core/config.js';
+import { labOpen } from '../game/labyrinth.js';
 
 // Vlastný store (predvolené hodnoty podľa zadania).
 export const settings = {
@@ -428,7 +429,7 @@ export function wireSettingsUI(ctx, toast) {
     if (e.target === $('settings')) toggleSettings(false);
   });
   addEventListener('keydown', (e) => {
-    if (e.code === 'Escape') toggleSettings();
+    if (e.code === 'Escape' && !labOpen()) toggleSettings();
   });
 
   $('set-res')?.addEventListener('input', (e) => {

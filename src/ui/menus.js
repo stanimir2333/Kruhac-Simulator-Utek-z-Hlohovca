@@ -1,5 +1,6 @@
 // src/ui/menus.js — overlay obrazovky (štart / koniec / nastavenia / bigmap pauza).
 import { cheatLocked } from '../game/cheats.js';
+import { labOpen } from '../game/labyrinth.js';
 // `engine` už sa nepoužíva (FPS limit má vlastného posluchateľa v settings.js)
 // — parameter ponechaný kvôli kompatibilite call-site v main.js.
 export function wireMenus(state, engine, hud) {   // eslint-disable-line no-unused-vars
@@ -25,6 +26,9 @@ export function wireMenus(state, engine, hud) {   // eslint-disable-line no-unus
   // Nastavenia: ESC má vlastný toggle v settings.js (wireSettingsUI) — tu
   // NESMIEME prepisovať, inak sa dva listenery navzájom rušia.
   addEventListener('keydown', (e) => {
+    // Labirint drží pauzu sám — M pod ním by mapou odomkol svet (toggleBigMap
+    // prepisuje state.paused podľa svojho stavu, lab by ho nevedel vrátiť).
+    if (labOpen()) return;
     if (e.code === 'KeyM' && !cheatLocked()) toggleBigMap();
   });
   // ESC zavrie aj veľkú mapu (legend v bigmap-legend to sľubuje). Beží v capture

@@ -242,6 +242,13 @@
     </div>
   </div>
 
+  <div id="lab" class="hidden">
+    <!-- Dvere do labirintu (kostol sv. Michala): fullscreen iframe s tatrou.
+         allow="pointer-lock" — file:// má opačnú doménu, bez toho by myš v iframe
+         nezamkla. Zobrazí/zavrie src/game/labyrinth.js (postMessage z tatry). -->
+    <iframe id="lab-frame" allow="pointer-lock"></iframe>
+  </div>
+
   <div id="ov-end" class="overlay hidden">
   <div class="card panel">
     <h1 id="end-title">KONIEC</h1>

@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>High Tatras — Labyrinth</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #05070c;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    color: #dff6ff;
+  }
+  canvas { display: block; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed; top: 20px; left: 22px; z-index: 10; pointer-events: none;
+    font-size: 13px; letter-spacing: 0.08em; text-shadow: 0 0 10px rgba(90,200,255,0.5);
+  }
+  #hud .label { color: #6fe3ff; font-weight: 700; }
+  #hud .count { font-size: 21px; font-weight: 800; color: #fff; margin-left: 6px; }
+  #hud .sub { margin-top: 6px; font-size: 10px; color: #7fa3b8; letter-spacing: 0.18em; }
+
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%; background: #bff7ff; box-shadow: 0 0 8px #5ce1ff;
+    pointer-events: none; z-index: 10; opacity: 0.85;
+  }
+
+  #prompt {
+    position: fixed; left: 50%; bottom: 14%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px;
+    background: rgba(4,10,14,0.72); border: 1px solid rgba(92,225,255,0.35);
+    border-radius: 6px; color: #dff; font-size: 13px; letter-spacing: 0.12em;
+    pointer-events: none; opacity: 0; transition: opacity .18s;
+    backdrop-filter: blur(6px); z-index: 10; white-space: nowrap;
+  }
+  #prompt .key {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 4px; background: #5ce1ff;
+    color: #02121a; font-weight: 800;
+  }
+
+  #toast {
+    position: fixed; left: 50%; top: 15%; transform: translateX(-50%);
+    color: #9dffd0; font-size: 14px; letter-spacing: 0.14em;
+    text-shadow: 0 0 12px rgba(90,255,180,0.7);
+    opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 10; white-space: nowrap;
+  }
+
+  /* ---------- START SCREEN ---------- */
+  #start-screen {
+    position: fixed; inset: 0; z-index: 20; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 40%, rgba(12,26,40,0.92), rgba(2,4,8,0.985));
+  }
+  .start-inner { text-align: center; max-width: 680px; padding: 30px; }
+  .start-inner h1 {
+    margin: 0; font-size: 46px; letter-spacing: 0.34em; color: #e8f6ff;
+    text-shadow: 0 0 30px rgba(90,200,255,0.55); font-weight: 700;
+  }
+  .start-inner h2 {
+    margin: 6px 0 20px; font-size: 17px; letter-spacing: 0.62em;
+    color: #5ce1ff; font-weight: 500;
+  }
+  .start-inner p { color: #93a9bb; font-size: 13px; line-height: 1.9; margin: 0 0 26px; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px 20px; justify-content: center;
+    margin-bottom: 30px; color: #7f95a6; font-size: 11px; letter-spacing: 0.1em;
+  }
+  .controls b { color: #cdefff; }
+  .start-btn {
+    padding: 15px 36px; background: transparent; border: 1px solid #5ce1ff;
+    color: #dff7ff; letter-spacing: 0.24em; font-family: inherit; font-size: 13px;
+    cursor: pointer; transition: all .2s;
+  }
+  .start-btn:hover { background: rgba(92,225,255,0.12); box-shadow: 0 0 24px rgba(92,225,255,0.35); }
+
+  /* ---------- WIN SCREEN ---------- */
+  #win-screen {
+    display: none; position: fixed; inset: 0; z-index: 40; cursor: pointer;
+    align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 45%, rgba(8,34,44,0.94), rgba(1,3,6,0.988));
+  }
+  .win-inner { text-align: center; max-width: 660px; padding: 30px; }
+  .win-kicker {
+    color: #5ce1ff; letter-spacing: 0.42em; font-size: 11px; margin-bottom: 16px;
+    text-shadow: 0 0 16px rgba(92,225,255,0.6);
+  }
+  .win-inner h2 {
+    margin: 0 0 14px; font-size: 40px; letter-spacing: 0.18em; font-weight: 700;
+    color: #eaffff; text-shadow: 0 0 34px rgba(92,225,255,0.65);
+  }
+  .win-inner p { color: #9fd8e8; font-size: 13px; line-height: 1.9; margin: 0 0 8px; }
+  .win-stats {
+    margin: 24px auto 30px; color: #bff1ff; font-size: 13px; line-height: 2;
+    letter-spacing: 0.12em; white-space: pre; text-align: left;
+    display: inline-block; padding: 16px 26px;
+    border-left: 2px solid rgba(92,225,255,0.5);
+    background: rgba(10,40,52,0.35);
+  }
+
+  /* ---------- TERMINAL (no scanlines) ---------- */
+  #terminal {
+    display: none; position: fixed; inset: 6vh 7vw; z-index: 30;
+    flex-direction: column; overflow: hidden;
+    background: rgba(3,8,7,0.965);
+    border: 1px solid rgba(92,255,176,0.28); border-radius: 8px;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8), inset 0 0 80px rgba(0,40,25,0.25);
+    font-size: 14px; line-height: 1.5;
+  }
+  #terminal .term-header {
+    display: flex; justify-content: space-between; padding: 10px 16px;
+    border-bottom: 1px solid rgba(92,255,176,0.18);
+    color: var(--term-accent, #5cffb0); font-size: 12px; letter-spacing: 0.1em;
+  }
+  #terminal .term-close { color: #5a7a6a; }
+  #term-output {
+    flex: 1; overflow-y: auto; padding: 14px 18px;
+    color: #b9ffd8; white-space: pre-wrap; word-break: break-word;
+  }
+  #term-output .echo { color: #eafff5; }
+  #term-output::-webkit-scrollbar { width: 8px; }
+  #term-output::-webkit-scrollbar-thumb { background: rgba(92,255,176,0.2); border-radius: 4px; }
+  #terminal .term-line {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px 14px; border-top: 1px solid rgba(92,255,176,0.18);
+  }
+  #term-prompt { color: var(--term-accent, #5cffb0); white-space: nowrap; }
+  #term-input {
+    flex: 1; background: none; border: none; outline: none;
+    color: #f2fff8; font-family: inherit; font-size: 14px;
+    caret-color: var(--term-accent, #5cffb0);
+  }
+
+  body.term-open #crosshair,
+  body.term-open #prompt,
+  body.term-open #hud { display: none; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="label">WD-40 <span id="can-count" class="count">0 / 8</span>  <span id="pig-count" class="count" style="color:#ff9ad6;">🐷 0 / 1</span></div>
+  <div class="sub">HIGH TATRAS &middot; 49.17&deg;N 20.22&deg;E</div>
+</div>
+<div id="crosshair"></div>
+<div id="prompt"><span class="key">E</span><span id="prompt-text">ACCESS TERMINAL</span></div>
+<div id="toast"></div>
+
+<div id="terminal">
+  <div class="term-header">
+    <span id="term-title">root@tatra-core: ~</span>
+    <span class="term-close">ESC to close</span>
+  </div>
+  <div id="term-output"></div>
+  <div class="term-line">
+    <span id="term-prompt">root@tatra-core:~# </span>
+    <input id="term-input" spellcheck="false" autocomplete="off" />
+  </div>
+</div>
+
+<div id="start-screen">
+  <div class="start-inner">
+    <h1>HIGH TATRAS 🐷</h1>
+    <h2>LABYRINTH</h2>
+    <p>
+      A mountain maze carved into the High Tatras.<br>
+      Collect every WD-40 can hidden in the corridors.<br>
+      Find the Raspberry Pi node — and the TATRA CORE server room at the centre.
+    </p>
+    <div class="controls">
+      <span><b>WASD</b> move</span>
+      <span><b>MOUSE</b> look</span>
+      <span><b>SHIFT</b> sprint</span>
+      <span><b>E</b> interact</span>
+      <span><b>ESC</b> close terminal</span>
+    </div>
+    <button class="start-btn" id="start-btn">ENTER THE LABYRINTH</button>
+    <button class="start-btn back-btn" id="start-home">&larr; SPÄŤ DO HLOHOVCA</button>
+  </div>
+</div>
+
+<div id="win-screen">
+  <div class="win-inner">
+    <div class="win-kicker">TATRA CORE // DIRECTIVE 7 &mdash; OVERRIDE</div>
+    <h2>LABYRINTH CLEARED</h2>
+    <p>All WD-40 secured. The mountain route is open.</p>
+    <div class="win-stats" id="win-stats"></div>
+    <button class="start-btn" id="win-btn">KEEP EXPLORING</button>
+    <button class="start-btn back-btn" id="win-home">&larr; SPÄŤ DO HLOHOVCA</button>
+  </div>
+</div>
+
+<style>
+  /* Tlačidlá návratu — viditeľné len keď je hra vložená v Kruháčovi (iframe). */
+  .back-btn { display: none; margin-top: 12px; }
+  body.embed .back-btn { display: inline-block; }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   RENDERER / SCENE / CAMERA
+   ========================================================= */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x223047, 28, 235);
+
+const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, 900);
+camera.rotation.order = 'YXZ';
+
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+const rand = (a, b) => a + Math.random() * (b - a);
+const shuffle = (arr) => {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+// DOM references (declared early: world-building IIFEs run below)
+const canvas = renderer.domElement;
+const startScreen = document.getElementById('start-screen');
+const promptEl = document.getElementById('prompt');
+const promptText = document.getElementById('prompt-text');
+const toastEl = document.getElementById('toast');
+const canCountEl = document.getElementById('can-count');
+const pigCountEl = document.getElementById('pig-count');
+const winScreen = document.getElementById('win-screen');
+const winStats = document.getElementById('win-stats');
+
+/* =========================================================
+   PROCEDURAL TEXTURES
+   ========================================================= */
+function canvasTexture(w, h, draw, repeatX = 1, repeatY = 1) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  draw(ctx, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = MAX_ANISO;
+  tex.repeat.set(repeatX, repeatY);
+  return tex;
+}
+
+function makeStoneTexture() {
+  return canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#2e3136';
+    ctx.fillRect(0, 0, w, h);
+    const rows = 7;
+    const rh = h / rows;
+    for (let r = 0; r < rows; r++) {
+      const y = r * rh;
+      let x = -Math.random() * 40;
+      while (x < w) {
+        const bw = 28 + Math.random() * 44;
+        const v = 78 + Math.random() * 46;
+        ctx.fillStyle = `rgb(${v},${v + 3},${v + 8})`;
+        ctx.fillRect(x + 2, y + 2, bw - 4, rh - 4);
+        ctx.fillStyle = `rgba(255,255,255,${0.03 + Math.random() * 0.05})`;
+        ctx.fillRect(x + 2, y + 2, bw - 4, 2);
+        x += bw;
+      }
+    }
+    for (let i = 0; i < 2500; i++) {
+      const v = 40 + Math.random() * 90;
+      ctx.fillStyle = `rgba(${v},${v},${v + 5},0.25)`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+    }
+    for (let i = 0; i < 80; i++) {
+      const v = 40 + Math.random() * 30;
+      ctx.fillStyle = `rgba(${v},${v + 30},${v - 5},0.18)`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * w, Math.random() * h, 2 + Math.random() * 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function makeFloorTexture() {
+  return canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#2b2723';
+    ctx.fillRect(0, 0, w, h);
+    for (let y = -10; y < h + 10; y += 22) {
+      for (let x = -10; x < w + 10; x += 22) {
+        const px = x + (Math.random() - 0.5) * 7;
+        const py = y + (Math.random() - 0.5) * 7;
+        const v = 55 + Math.random() * 42;
+        ctx.fillStyle = `rgb(${v},${v - 3},${v - 8})`;
+        ctx.beginPath();
+        ctx.ellipse(px + 11, py + 11, 9 + Math.random() * 3, 7 + Math.random() * 3, Math.random() * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath();
+        ctx.ellipse(px + 12, py + 14, 8, 5, Math.random() * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    for (let i = 0; i < 70; i++) {
+      const v = 30 + Math.random() * 32;
+      ctx.fillStyle = `rgba(${v},${v + 26},${v - 5},0.22)`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * w, Math.random() * h, 3 + Math.random() * 11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 1400; i++) {
+      const v = 30 + Math.random() * 70;
+      ctx.fillStyle = `rgba(${v},${v},${v},0.16)`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+    }
+  }, 90, 90);
+}
+
+function makeMetalTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#4a5158';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 900; i++) {
+      const x = Math.random() * w, y = Math.random() * h;
+      const v = 60 + Math.random() * 60;
+      ctx.strokeStyle = `rgba(${v},${v + 4},${v + 8},0.16)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.random() * 16, y);
+      ctx.stroke();
+    }
+    for (let y = 8; y < h; y += 28) {
+      for (let x = 8; x < w; x += 28) {
+        ctx.fillStyle = '#2c3238';
+        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.beginPath(); ctx.arc(x - 0.6, y - 0.6, 1.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  });
+}
+
+function makeWoodTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#6b4a2c';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) {
+      const y = Math.random() * h;
+      ctx.strokeStyle = `rgba(${40 + Math.random() * 50},${25 + Math.random() * 30},${10 + Math.random() * 20},0.35)`;
+      ctx.lineWidth = 0.6 + Math.random() * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(w * 0.3, y + rand(-6, 6), w * 0.6, y + rand(-6, 6), w, y + rand(-4, 4));
+      ctx.stroke();
+    }
+  });
+}
+
+function makeWD40Texture() {
+  return canvasTexture(512, 256, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, '#07306e');
+    g.addColorStop(0.3, '#1a6fd0');
+    g.addColorStop(0.55, '#0d56b8');
+    g.addColorStop(0.8, '#155fbf');
+    g.addColorStop(1, '#062557');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = '#c8d0d9';
+    ctx.fillRect(0, 0, w, 16);
+    ctx.fillRect(0, h - 16, w, 16);
+
+    ctx.fillStyle = '#f2c31c';
+    ctx.fillRect(0, 88, w, 80);
+
+    ctx.fillStyle = '#0a3f8f';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 62px Arial, Helvetica, sans-serif';
+    ctx.fillText('WD-40', w / 2, 128);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 20px Arial, Helvetica, sans-serif';
+    ctx.fillText('MULTI-USE PRODUCT', w / 2, 192);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '16px Arial, Helvetica, sans-serif';
+    ctx.fillText('HIGH TATRAS FIELD SUPPLY', w / 2, 218);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(w * 0.16, 0, w * 0.06, h);
+    ctx.fillRect(w * 0.72, 0, w * 0.03, h);
+  });
+}
+
+function makeGlowTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    g.addColorStop(0, 'rgba(190,235,255,1)');
+    g.addColorStop(0.25, 'rgba(110,200,255,0.7)');
+    g.addColorStop(0.6, 'rgba(60,150,255,0.18)');
+    g.addColorStop(1, 'rgba(30,90,200,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  });
+}
+
+function makeScreenTexture(kind) {
+  return canvasTexture(512, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#01070b';
+    ctx.fillRect(0, 0, w, h);
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, 'rgba(10,90,70,0.35)');
+    grd.addColorStop(1, 'rgba(0,20,15,0.05)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.shadowColor = kind === 'core' ? '#5ce1ff' : (kind === 'packet' ? '#ff9ad6' : '#5cffb0');
+    ctx.shadowBlur = 20;
+
+    if (kind === 'packet') {
+      ctx.shadowColor = '#ff9ad6';
+      ctx.fillStyle = '#ff9ad6';
+      ctx.font = 'bold 38px monospace';
+      ctx.fillText('PACKET TRACER', 26, 56);
+      ctx.fillStyle = '#ffc4e4';
+      ctx.font = '20px monospace';
+      ctx.fillText('NETWORK SIMULATION v8.2', 26, 96);
+      ctx.fillStyle = '#ff9ad6';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText('STATUS: READY', 26, 144);
+      ctx.fillStyle = '#e086b8';
+      ctx.font = '18px monospace';
+      ctx.fillText('tatra-core:~# packettracer', 26, 188);
+    } else if (kind === 'core') {
+      ctx.fillStyle = '#5ce1ff';
+      ctx.font = 'bold 44px monospace';
+      ctx.fillText('TATRA CORE', 26, 58);
+      ctx.fillStyle = '#8fe9ff';
+      ctx.font = '22px monospace';
+      ctx.fillText('SERVER ROOM 01', 26, 100);
+      ctx.fillStyle = '#5ce1ff';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText('UPTIME 99.999%', 26, 148);
+      ctx.fillStyle = '#3fa8c8';
+      ctx.font = '18px monospace';
+      ctx.fillText('root@tatra-core:~# _', 26, 188);
+    } else {
+      ctx.fillStyle = '#5cffb0';
+      ctx.font = 'bold 38px monospace';
+      ctx.fillText('Raspberry Pi 5', 24, 54);
+      ctx.fillStyle = '#8dffc4';
+      ctx.font = '22px monospace';
+      ctx.fillText('tatra-lab / 8GB', 24, 96);
+      ctx.fillStyle = '#5cffb0';
+      ctx.font = 'bold 24px monospace';
+      ctx.fillText('SYSTEM READY', 24, 146);
+      ctx.fillStyle = '#3fa87a';
+      ctx.font = '18px monospace';
+      ctx.fillText('pi@tatra-lab:~$ _', 24, 190);
+    }
+  });
+}
+
+const stoneTex = makeStoneTexture();
+const floorTex = makeFloorTexture();
+const metalTex = makeMetalTexture();
+const metalTexRoom = makeMetalTexture();
+metalTexRoom.repeat.set(7, 7);
+const woodTex = makeWoodTexture();
+const wdTex = makeWD40Texture();
+const glowTex = makeGlowTexture();
+const piScreenTex = makeScreenTexture('pi');
+const packetTracerTex = makeScreenTexture('packet');
+const coreScreenTex = makeScreenTexture('core');
+
+/* =========================================================
+   MATERIALS
+   ========================================================= */
+const wallMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0xffffff, roughness: 0.94, metalness: 0.05 });
+const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: 0xffffff, roughness: 1.0, metalness: 0.0 });
+const rackMat = new THREE.MeshStandardMaterial({ map: metalTex, color: 0xc4ccd6, metalness: 0.82, roughness: 0.34 });
+const roomFloorMat = new THREE.MeshStandardMaterial({ map: metalTexRoom, color: 0x9aa4b0, metalness: 0.75, roughness: 0.5 });
+const slotMat = new THREE.MeshStandardMaterial({ color: 0x14181c, metalness: 0.5, roughness: 0.6 });
+const tableMat = new THREE.MeshStandardMaterial({ map: woodTex, color: 0xb08a5e, roughness: 0.85, metalness: 0.05 });
+const screenFrameMat = new THREE.MeshStandardMaterial({ color: 0x15181c, roughness: 0.45, metalness: 0.65 });
+const piScreenMat = new THREE.MeshStandardMaterial({ map: piScreenTex, emissive: 0xffffff, emissiveMap: piScreenTex, emissiveIntensity: 1.35, roughness: 0.4 });
+const packetScreenMat = new THREE.MeshStandardMaterial({ map: packetTracerTex, emissive: 0xffffff, emissiveMap: packetTracerTex, emissiveIntensity: 1.5, roughness: 0.4 });
+const coreScreenMat = new THREE.MeshStandardMaterial({ map: coreScreenTex, emissive: 0xffffff, emissiveMap: coreScreenTex, emissiveIntensity: 1.5, roughness: 0.4 });
+
+const ledMats = {
+  green: new THREE.MeshStandardMaterial({ color: 0x0a2a10, emissive: 0x39ff88, emissiveIntensity: 2.6, roughness: 0.4 }),
+  amber: new THREE.MeshStandardMaterial({ color: 0x2a1a00, emissive: 0xffaa33, emissiveIntensity: 2.6, roughness: 0.4 }),
+  cyan: new THREE.MeshStandardMaterial({ color: 0x002a2a, emissive: 0x33ddff, emissiveIntensity: 2.6, roughness: 0.4 })
+};
+
+/* =========================================================
+   SKY / STARS / MOUNTAINS
+   ========================================================= */
+const skyGeo = new THREE.SphereGeometry(500, 32, 16);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    topColor: { value: new THREE.Color(0x05070f) },
+    midColor: { value: new THREE.Color(0x1b2a44) },
+    bottomColor: { value: new THREE.Color(0x4c5f7e) }
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 midColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition).y;
+      vec3 col = mix(bottomColor, midColor, smoothstep(-0.08, 0.22, h));
+      col = mix(col, topColor, smoothstep(0.18, 0.72, h));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  side: THREE.BackSide,
+  depthWrite: false
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// stars
+const starGeo = new THREE.BufferGeometry();
+const starCount = 700;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const u = Math.random() * Math.PI * 2;
+  const v = Math.random() * 0.48;
+  const r = 465;
+  const y = Math.sin(v * Math.PI) * r;
+  const rr = Math.cos(v * Math.PI) * r;
+  starPos[i * 3] = Math.cos(u) * rr;
+  starPos[i * 3 + 1] = y;
+  starPos[i * 3 + 2] = Math.sin(u) * rr;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({
+  color: 0xcfe4ff, size: 1.6, sizeAttenuation: false,
+  transparent: true, opacity: 0.85, fog: false, depthWrite: false
+});
+scene.add(new THREE.Points(starGeo, starMat));
+
+// mountains
+(function addMountains() {
+  const mountainMat = new THREE.MeshStandardMaterial({ color: 0x2b3547, roughness: 1.0, metalness: 0.0, flatShading: true });
+  const snowMat = new THREE.MeshStandardMaterial({ color: 0xe6edf7, roughness: 0.9, metalness: 0.0, flatShading: true });
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2 + rand(-0.12, 0.12);
+    const dist = rand(150, 235);
+    const h = rand(48, 118);
+    const r = rand(26, 58);
+    const geo = new THREE.ConeGeometry(r, h, 7, 1);
+    const mtn = new THREE.Mesh(geo, mountainMat);
+    mtn.position.set(Math.cos(a) * dist, h / 2 - 8, Math.sin(a) * dist);
+    mtn.rotation.y = Math.random() * Math.PI;
+    scene.add(mtn);
+
+    const capGeo = new THREE.ConeGeometry(r * 0.42, h * 0.38, 7, 1);
+    const cap = new THREE.Mesh(capGeo, snowMat);
+    cap.position.set(mtn.position.x, mtn.position.y + h * 0.31, mtn.position.z);
+    cap.rotation.y = mtn.rotation.y;
+    scene.add(cap);
+  }
+})();
+
+// ground
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), floorMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* =========================================================
+   MAZE GENERATION
+   ========================================================= */
+const N = 21;
+const CELL = 3.5;
+const HALF = (N - 1) / 2;
+const WALL_H = 4.2;
+const EYE = 1.7;
+
+const cellCenter = (i) => (i - HALF) * CELL;
+const worldToCell = (w) => Math.floor(w / CELL + HALF + 0.5);
+
+const grid = Array.from({ length: N }, () => new Array(N).fill(1));
+
+function carve(x, z) { grid[z][x] = 0; }
+
+// recursive backtracker
+(function generateMaze() {
+  const stack = [[1, 1]];
+  carve(1, 1);
+  while (stack.length) {
+    const [x, z] = stack[stack.length - 1];
+    const dirs = shuffle([[2, 0], [-2, 0], [0, 2], [0, -2]]);
+    let moved = false;
+    for (const [dx, dz] of dirs) {
+      const nx = x + dx, nz = z + dz;
+      if (nx > 0 && nz > 0 && nx < N - 1 && nz < N - 1 && grid[nz][nx] === 1) {
+        carve(x + dx / 2, z + dz / 2);
+        carve(nx, nz);
+        stack.push([nx, nz]);
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) stack.pop();
+  }
+
+  // extra loops so the maze is not a perfect tree
+  for (let z = 1; z < N - 1; z++) {
+    for (let x = 1; x < N - 1; x++) {
+      if (grid[z][x] !== 1) continue;
+      if (Math.random() > 0.09) continue;
+      const h = grid[z][x - 1] === 0 && grid[z][x + 1] === 0;
+      const v = grid[z - 1][x] === 0 && grid[z + 1][x] === 0;
+      if (h || v) grid[z][x] = 0;
+    }
+  }
+})();
+
+// central server room
+const C = Math.floor(N / 2);
+const ROOM_R = 3; // 7x7 cells => 24.5 x 24.5 world units
+for (let z = C - ROOM_R; z <= C + ROOM_R; z++) {
+  for (let x = C - ROOM_R; x <= C + ROOM_R; x++) {
+    grid[z][x] = 0;
+  }
+}
+// connect the room to the surrounding maze in four directions
+for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  for (let i = ROOM_R + 1; i < N - 1; i++) {
+    const x = C + dx * i, z = C + dz * i;
+    if (x < 1 || z < 1 || x > N - 2 || z > N - 2) break;
+    if (grid[z][x] === 0) break;
+    grid[z][x] = 0;
+  }
+}
+
+// ---- walls as one instanced mesh ----
+const solidCells = [];
+for (let z = 0; z < N; z++) {
+  for (let x = 0; x < N; x++) {
+    if (grid[z][x] === 1) solidCells.push([x, z]);
+  }
+}
+
+const wallGeo = new THREE.BoxGeometry(CELL, WALL_H, CELL);
+const walls = new THREE.InstancedMesh(wallGeo, wallMat, solidCells.length);
+{
+  const m = new THREE.Matrix4();
+  const col = new THREE.Color();
+  solidCells.forEach(([x, z], i) => {
+    m.makeTranslation(cellCenter(x), WALL_H / 2, cellCenter(z));
+    walls.setMatrixAt(i, m);
+    const v = 0.78 + Math.random() * 0.28;
+    col.setRGB(v, v, v * 1.03);
+    walls.setColorAt(i, col);
+  });
+  walls.instanceMatrix.needsUpdate = true;
+  if (walls.instanceColor) walls.instanceColor.needsUpdate = true;
+}
+walls.castShadow = true;
+walls.receiveShadow = true;
+scene.add(walls);
+
+/* =========================================================
+   LIGHTING
+   ========================================================= */
+const hemi = new THREE.HemisphereLight(0x9fc4ff, 0x24262a, 1.15);
+scene.add(hemi);
+
+const ambient = new THREE.AmbientLight(0x3a4d66, 0.55);
+scene.add(ambient);
+
+// field lamp that travels with the player (subtle, warm)
+const fieldLamp = new THREE.PointLight(0xffe6c0, 3.5, 8, 2);
+fieldLamp.position.set(0, -0.15, -0.35);
+camera.add(fieldLamp);
+scene.add(camera);
+
+const moon = new THREE.DirectionalLight(0xbcd4ff, 2.1);
+moon.position.set(-55, 95, 38);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048, 2048);
+moon.shadow.camera.left = -50;
+moon.shadow.camera.right = 50;
+moon.shadow.camera.top = 50;
+moon.shadow.camera.bottom = -50;
+moon.shadow.camera.near = 1;
+moon.shadow.camera.far = 220;
+moon.shadow.bias = -0.0006;
+moon.shadow.normalBias = 0.025;
+scene.add(moon);
+scene.add(moon.target);
+
+/* =========================================================
+   SHARED GAME STATE
+   ========================================================= */
+const terminals = [];      // { kind, pos, label }
+const cans = [];           // WD-40
+const obstacles = [];      // { x, z, r }
+const rings = [];          // animated server core rings
+const flicker = [];        // { light, base, speed, phase }
+let collectedCount = 0;
+let piCell = null;
+
+/* =========================================================
+   SERVER ROOM
+   ========================================================= */
+(function buildServerRoom() {
+  const roomHalf = ROOM_R * CELL + CELL / 2; // 12.25
+
+  // floor
+  const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(roomHalf * 2, roomHalf * 2), roomFloorMat);
+  roomFloor.rotation.x = -Math.PI / 2;
+  roomFloor.position.y = 0.02;
+  roomFloor.receiveShadow = true;
+  scene.add(roomFloor);
+
+  // ceiling
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(roomHalf * 2, roomHalf * 2),
+    new THREE.MeshStandardMaterial({ map: metalTexRoom, color: 0x5a636e, metalness: 0.7, roughness: 0.55 })
+  );
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.y = 4.3;
+  scene.add(ceiling);
+
+  // ceiling light panels
+  for (const pz of [-6, 0, 6]) {
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 2.2),
+      new THREE.MeshBasicMaterial({ color: 0x7fe9ff })
+    );
+    panel.rotation.x = Math.PI / 2;
+    panel.position.set(0, 4.24, pz);
+    scene.add(panel);
+  }
+
+  // racks
+  function buildRack(x, z, rotY) {
+    const g = new THREE.Group();
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.2, 1.0), rackMat);
+    body.position.y = 1.6;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    g.add(body);
+
+    for (let i = 0; i < 7; i++) {
+      const slot = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.06, 0.04), slotMat);
+      slot.position.set(0, 0.5 + i * 0.4, 0.51);
+      g.add(slot);
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const palette = [ledMats.green, ledMats.amber, ledMats.cyan];
+      const led = new THREE.Mesh(
+        new THREE.BoxGeometry(0.09, 0.09, 0.03),
+        palette[Math.floor(Math.random() * palette.length)]
+      );
+      led.position.set(i % 2 ? 0.45 : -0.45, 0.62 + Math.floor(i / 2) * 0.44, 0.53);
+      g.add(led);
+    }
+
+    g.position.set(x, 0, z);
+    g.rotation.y = rotY;
+    scene.add(g);
+    obstacles.push({ x, z, r: 1.15 });
+  }
+
+  buildRack(roomHalf - 1.1, -6, -Math.PI / 2);
+  buildRack(roomHalf - 1.1, 0, -Math.PI / 2);
+  buildRack(roomHalf - 1.1, 6, -Math.PI / 2);
+  buildRack(-(roomHalf - 1.1), -6, Math.PI / 2);
+  buildRack(-(roomHalf - 1.1), 0, Math.PI / 2);
+  buildRack(-(roomHalf - 1.1), 6, Math.PI / 2);
+  buildRack(-7, roomHalf - 1.1, Math.PI);
+  buildRack(0, roomHalf - 1.1, Math.PI);
+  buildRack(7, roomHalf - 1.1, Math.PI);
+  buildRack(-8, -(roomHalf - 1.1), 0);
+  buildRack(8, -(roomHalf - 1.1), 0);
+
+  // central core
+  const coreGroup = new THREE.Group();
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.6, 0.6, 32), rackMat);
+  base.position.y = 0.3;
+  base.castShadow = true;
+  coreGroup.add(base);
+
+  const column = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32, 1, true),
+    new THREE.MeshStandardMaterial({ map: metalTex, color: 0x46525f, metalness: 0.92, roughness: 0.24, side: THREE.DoubleSide })
+  );
+  column.position.y = 2.2;
+  column.castShadow = true;
+  coreGroup.add(column);
+
+  const inner = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.3, 1.3, 3.0, 32),
+    new THREE.MeshStandardMaterial({ color: 0x001018, emissive: 0x22ccff, emissiveIntensity: 1.5, roughness: 0.3 })
+  );
+  inner.position.y = 2.2;
+  coreGroup.add(inner);
+
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.55, 1.55, 0.25, 32),
+    new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.9, roughness: 0.3 })
+  );
+  cap.position.y = 3.85;
+  coreGroup.add(cap);
+
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x06181f, emissive: 0x22ddff, emissiveIntensity: 2.2, roughness: 0.3 });
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.055, 8, 48, Math.PI * 1.6), ringMat);
+    ring.position.y = 1.25 + i * 1.05;
+    ring.rotation.x = Math.PI / 2;
+    coreGroup.add(ring);
+    rings.push(ring);
+  }
+
+  coreGroup.position.set(0, 0, 0);
+  scene.add(coreGroup);
+  obstacles.push({ x: 0, z: 0, r: 2.5 });
+
+  // console
+  const consoleG = new THREE.Group();
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 1.2), rackMat);
+  desk.position.y = 0.95;
+  desk.castShadow = true;
+  consoleG.add(desk);
+
+  for (const sx of [-1.4, 1.4]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, 0.12), rackMat);
+    leg.position.set(sx, 0.475, 0);
+    consoleG.add(leg);
+  }
+
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.5, 0.1), screenFrameMat);
+  frame.position.set(0, 1.8, -0.28);
+  consoleG.add(frame);
+
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.3), coreScreenMat);
+  screen.position.set(0, 1.8, -0.22);
+  consoleG.add(screen);
+
+  consoleG.position.set(0, 0, -(roomHalf - 1.5));
+  scene.add(consoleG);
+
+  // Packet Tracer station (east side)
+  const ptGroup = new THREE.Group();
+  const ptDesk = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 1.0), rackMat);
+  ptDesk.position.y = 0.95;
+  ptDesk.castShadow = true;
+  ptGroup.add(ptDesk);
+  for (const sx of [-1.0, 1.0]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, 0.12), rackMat);
+    leg.position.set(sx, 0.475, 0);
+    ptGroup.add(leg);
+  }
+  const ptFrame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 0.1), screenFrameMat);
+  ptFrame.position.set(0, 1.7, -0.28);
+  ptGroup.add(ptFrame);
+  const ptScreen = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), packetScreenMat);
+  ptScreen.position.set(0, 1.7, -0.22);
+  ptGroup.add(ptScreen);
+  ptGroup.position.set(roomHalf - 1.6, 0, 0);
+  ptGroup.rotation.y = -Math.PI / 2;
+  scene.add(ptGroup);
+  obstacles.push({ x: roomHalf - 1.6, z: 0, r: 1.2 });
+
+  const ptLight = new THREE.PointLight(0xff9ad6, 12, 8, 2);
+  ptLight.position.set(roomHalf - 2.4, 2.2, 0);
+  scene.add(ptLight);
+  flicker.push({ light: ptLight, base: 12, speed: 2.0, phase: 1.8 });
+
+  const consoleLight = new THREE.PointLight(0x55d8ff, 18, 12, 2);
+  consoleLight.position.set(0, 2.2, -(roomHalf - 2.4));
+  scene.add(consoleLight);
+  flicker.push({ light: consoleLight, base: 18, speed: 2.2, phase: 0.4 });
+
+  terminals.push({
+    kind: 'core',
+    pos: new THREE.Vector3(0, 0, -(roomHalf - 1.6)),
+    label: 'ACCESS TATRA CORE SERVER'
+  });
+
+  // room lights
+  const l1 = new THREE.PointLight(0x55d8ff, 70, 26, 2);
+  l1.position.set(0, 5.6, 0);
+  scene.add(l1);
+  flicker.push({ light: l1, base: 70, speed: 1.3, phase: 1.1 });
+
+  const l2 = new THREE.PointLight(0x4fb8ff, 40, 20, 2);
+  l2.position.set(-7.5, 4.2, -2);
+  scene.add(l2);
+  flicker.push({ light: l2, base: 40, speed: 1.7, phase: 2.3 });
+
+  const l3 = new THREE.PointLight(0x4fb8ff, 40, 20, 2);
+  l3.position.set(7.5, 4.2, 2);
+  scene.add(l3);
+  flicker.push({ light: l3, base: 40, speed: 1.5, phase: 3.7 });
+})();
+
+/* =========================================================
+   RASPBERRY PI STATION (random placement)
+   ========================================================= */
+(function placePi() {
+  const candidates = [];
+  for (let z = 1; z < N - 1; z++) {
+    for (let x = 1; x < N - 1; x++) {
+      if (grid[z][x] !== 0) continue;
+      if (Math.abs(x - C) <= ROOM_R + 1 && Math.abs(z - C) <= ROOM_R + 1) continue;
+      if (x === 1 && z === 1) continue;
+      let open = 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (grid[z + dz] && grid[z + dz][x + dx] === 0) open++;
+      }
+      candidates.push({ x, z, open });
+    }
+  }
+
+  const deadEnds = candidates.filter(c => c.open === 1);
+  const pool = deadEnds.length ? deadEnds : candidates;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  piCell = { x: pick.x, z: pick.z };
+
+  const wx = cellCenter(pick.x);
+  const wz = cellCenter(pick.z);
+
+  let openDir = [0, 1];
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (grid[pick.z + dz] && grid[pick.z + dz][pick.x + dx] === 0) {
+      openDir = [dx, dz];
+      break;
+    }
+  }
+
+  const px = wx - openDir[0] * CELL * 0.32;
+  const pz = wz - openDir[1] * CELL * 0.32;
+  const rotY = Math.atan2(openDir[0], openDir[1]);
+
+  const g = new THREE.Group();
+
+  // table
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.9), tableMat);
+  top.position.y = 0.85;
+  top.castShadow = true;
+  g.add(top);
+  for (const sx of [-0.65, 0.65]) {
+    for (const sz of [-0.35, 0.35]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.85, 0.07), tableMat);
+      leg.position.set(sx, 0.425, sz);
+      g.add(leg);
+    }
+  }
+
+  // pi board
+  const boardMat = new THREE.MeshStandardMaterial({ color: 0x1f7a3a, roughness: 0.55, metalness: 0.2 });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 0.4), boardMat);
+  board.position.set(-0.25, 0.92, 0.05);
+  g.add(board);
+
+  const chipMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.4, metalness: 0.4 });
+  for (let i = 0; i < 4; i++) {
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.1), chipMat);
+    chip.position.set(-0.4 + i * 0.12, 0.955, -0.05);
+    g.add(chip);
+  }
+  const usb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.06), new THREE.MeshStandardMaterial({ color: 0xb8c0c8, metalness: 0.9, roughness: 0.3 }));
+  usb.position.set(-0.05, 0.95, 0.19);
+  g.add(usb);
+
+  const led = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.02, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2222, emissiveIntensity: 3 })
+  );
+  led.position.set(0.0, 0.95, -0.15);
+  g.add(led);
+
+  // monitor
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.62, 0.06), screenFrameMat);
+  frame.position.set(0.25, 1.45, -0.25);
+  g.add(frame);
+
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.52), piScreenMat);
+  screen.position.set(0.25, 1.45, -0.215);
+  g.add(screen);
+
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), screenFrameMat);
+  stand.position.set(0.25, 1.05, -0.3);
+  g.add(stand);
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.03, 0.25), screenFrameMat);
+  base.position.set(0.25, 0.88, -0.3);
+  g.add(base);
+
+  // keyboard
+  const kb = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.03, 0.2), new THREE.MeshStandardMaterial({ color: 0x202428, roughness: 0.7 }));
+  kb.position.set(0.1, 0.9, 0.25);
+  g.add(kb);
+
+  g.position.set(px, 0, pz);
+  g.rotation.y = rotY;
+  scene.add(g);
+
+  const light = new THREE.PointLight(0x44ff99, 12, 8, 2);
+  light.position.set(px, 1.9, pz);
+  scene.add(light);
+  flicker.push({ light, base: 12, speed: 4.2, phase: 0.7 });
+
+  terminals.push({
+    kind: 'pi',
+    pos: new THREE.Vector3(px, 0, pz),
+    label: 'ACCESS RASPBERRY PI TERMINAL'
+  });
+})();
+
+/* =========================================================
+   WD-40 COLLECTIBLES
+   ========================================================= */
+(function placeCans() {
+  const canGeo = new THREE.CylinderGeometry(0.28, 0.28, 1.0, 20, 1, false);
+  const canSideMat = new THREE.MeshStandardMaterial({ map: wdTex, roughness: 0.35, metalness: 0.55 });
+  const canCapMat = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.9, roughness: 0.3 });
+  const glowSpriteMat = new THREE.SpriteMaterial({
+    map: glowTex, color: 0x8fd8ff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5
+  });
+
+  const candidates = [];
+  for (let z = 1; z < N - 1; z++) {
+    for (let x = 1; x < N - 1; x++) {
+      if (grid[z][x] !== 0) continue;
+      if (x === 1 && z === 1) continue;
+      if (Math.abs(x - C) <= ROOM_R + 1 && Math.abs(z - C) <= ROOM_R + 1) continue;
+      if (piCell && x === piCell.x && z === piCell.z) continue;
+      candidates.push({ x, z });
+    }
+  }
+  shuffle(candidates);
+
+  const chosen = [];
+  for (const cand of candidates) {
+    if (chosen.length >= 8) break;
+    const wx = cellCenter(cand.x);
+    const wz = cellCenter(cand.z);
+    let ok = true;
+    for (const p of chosen) {
+      if (Math.hypot(p.wx - wx, p.wz - wz) < 7.5) { ok = false; break; }
+    }
+    if (ok) chosen.push({ ...cand, wx, wz });
+  }
+
+  for (const c of chosen) {
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(canGeo, [canSideMat, canCapMat, canCapMat]);
+    mesh.castShadow = true;
+    group.add(mesh);
+
+    const sprite = new THREE.Sprite(glowSpriteMat.clone());
+    sprite.scale.set(2.0, 2.0, 1);
+    group.add(sprite);
+
+    group.position.set(c.wx, 0.55, c.wz);
+    scene.add(group);
+
+    cans.push({
+      group, sprite,
+      baseY: 0.55,
+      phase: Math.random() * Math.PI * 2,
+      collected: false
+    });
+  }
+
+  canCountEl.textContent = `0 / ${cans.length}`;
+})();
+
+/* =========================================================
+   PIG COLLECTIBLE (:pig2:)
+   ========================================================= */
+const pigs = [];
+let pigCount = 0;
+
+(function placePig() {
+  const candidates = [];
+  for (let z = 1; z < N - 1; z++) {
+    for (let x = 1; x < N - 1; x++) {
+      if (grid[z][x] !== 0) continue;
+      if (x === 1 && z === 1) continue;
+      if (Math.abs(x - C) <= ROOM_R + 1 && Math.abs(z - C) <= ROOM_R + 1) continue;
+      if (piCell && x === piCell.x && z === piCell.z) continue;
+      // avoid cans
+      const wx = cellCenter(x), wz = cellCenter(z);
+      let nearCan = false;
+      for (const can of cans) {
+        if (Math.hypot(can.group.position.x - wx, can.group.position.z - wz) < 5) { nearCan = true; break; }
+      }
+      if (nearCan) continue;
+      candidates.push({ x, z, wx, wz });
+    }
+  }
+  if (!candidates.length) return;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  const pinkMat = new THREE.MeshStandardMaterial({ color: 0xff6fb0, roughness: 0.6, metalness: 0.15, emissive: 0xff3f8a, emissiveIntensity: 0.4 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), pinkMat);
+  body.position.y = 0.45;
+  body.castShadow = true;
+  const group = new THREE.Group();
+  group.add(body);
+  // pig face billboard (emoji)
+  const pigCanvas = document.createElement('canvas');
+  pigCanvas.width = 128; pigCanvas.height = 128;
+  const pctx = pigCanvas.getContext('2d');
+  pctx.font = '96px serif';
+  pctx.textAlign = 'center';
+  pctx.textBaseline = 'middle';
+  pctx.fillText('🐷', 64, 68);
+  const pigTex = new THREE.CanvasTexture(pigCanvas);
+  pigTex.colorSpace = THREE.SRGBColorSpace;
+  const faceMat = new THREE.SpriteMaterial({ map: pigTex, transparent: true, depthWrite: false });
+  const face = new THREE.Sprite(faceMat);
+  face.scale.set(1.2, 1.2, 1);
+  face.position.y = 1.35;
+  group.add(face);
+  group.position.set(pick.wx, 0, pick.wz);
+  scene.add(group);
+  pigs.push({ group, baseY: 0, phase: Math.random() * Math.PI * 2, collected: false });
+  pigCountEl.textContent = `🐷 0 / 1`;
+})();
+
+/* =========================================================
+   PLAYER
+   ========================================================= */
+const startX = cellCenter(1);
+const startZ = cellCenter(1);
+let startDir = [1, 0];
+for (const [dx, dz] of [[1, 0], [0, 1]]) {
+  if (grid[1 + dz] && grid[1 + dz][1 + dx] === 0) { startDir = [dx, dz]; break; }
+}
+
+const player = { x: startX, z: startZ };
+let bob = 0;
+let bobT = 0;
+let currentTerminal = null;
+let won = false;
+const gameStart = performance.now();
+const accessedTerminals = new Set();
+
+camera.position.set(player.x, EYE, player.z);
+camera.rotation.y = Math.atan2(-startDir[0], -startDir[1]);
+camera.rotation.x = 0;
+
+function isSolidCell(cx, cz) {
+  if (cx < 0 || cz < 0 || cx >= N || cz >= N) return true;
+  return grid[cz][cx] === 1;
+}
+
+function collides(wx, wz) {
+  const r = 0.45;
+  const checks = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]];
+  for (const [dx, dz] of checks) {
+    if (isSolidCell(worldToCell(wx + dx), worldToCell(wz + dz))) return true;
+  }
+  for (const o of obstacles) {
+    const ddx = wx - o.x, ddz = wz - o.z;
+    const rr = o.r + r;
+    if (ddx * ddx + ddz * ddz < rr * rr) return true;
+  }
+  return false;
+}
+
+/* =========================================================
+   INPUT
+   ========================================================= */
+const keys = {};
+let locked = false;
+let terminalOpen = false;
+
+function requestLock() {
+  try {
+    const p = canvas.requestPointerLock();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
+startScreen.addEventListener('click', () => {
+  if (terminalOpen) return;
+  initAudio();
+  requestLock();
+});
+
+winScreen.addEventListener('click', () => {
+  winScreen.style.display = 'none';
+  startScreen.style.display = 'flex';
+  initAudio();
+  requestLock();
+});
+
+// ---------- EMBED (dvere z Kruháča) -----------------------------------------
+// Keď beží hra ako iframe v Kruháčovi, výhra aj tlačidlá "SPÄŤ DO HLOHOVCA"
+// pošlú rodičovi správu — ten zavrie overlay a teleportuje hráča naspäť
+// k dverám pri kostole sv. Michala. Samostatne otvorený súbor to nerobí.
+function postEmbed(cmd) {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'tatra-labyrinth', cmd }, '*');
+    }
+  } catch (e) { /* rodič z inej domény → ignoruj */ }
+}
+if (window.parent && window.parent !== window) {
+  document.body.classList.add('embed');
+  for (const id of ['start-home', 'win-home']) {
+    const b = document.getElementById(id);
+    if (b) b.addEventListener('click', (e) => { e.stopPropagation(); postEmbed('return'); });
+  }
+}
+
+canvas.addEventListener('click', () => {
+  if (!terminalOpen && !locked) requestLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  if (locked) {
+    startScreen.style.display = 'none';
+    initAudio();
+  } else if (!terminalOpen) {
+    startScreen.style.display = 'flex';
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!locked || terminalOpen) return;
+  camera.rotation.y -= e.movementX * 0.0022;
+  camera.rotation.x -= e.movementY * 0.0022;
+  camera.rotation.x = Math.max(-1.45, Math.min(1.45, camera.rotation.x));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (terminalOpen) {
+    if (e.code === 'Escape') { e.preventDefault(); closeTerminal(); }
+    return;
+  }
+  keys[e.code] = true;
+  if (e.code === 'KeyE') tryInteract();
+});
+
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* =========================================================
+   AUDIO (tiny synth beeps)
+   ========================================================= */
+let actx = null;
+function initAudio() {
+  if (actx) return;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) { actx = null; }
+}
+function beep(freq, dur, type = 'sine', vol = 0.05) {
+  if (!actx) return;
+  try {
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g).connect(actx.destination);
+    o.start();
+    o.stop(actx.currentTime + dur);
+  } catch (e) { /* ignore */ }
+}
+
+/* =========================================================
+   INTERACTION
+   ========================================================= */
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.style.opacity = '0'; }, 2300);
+}
+
+function updatePrompt() {
+  if (terminalOpen) {
+    promptEl.style.opacity = '0';
+    currentTerminal = null;
+    return;
+  }
+  let best = null;
+  let bestD = 2.9;
+  for (const t of terminals) {
+    const dx = t.pos.x - player.x;
+    const dz = t.pos.z - player.z;
+    const d = Math.hypot(dx, dz);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  if (best) {
+    currentTerminal = best;
+    promptText.textContent = best.label;
+    promptEl.style.opacity = '1';
+  } else {
+    currentTerminal = null;
+    promptEl.style.opacity = '0';
+  }
+}
+
+function tryInteract() {
+  if (!currentTerminal) return;
+  openTerminal(currentTerminal.kind);
+}
+
+function collectCan(can) {
+  can.collected = true;
+  scene.remove(can.group);
+  collectedCount++;
+  canCountEl.textContent = `${collectedCount} / ${cans.length}`;
+  toast('WD-40 COLLECTED');
+  beep(880, 0.09, 'square', 0.045);
+  if (collectedCount === cans.length) {
+    setTimeout(() => {
+      toast('ALL WD-40 SECURED — THE LABYRINTH YIELDS');
+      beep(1320, 0.2, 'sine', 0.05);
+    }, 420);
+    setTimeout(() => triggerWin('collect'), 1500);
+  }
+}
+
+function collectPig(pig) {
+  if (pig.collected) return;
+  pig.collected = true;
+  scene.remove(pig.group);
+  pigCount = 1;
+  pigCountEl.textContent = `🐷 1 / 1`;
+  toast('🐷 OINK! LUCKY PIG FOUND');
+  beep(1047, 0.14, 'triangle', 0.05);
+}
+
+function triggerWin(source) {
+  if (won) return;
+  won = true;
+
+  // sweep up any cans that were not picked up
+  for (const can of cans) {
+    if (!can.collected) {
+      can.collected = true;
+      scene.remove(can.group);
+    }
+  }
+  collectedCount = cans.length;
+  canCountEl.textContent = `${collectedCount} / ${cans.length}`;
+
+  const secs = Math.max(1, Math.round((performance.now() - gameStart) / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+  const ss = String(secs % 60).padStart(2, '0');
+  const nodes = accessedTerminals.size;
+
+  winStats.textContent =
+    `TIME      ${mm}:${ss}\n` +
+    `WD-40     ${collectedCount} / ${cans.length}\n` +
+    `NODES     ${nodes} / 2 ACCESSED\n` +
+    `STATUS    LABYRINTH CLEARED`;
+
+  if (terminalOpen) {
+    terminal.open = false;
+    terminalOpen = false;
+    document.body.classList.remove('term-open');
+    termEl.style.display = 'none';
+  }
+
+  if (document.pointerLockElement) document.exitPointerLock();
+
+  startScreen.style.display = 'none';
+  winScreen.style.display = 'flex';
+  postEmbed('win');   // Kruháč: teleport hráča naspäť k dverám
+
+  const notes = [523, 659, 784, 1047, 1319];
+  notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 'triangle', 0.05), i * 130));
+}
+
+/* =========================================================
+   TERMINAL
+   ========================================================= */
+const termEl = document.getElementById('terminal');
+const termOutput = document.getElementById('term-output');
+const termInput = document.getElementById('term-input');
+const termTitle = document.getElementById('term-title');
+const termPromptEl = document.getElementById('term-prompt');
+
+const terminal = {
+  open: false,
+  kind: 'core',
+  history: [],
+  histIndex: 0
+};
+
+function termPrint(text, cls) {
+  const div = document.createElement('div');
+  div.className = 'out' + (cls ? ' ' + cls : '');
+  div.textContent = text;
+  termOutput.appendChild(div);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+function openTerminal(kind) {
+  terminal.open = true;
+  terminal.kind = kind;
+  terminalOpen = true;
+  accessedTerminals.add(kind);
+  document.body.classList.add('term-open');
+  termEl.style.display = 'flex';
+  termOutput.innerHTML = '';
+  termInput.value = '';
+  terminal.histIndex = terminal.history.length;
+
+  if (kind === 'core') {
+    termTitle.textContent = 'root@tatra-core: ~';
+    termPromptEl.textContent = 'root@tatra-core:~# ';
+    termEl.style.setProperty('--term-accent', '#5ce1ff');
+    termOutput.style.color = '#bff1ff';
+    termPrint('TATRA CORE — secure shell v2.4.1');
+    termPrint('Node: tatra-core-01   |   Zone: High Tatras, SK');
+    termPrint('Uptime: 42 days.  Load: 0.42   |   Access level: root');
+    termPrint('');
+    termPrint('Type "help" for the full command list.');
+    termPrint('');
+  } else {
+    termTitle.textContent = 'pi@tatra-lab: ~';
+    termPromptEl.textContent = 'pi@tatra-lab:~$ ';
+    termEl.style.setProperty('--term-accent', '#5cffb0');
+    termOutput.style.color = '#b9ffd8';
+    termPrint('Raspberry Pi 5 (aarch64)');
+    termPrint('Linux raspberrypi 6.6.29-v8+ #1642 SMP PREEMPT');
+    termPrint('');
+    termPrint('Last login: Sun Nov 15 08:12:03 2026 from 10.0.0.4');
+    termPrint('Type "help" for available commands.');
+    termPrint('');
+  }
+
+  document.exitPointerLock();
+  setTimeout(() => termInput.focus(), 60);
+}
+
+function closeTerminal() {
+  terminal.open = false;
+  terminalOpen = false;
+  document.body.classList.remove('term-open');
+  termEl.style.display = 'none';
+  startScreen.style.display = 'flex';
+  beep(420, 0.07, 'sine', 0.03);
+  requestLock();
+}
+
+function submitCommand() {
+  const raw = termInput.value;
+  termInput.value = '';
+  const t = raw.trim();
+  if (!t) return;
+
+  const prompt = terminal.kind === 'core' ? 'root@tatra-core:~# ' : 'pi@tatra-lab:~$ ';
+  termPrint(prompt + raw, 'echo');
+
+  terminal.history.push(raw);
+  terminal.histIndex = terminal.history.length;
+
+  if (t === 'clear') {
+    termOutput.innerHTML = '';
+    return;
+  }
+  if (t === 'exit') {
+    closeTerminal();
+    return;
+  }
+
+  const lines = terminal.kind === 'core' ? coreRun(raw) : piRun(raw);
+  for (const l of lines) termPrint(l);
+}
+
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    submitCommand();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (terminal.histIndex > 0) terminal.histIndex--;
+    termInput.value = terminal.history[terminal.histIndex] || '';
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (terminal.histIndex < terminal.history.length - 1) terminal.histIndex++;
+    else terminal.histIndex = terminal.history.length;
+    termInput.value = terminal.history[terminal.histIndex] || '';
+  }
+});
+
+/* =========================================================
+   PI TERMINAL COMMANDS
+   ========================================================= */
+const PI_FILES = {
+  'sensor.py': `#!/usr/bin/env python3
+import time
+from bmp280 import BMP280
+
+sensor = BMP280()
+while True:
+    temp = sensor.get_temperature()
+    press = sensor.get_pressure()
+    print(f"temp={temp:.2f}C  press={press:.1f}hPa")
+    time.sleep(2)
+`,
+  'weather.py': `import requests
+r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+    "latitude": 49.17,
+    "longitude": 20.22
+})
+print(r.json())
+`,
+  'gpio.py': `import RPi.GPIO as GPIO
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(17, GPIO.OUT)
+GPIO.output(17, GPIO.HIGH)
+`,
+  'notes.txt': `Tatra field notes
+-----------------
+- bring spare batteries
+- WD-40 for the stuck gate
+- check the core before dawn
+- the pi keeps the weather log
+`
+};
+
+function piRun(raw) {
+  const t = raw.trim();
+  if (!t) return [];
+  const p = t.split(/\s+/);
+  const c = p[0];
+
+  switch (c) {
+    case 'help':
+      return [
+        'Available commands:',
+        '  help               show this help',
+        '  ls                 list files in home',
+        '  cat <file>         print a file',
+        '  whoami             current user',
+        '  uname [-a]         kernel info',
+        '  uptime             system uptime',
+        '  free -h            memory usage',
+        '  gpio readall       GPIO pin states',
+        '  python3 <file>     run a python script',
+        '  packettracer / pt  packet tracer network trace',
+        '  pig                show the lucky pig',
+        '  exit               close the terminal'
+      ];
+
+    case 'ls':
+      return [
+        'total 24',
+        'drwxr-xr-x  5 pi pi 4096 Nov 15 08:12 .',
+        'drwxr-xr-x  3 pi pi 4096 Nov 12 19:40 ..',
+        '-rw-r--r--  1 pi pi  220 Nov 14 22:03 notes.txt',
+        '-rwxr-xr-x  1 pi pi 1240 Nov 14 21:55 sensor.py',
+        '-rwxr-xr-x  1 pi pi  980 Nov 14 21:56 weather.py',
+        '-rwxr-xr-x  1 pi pi  640 Nov 14 21:57 gpio.py'
+      ];
+
+    case 'cat': {
+      const f = p[1];
+      if (!f) return ['cat: missing operand'];
+      if (PI_FILES[f]) return PI_FILES[f].replace(/\n$/, '').split('\n');
+      return [`cat: ${f}: No such file or directory`];
+    }
+
+    case 'whoami':
+      return ['pi'];
+
+    case 'uname':
+      return ['Linux raspberrypi 6.6.29-v8+ #1642 SMP PREEMPT aarch64 GNU/Linux'];
+
+    case 'uptime':
+      return [' 08:42:17 up 3 days,  4:12,  1 user,  load average: 0.14, 0.22, 0.18'];
+
+    case 'free':
+      return [
+        '              total        used        free      shared  buff/cache   available',
+        'Mem:          3.7Gi       412Mi       2.9Gi        12Mi       388Mi       3.1Gi',
+        'Swap:          100Mi          0B       100Mi'
+      ];
+
+    case 'gpio':
+      if (p[1] !== 'readall') return ['Usage: gpio readall'];
+      return [
+        '+-----+-----+---------+------+---Pi 5---+------+---------+-----+-----+',
+        '| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi |',
+        '+-----+-----+---------+------+---+--------+---+------+---------+-----+',
+        '|  17 |   0 | GPIO. 0 |  OUT | 1 |    11    | 0 | IN   | GPIO. 1 |   1 |',
+        '|  27 |   2 | GPIO. 2 |  IN  | 0 |    13    | 0 | IN   | GPIO. 3 |   3 |',
+        '|  22 |   3 | GPIO. 3 |  IN  | 0 |    15    | 1 | OUT  | GPIO. 4 |   4 |',
+        '|  23 |   4 | GPIO. 4 |  IN  | 0 |    16    | 0 | IN   | GPIO. 5 |   5 |',
+        '|  24 |   5 | GPIO. 5 |  IN  | 0 |    18    | 0 | IN   | GPIO. 6 |   6 |',
+        '|  10 |  12 | GPIO.10 |  IN  | 0 |    19    | 0 | IN   | GPIO.11 |  13 |',
+        '+-----+-----+---------+------+---+--------+---+------+---------+-----+'
+      ];
+
+    case 'python3': {
+      const f = p[1];
+      if (f === 'sensor.py') {
+        return [
+          'temp=22.41C  press=843.2hPa',
+          'temp=22.38C  press=843.1hPa',
+          'temp=22.44C  press=843.3hPa',
+          '^C'
+        ];
+      }
+      if (f === 'weather.py') {
+        return [
+          '{"temp": 8.2, "wind": 12, "condition": "clear",',
+          ' "location": "High Tatras, SK"}'
+        ];
+      }
+      return [`python3: can't open file '${f || ''}': [Errno 2] No such file or directory`];
+    }
+
+    case 'packettracer':
+    case 'pt':
+    case 'traceroute': {
+      const host = p[1] || 'tatra-core';
+      return [
+        `Tracing route to ${host} [10.0.0.1] over a maximum of 30 hops:`,
+        '',
+        '  1   <1 ms   <1 ms   <1 ms   tatra-lab [10.0.0.4]',
+        '  2    3 ms     3 ms     4 ms   tatra-core-01 [10.0.0.1]',
+        '',
+        `Trace complete. ${host} is 2 hops away.`
+      ];
+    }
+
+    case 'pig':
+      return [
+        '  🐷  🐷  🐷',
+        '  oink oink!',
+        '  🐷  🐷  🐷'
+      ];
+
+    default:
+      return [`bash: ${c}: command not found`];
+  }
+}
+
+/* =========================================================
+   CORE SERVER COMMANDS (more than the Pi)
+   ========================================================= */
+const CORE_FILES = {
+  'motd.txt': 'TATRA CORE — authorized personnel only.\nAll access is logged and audited.\n',
+  'tatra-core.conf': '# tatra-core configuration\nlisten = 0.0.0.0:8080\nworkers = 12\nzone = high-tatras\nwd40_nodes = 8\n',
+  'maze.seed': '0x7A3F9C21 — labyrinth layout seed\nrooms = 1 (central server room)\nwd40 = 8\n',
+  'core.img': '[binary data — 882 KB]'
+};
+
+const CORE_COMMAND_COUNT = 31;
+
+function coreRun(raw) {
+  const t = raw.trim();
+  if (!t) return [];
+  const p = t.split(/\s+/);
+  const c = p[0];
+
+  switch (c) {
+    case 'help':
+      return [
+        'TATRA CORE — command reference',
+        '',
+        '  help                    this help',
+        '  ls [-la] [dir]          list files',
+        '  cat <file>              print a file',
+        '  ps aux                  process list',
+        '  top / htop              snapshot of system load',
+        '  df -h                   disk usage',
+        '  free -h                 memory',
+        '  uptime                  load and uptime',
+        '  uname -a                kernel info',
+        '  whoami                  current user',
+        '  ip a                    network interfaces',
+        '  netstat -tulpn          listening sockets',
+        '  ss -tulpn               socket summary',
+        '  systemctl status <svc>  service state',
+        '  systemctl restart <svc> restart a service',
+        '  systemctl list-units    all units',
+        '  journalctl -n <n>       recent logs',
+        '  docker ps               containers',
+        '  kubectl get pods        cluster pods',
+        '  ping <host>             connectivity test',
+        '  packettracer / pt        packet tracer network trace',
+        '  pig                     show the lucky pig',
+        '  ssh <host>              remote shell',
+        '  deploy                  ship the build',
+        '  matrix                  digital rain',
+        '  tail <file>             log tail',
+        '  date                    system time',
+        '  history                 command history',
+        '  reboot                  power cycle',
+        '  win / complete          auto-clear the labyrinth',
+        '  clear / exit',
+        '',
+        `(${CORE_COMMAND_COUNT} commands online)`
+      ];
+
+    case 'ls': {
+      const dir = p.find(a => a.startsWith('/') || a === '.' || a === '..');
+      if (dir && dir !== '.' && dir !== '..' && dir !== '/') {
+        return [`ls: cannot access '${dir}': No such file or directory`];
+      }
+      return [
+        'total 1648',
+        'drwxr-xr-x   6 root root    4096 Nov 15 08:12 .',
+        'drwxr-xr-x  18 root root    4096 Nov 12 19:40 ..',
+        '-rw-------   1 root root    1842 Nov 15 08:41 tatra-core.conf',
+        '-rw-r--r--   1 root root   12043 Nov 15 08:40 maze.seed',
+        '-rw-r--r--   1 root root     512 Nov 14 22:03 motd.txt',
+        'drwxr-xr-x   4 root root    4096 Nov 13 09:22 logs',
+        'drwxr-xr-x   5 root root    4096 Nov 12 18:10 backups',
+        'drwxr-xr-x   2 root root    4096 Nov 15 07:55 deploy',
+        '-rw-r--r--   1 root root  882133 Nov 15 08:02 core.img'
+      ];
+    }
+
+    case 'cat': {
+      const f = p[1];
+      if (!f) return ['cat: missing operand'];
+      const key = Object.keys(CORE_FILES).find(k => f.endsWith(k));
+      if (key) return CORE_FILES[key].replace(/\n$/, '').split('\n');
+      return [`cat: ${f}: No such file or directory`];
+    }
+
+    case 'ps':
+      return [
+        'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND',
+        'root         1  0.3  0.2 172480 51200 ?        Ss   08:00   0:42 /usr/bin/cored --labyrinth',
+        'root       214  0.1  0.1  42112 12800 ?        Ss   08:00   0:12 /usr/sbin/sshd -D',
+        'root       318  0.0  0.1  58120  8192 ?        Ss   08:00   0:03 /usr/sbin/nginx -g daemon on;',
+        'root       402  0.2  0.0  19880  6144 ?        S    08:01   0:18 /usr/bin/docker-proxy',
+        'postgres   511  0.1  0.3 221440 49152 ?        Ss   08:02   0:09 postgres: writer',
+        'root       666  0.4  0.2  88120 28672 ?        Sl   08:05   0:31 /usr/bin/cored --north-face',
+        'root       777  0.0  0.0  12044  4096 ?        S    08:09   0:00 /bin/sh /usr/local/bin/tatra-watch.sh'
+      ];
+
+    case 'top':
+    case 'htop':
+      return [
+        'top - 08:42:17 up 42 days,  3:12,  1 user,  load average: 0.42, 0.38, 0.31',
+        'Tasks: 128 total,   1 running, 127 sleeping,   0 stopped,   0 zombie',
+        '%Cpu(s): 12.4 us,  2.1 sy,  0.0 ni, 84.7 id,  0.8 wa,  0.0 hi,  0.0 si',
+        'MiB Mem :  16000.0 total,   8420.0 free,   4120.0 used,   3460.0 buff/cache',
+        'MiB Swap:   2048.0 total,   2048.0 free,      0.0 used.  11200.0 avail Mem',
+        '',
+        '  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND',
+        '    1 root      20   0  172480  51200  12040 S   0.3   0.2   0:42.31 cored',
+        '  666 root      20   0   88120  28672   9120 S   0.4   0.2   0:31.88 cored',
+        '  511 postgres  20   0  221440  49152  11240 S   0.1   0.3   0:09.44 postgres'
+      ];
+
+    case 'df':
+      return [
+        'Filesystem      Size  Used Avail Use% Mounted on',
+        '/dev/nvme0n1p2  120G   46G   68G  41% /',
+        'tmpfs           7.8G     0  7.8G   0% /dev/shm',
+        '/dev/nvme0n1p1  512M   32M  480M   7% /boot/efi',
+        'tmpfs           1.6G  1.2M  1.6G   1% /run'
+      ];
+
+    case 'free':
+      return [
+        '              total        used        free      shared  buff/cache   available',
+        'Mem:           16Gi       4.0Gi       8.2Gi        48Mi       3.4Gi        11Gi',
+        'Swap:          2.0Gi          0B       2.0Gi'
+      ];
+
+    case 'uptime':
+      return [' 08:42:17 up 42 days,  3:12,  1 user,  load average: 0.42, 0.38, 0.31'];
+
+    case 'uname':
+      return ['Linux tatra-core-01 6.1.0-18-amd64 #1 SMP PREEMPT_DYNAMIC x86_64 GNU/Linux'];
+
+    case 'whoami':
+      return ['root'];
+
+    case 'ip':
+      return [
+        '1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN',
+        '    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00',
+        '    inet 127.0.0.1/8 scope host lo',
+        '2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP',
+        '    link/ether 02:42:0a:00:00:01 brd ff:ff:ff:ff:ff:ff',
+        '    inet 10.0.0.1/24 brd 10.0.0.255 scope global eth0',
+        '3: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN',
+        '    inet 10.8.0.1/24 scope global wg0'
+      ];
+
+    case 'netstat':
+    case 'ss':
+      return [
+        'Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:Port Process',
+        'udp   UNCONN 0      0          0.0.0.0:68         0.0.0.0:*      310/dhclient',
+        'tcp   LISTEN 0      4096       0.0.0.0:22         0.0.0.0:*      214/sshd',
+        'tcp   LISTEN 0      511        0.0.0.0:8080       0.0.0.0:*      1/cored',
+        'tcp   LISTEN 0      511           [::]:8080          [::]:*      1/cored',
+        'tcp   ESTAB  0      0         10.0.0.1:8080      10.8.0.4:51422 1/cored',
+        'tcp   ESTAB  0      0         10.0.0.1:22        10.8.0.9:49122  214/sshd'
+      ];
+
+    case 'systemctl': {
+      const action = p[1];
+      const known = ['tatra-core.service', 'sshd.service', 'nginx.service', 'postgresql.service', 'docker.service'];
+      if (action === 'list-units') {
+        return [
+          'UNIT                       LOAD   ACTIVE SUB     DESCRIPTION',
+          'tatra-core.service         loaded active running Tatra Labyrinth Core',
+          'sshd.service               loaded active running OpenBSD Secure Shell',
+          'nginx.service              loaded active running A high performance web server',
+          'postgresql.service         loaded active running PostgreSQL RDBMS',
+          'docker.service             loaded active running Docker Application Container'
+        ];
+      }
+      if (action === 'status') {
+        const svc = p[2] || 'tatra-core.service';
+        if (!known.includes(svc)) return [`Unit ${svc} could not be found.`];
+        return [
+          `● ${svc} - Tatra Labyrinth Core`,
+          '     Loaded: loaded (/lib/systemd/system/tatra-core.service; enabled)',
+          '     Active: active (running) since Sun 2026-11-15 08:00:00 CET',
+          '   Main PID: 1 (cored)',
+          '      Tasks: 12 (limit: 4915)',
+          '     Memory: 512.0M',
+          '        CPU: 3h 12min',
+          '     CGroup: /system.slice/tatra-core.service',
+          '             ├─1 /usr/bin/cored --labyrinth',
+          '             └─2 /usr/bin/cored --north-face'
+        ];
+      }
+      if (action === 'restart') {
+        const svc = p[2];
+        if (!svc) return ['systemctl: missing unit name'];
+        if (!known.includes(svc)) return [`Failed to restart ${svc}: Unit not found.`];
+        return [`Restarting ${svc}...`, '[  OK  ] Started ' + svc + '.'];
+      }
+      if (!action) return ['systemctl: missing command'];
+      return [`systemctl: Unknown command '${action}'.`];
+    }
+
+    case 'journalctl':
+      return [
+        '-- Logs begin at Sun 2026-11-15 08:00:01 CET, end at Sun 2026-11-15 08:42:19 CET. --',
+        'Nov 15 08:41:02 tatra-core systemd[1]: Started Tatra Labyrinth Core.',
+        'Nov 15 08:41:05 tatra-core cored[1]: maze seed loaded: 0x7A3F',
+        'Nov 15 08:41:07 tatra-core cored[1]: 8 WD-40 nodes registered',
+        'Nov 15 08:41:09 tatra-core cored[1]: raspberry pi handshake OK',
+        'Nov 15 08:42:01 tatra-core kernel: [ 1842.771] eth0: link up, 1000 Mbps',
+        'Nov 15 08:42:17 tatra-core cored[1]: heartbeat ok'
+      ];
+
+    case 'docker':
+      return [
+        'CONTAINER ID   IMAGE          COMMAND    CREATED      STATUS       PORTS                    NAMES',
+        'a1b2c3d4e5f6   tatra/core     "/cored"   3 days ago   Up 3 days    0.0.0.0:8080->8080/tcp   tatra-core',
+        'b2c3d4e5f6a7   tatra/sensors  "/sensors" 2 days ago   Up 2 days                             tatra-sensors',
+        'c3d4e5f6a7b8   tatra/proxy    "/nginx"   5 days ago   Up 5 days    0.0.0.0:80->80/tcp         tatra-proxy'
+      ];
+
+    case 'kubectl':
+      return [
+        'NAME                          READY   STATUS    RESTARTS   AGE',
+        'tatra-core-7f9c6d8b5-x2k4p   1/1     Running   0          3d',
+        'tatra-sensors-5b8c9d7f6-q9m2z 1/1     Running   0          2d',
+        'tatra-proxy-6d4e8f7a9-t3v8n   1/1     Running   0          5d',
+        'tatra-lab-8f2a1c3b5-w7y4k    0/1     Pending   0          14m'
+      ];
+
+    case 'ping': {
+      const host = p[1] || 'tatra-core';
+      return [
+        `PING ${host} (10.8.0.1) 56(84) bytes of data.`,
+        '64 bytes from 10.8.0.1: icmp_seq=1 ttl=64 time=0.041 ms',
+        '64 bytes from 10.8.0.1: icmp_seq=2 ttl=64 time=0.038 ms',
+        '64 bytes from 10.8.0.1: icmp_seq=3 ttl=64 time=0.040 ms',
+        '',
+        `--- ${host} ping statistics ---`,
+        '3 packets transmitted, 3 received, 0% packet loss, time 2003ms',
+        'rtt min/avg/max/mdev = 0.038/0.039/0.041/0.001 ms'
+      ];
+    }
+
+    case 'packettracer':
+    case 'pt':
+    case 'traceroute': {
+      const host = p[1] || 'tatra-core';
+      return [
+        `Tracing route to ${host} [10.0.0.1] over a maximum of 30 hops:`,
+        '',
+        '  1   <1 ms   <1 ms   <1 ms   raspberrypi.tatra.lab [10.0.0.4]',
+        '  2    2 ms     2 ms     3 ms   tatra-switch-01 [10.0.0.2]',
+        '  3    4 ms     3 ms     4 ms   tatra-core-01 [10.0.0.1]',
+        '',
+        `Trace complete. ${host} is ${host === 'tatra-core' ? 3 : 4} hops away.`
+      ];
+    }
+
+    case 'pig':
+      return [
+        '  🐷  🐷  🐷',
+        '  oink oink!',
+        '  🐷  🐷  🐷'
+      ];
+
+    case 'ssh': {
+      const host = p[1] || 'root@tatra-core';
+      if (host.includes('core')) {
+        return [
+          `The authenticity of host '${host}' can't be established.`,
+          'ED25519 key fingerprint is SHA256:9fK2xQ7mZ1vB3nR8tY4pL6wC0sA5dE9gH2jK.',
+          'Are you sure you want to continue connecting (yes/no)?',
+          '',
+          'Warning: Permanently added to the list of known hosts.',
+          'Welcome to TATRA CORE. Last login: Sun Nov 15 08:39:12 2026',
+          'root@tatra-core:~# _'
+        ];
+      }
+      return [`ssh: connect to host ${host} port 22: Connection refused`];
+    }
+
+    case 'deploy':
+      return [
+        '[1/4] Resolving build artifacts .................. ok',
+        '[2/4] Signing tatra-core image .................... ok',
+        '[3/4] Pushing to 12 nodes ......................... ok',
+        '[4/4] Rolling restart ............................. ok',
+        '',
+        'Deployment complete. https://tatra.lab is live.'
+      ];
+
+    case 'matrix': {
+      const lines = [];
+      for (let i = 0; i < 8; i++) {
+        let s = '';
+        for (let j = 0; j < 60; j++) s += Math.random() < 0.5 ? '0' : '1';
+        lines.push(s);
+      }
+      return lines;
+    }
+
+    case 'tail':
+      return [
+        'Nov 15 08:41:02 tatra-core systemd[1]: Started Tatra Labyrinth Core.',
+        'Nov 15 08:41:05 tatra-core cored[1]: maze seed loaded: 0x7A3F',
+        'Nov 15 08:41:07 tatra-core cored[1]: 8 WD-40 nodes registered',
+        'Nov 15 08:41:09 tatra-core cored[1]: raspberry pi handshake OK',
+        'Nov 15 08:42:01 tatra-core kernel: [ 1842.771] eth0: link up, 1000 Mbps',
+        'Nov 15 08:42:17 tatra-core cored[1]: heartbeat ok'
+      ];
+
+    case 'date':
+      return [new Date().toString()];
+
+    case 'history':
+      return terminal.history.map((h, i) => `  ${i + 1}  ${h}`);
+
+    case 'reboot':
+      return [
+        'Broadcast message from root@tatra-core (Sun 2026-11-15 08:42:19 CET):',
+        '',
+        'The system is going down for reboot NOW!'
+      ];
+
+    case 'win':
+    case 'complete':
+    case 'escape':
+    case 'finish':
+      setTimeout(() => triggerWin('core'), 1600);
+      return [
+        '',
+        '+==================================================+',
+        '|  TATRA CORE // DIRECTIVE 7 - OVERRIDE ENGAGED    |',
+        '|  LABYRINTH CLEARANCE PROTOCOL                   |',
+        '+==================================================+',
+        '',
+        'Synchronising WD-40 nodes ......... 8/8',
+        'Unlocking mountain route .......... OK',
+        'Uploading clearance to field kit ... OK',
+        '',
+        'ALL WD-40 SECURED. LABYRINTH COMPLETE.'
+      ];
+
+    default:
+      return [`bash: ${c}: command not found`];
+  }
+}
+
+/* =========================================================
+   PLAYER UPDATE
+   ========================================================= */
+function updatePlayer(dt) {
+  let f = 0, s = 0;
+  if (keys['KeyW']) f += 1;
+  if (keys['KeyS']) f -= 1;
+  if (keys['KeyD']) s += 1;
+  if (keys['KeyA']) s -= 1;
+
+  const moving = f !== 0 || s !== 0;
+  let speed = 4.2;
+  if (keys['ShiftLeft'] || keys['ShiftRight']) speed = 7.4;
+
+  const yaw = camera.rotation.y;
+  let dx = -Math.sin(yaw) * f + Math.cos(yaw) * s;
+  let dz = -Math.cos(yaw) * f - Math.sin(yaw) * s;
+
+  const len = Math.hypot(dx, dz);
+  if (len > 0) { dx /= len; dz /= len; }
+
+  const step = speed * dt;
+  const nx = player.x + dx * step;
+  if (!collides(nx, player.z)) player.x = nx;
+  const nz = player.z + dz * step;
+  if (!collides(player.x, nz)) player.z = nz;
+
+  bobT += moving ? dt * 9 : 0;
+  const targetBob = moving ? Math.sin(bobT) * 0.04 : 0;
+  bob += (targetBob - bob) * Math.min(1, dt * 10);
+
+  camera.position.set(player.x, EYE + bob, player.z);
+}
+
+/* =========================================================
+   ANIMATE
+   ========================================================= */
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  elapsed += dt;
+
+  if (locked && !terminalOpen) updatePlayer(dt);
+
+  for (const can of cans) {
+    if (can.collected) continue;
+    can.group.rotation.y += dt * 1.4;
+    can.group.position.y = can.baseY + Math.sin(elapsed * 2.0 + can.phase) * 0.07;
+    can.sprite.material.opacity = 0.32 + Math.sin(elapsed * 3.0 + can.phase) * 0.14;
+  }
+
+  for (let i = 0; i < rings.length; i++) {
+    rings[i].rotation.z += dt * (0.5 + i * 0.3);
+  }
+
+  for (const f of flicker) {
+    f.light.intensity = f.base * (0.88 + Math.sin(elapsed * f.speed + f.phase) * 0.12);
+  }
+
+  // collect WD-40 on contact
+  if (!terminalOpen) {
+    for (const can of cans) {
+      if (can.collected) continue;
+      const dx = can.group.position.x - player.x;
+      const dz = can.group.position.z - player.z;
+      if (dx * dx + dz * dz < 1.4 * 1.4) collectCan(can);
+    }
+  }
+
+  // animate pigs
+  for (const pig of pigs) {
+    if (pig.collected) continue;
+    pig.group.rotation.y += dt * 0.8;
+    pig.group.position.y = pig.baseY + Math.sin(elapsed * 2.0 + pig.phase) * 0.08;
+  }
+  // collect pig on contact
+  if (!terminalOpen && !won) {
+    for (const pig of pigs) {
+      if (pig.collected) continue;
+      const dx = pig.group.position.x - player.x;
+      const dz = pig.group.position.z - player.z;
+      if (dx * dx + dz * dz < 1.6 * 1.6) collectPig(pig);
+    }
+  }
+
+  updatePrompt();
+
+  renderer.render(scene, camera);
+}
+
+/* =========================================================
+   DEBUG HOOK (harmless in production, handy for testing)
+   ========================================================= */
+window.__tatra = {
+  scene, camera, renderer, player, grid, cellCenter, worldToCell,
+  cans, pigs, terminals, obstacles, piRun, coreRun, openTerminal, closeTerminal, triggerWin, collectCan, collectPig,
+  get locked() { return locked; },
+  get terminalOpen() { return terminalOpen; },
+  get won() { return won; }
+};
+
+animate();
+</script>
+</body>
+</html>
