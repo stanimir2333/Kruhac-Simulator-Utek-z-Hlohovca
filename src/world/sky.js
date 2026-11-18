@@ -169,6 +169,8 @@ export function buildSkyDome(scene, renderer) {
   // (obloha) a spodok ostáva otvorený, takže terén a hmla pokračujú
   // prirodzene. Polomer 4000 m → zakrivenie horizontu je pod rozlíšením oka.
   const geo = new THREE.SphereGeometry(4000, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+  // Posunutie kupoly dole, aby horizont sedel presne s terénom.
+  geo.translate(0, -400, 0);
   const top = new THREE.Color(S.SKY_ZENITH);
   const hor = new THREE.Color(S.SKY_HORIZON);
   const sunC = new THREE.Color(S.SKY_SUN);
