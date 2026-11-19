@@ -99,12 +99,13 @@ export function fDetailNormal(SZ){
   for(let y = 0; y < SZ; y++){
     for(let x = 0; x < SZ; x++){
       const u = x/SZ, v = y/SZ, i = (y*SZ + x)*4;
-      // Vysokofrekvenčný šum: malé kamienky, zrno, mikro-trhlinky
-      const n1 = tfbm(u, v, 512, 2, 5001);
-      const n2 = tfbm(u, v, 1024, 1, 5002);
-      const nx = (n1 - 0.5) * 0.35 + (n2 - 0.5) * 0.15;
-      const ny = (n1 - 0.5) * 0.35 + (n2 - 0.5) * 0.15;
-      const nz = 0.9 + (n1 - 0.5) * 0.1;
+      // Nízka frekvencia = hrudky/kamienky (~6 cm), vysoká = jemné zrno (~1,5 cm).
+      // 256 px na 4 m dlažbu = 1,56 cm/px, takže obe frekvencie sú rozlíšiteľné.
+      const n1 = tfbm(u, v, 24, 2, 5001);
+      const n2 = tfbm(u, v, 96, 1, 5002);
+      const nx = (n1 - 0.5) * 0.30 + (n2 - 0.5) * 0.18;
+      const ny = (n1 - 0.5) * 0.30 + (n2 - 0.5) * 0.18;
+      const nz = 0.92 + (n1 - 0.5) * 0.08;
       const L = 1/Math.sqrt(nx*nx + ny*ny + nz*nz);
       d[i]   = ((nx*L)*0.5 + 0.5)*255;
       d[i+1] = ((ny*L)*0.5 + 0.5)*255;
@@ -927,7 +928,7 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
   // DETAILNÁ NORMÁLOVÁ MAPA: mikro-zrno pre asfalt, betón, chodníky — shadery
   // ju blendujú s hlavnou normálovou mapou pri bližskom pohľade.
   const DN = fDetailNormal(256);
-  S.TEX.detailNormal = texFromCanvas(DN, false, [4, 4]); // vysoká frekvencia, opakuje sa často
+  S.TEX.detailNormal = texFromCanvas(DN, false); // tiling je v UV (4 m), nie v repeat
   mark("fasády+strechy");
   texReport(true);
 }

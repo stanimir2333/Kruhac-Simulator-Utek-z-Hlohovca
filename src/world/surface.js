@@ -104,22 +104,29 @@ const PUDDLE_FRAG = [
   '    float thr = 0.60 - uWet * 0.24;',
   '    pud = clamp((pn - thr) / 0.13, 0.0, 1.0) * uWet;',
   '    diffuseColor.rgb *= mix(1.0, 0.46, pud);',
-  // Jemná vlnkova perturbácia normály na mokrých miestach (rozbíje ploché zrkadlo)
+  // Jemná vlnková perturbácia normály na mokrých miestach (rozbije ploché zrkadlo).
+  // `normalScale` existuje LEN s normalMap; most (S.MAT.bridge) ju nemá, preto
+  // #ifdef — bez neho by celý shader nezkompiloval a most by zmizol.
+  '    #ifdef USE_NORMALMAP',
   '    if(pud > 0.01){',
   '      float wave = sin(vSurfPos.x * 0.3 + uTimePuddle) * 0.08 + cos(vSurfPos.z * 0.25 + uTimePuddle * 0.7) * 0.06;',
   '      normalScale *= mix(1.0, 1.0 + wave * 0.5, pud);',
   '    }',
+  '    #endif',
   '  }',
 ].join('\n');
 
-// Detail-normal blending: mikro-detail (kúsky, kamienky, mikro-trhlinky) sa
-// blenduje s hlavnou normálovou mapou podľa pixel-footprintu (blížšie = viac detailu).
+// Detail-normal blending: mikro-detail (kamienky, zrno, mikro-trhlinky) sa
+// primiešava do tangensovej normály AŽ po normal mape, takže hlavná normálová
+// mapa (asfalt, dlažba, omietka) ostáva dominantná. `mapN` a `tbn` sú v scope
+// len vtedy, keď materiál má tangent-space normalMap — preto ten #if.
 const DETAIL_NORMAL_FRAG = [
-  '  #ifdef USE_DETAIL_NORMAL',
-  '  vec3 detailN = texture2D(tDetailNormal, vDetailUv).xyz * 2.0 - 1.0;',
-  '  detailN = normalize(detailN);',
-  '  float detailMix = uDetailScale * (1.0 - uDetailFade);',
-  '  normal = normalize(normal + detailN * detailMix * normalScale);',
+  '  #if defined( USE_NORMALMAP_TANGENTSPACE )',
+  '  if(uDetailScale > 0.001){',
+  '    vec3 dnT = texture2D(tDetailNormal, vDetailUv).xyz * 2.0 - 1.0;',
+  '    dnT.xy *= normalScale * uDetailScale * (1.0 - uDetailFade);',
+  '    normal = normalize(tbn * normalize(mapN + dnT));',
+  '  }',
   '  #endif',
 ].join('\n');
 
@@ -148,8 +155,11 @@ function patchMat(mat, key, frag, rough, wetAmt){
     sh.uniforms.uWet = S.UNI.wet;
     sh.uniforms.uDetailScale = { value: DETAIL_NORMAL_SCALE * dn };
     sh.uniforms.uDetailFade = { value: 0 };
-    sh.uniforms.uTimePuddle = { value: 0 };
+    sh.uniforms.uTimePuddle = { value: puddleT };
     sh.uniforms.tDetailNormal = { value: S.TEX.detailNormal };
+    // Referencie na uniformy pre applyWet()/updatePuddleTime() — materiál sám
+    // `uniforms` nemá (to je len ShaderMaterial), tak si ich odložíme.
+    mat.userData.surfUniforms = sh.uniforms;
     // Detail-normal UV: vSurfPos-based, tiled at 4x (matches TEX.detailNormal repeat)
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSurfPos;\nvarying vec2 vDetailUv;')
@@ -178,9 +188,9 @@ function patchMat(mat, key, frag, rough, wetAmt){
         '#include <color_fragment>\n' + frag.split('WET_AMT').join(wetAmt.toFixed(3)))
       .replace('#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>\n' + rough.split('WET_AMT').join(wetAmt.toFixed(3)))
-      // Detail normal blending right after normal map is applied (before lighting)
-      .replace('#include <normal_fragment>',
-        '#include <normal_fragment>\n' + DETAIL_NORMAL_FRAG);
+      // Detail normal AŽ po normal mape (pred osvetlením), nie pred ňou
+      .replace('#include <normal_fragment_maps>',
+        '#include <normal_fragment_maps>\n' + DETAIL_NORMAL_FRAG);
   };
   mat.customProgramCacheKey = function(){ return 'surf-' + key; };
 }
@@ -246,9 +256,10 @@ function applyWet(){
     const w = (p.w || 0) * wetCur;
     m.roughness = p.r * (1 - 0.80 * w);
     m.envMapIntensity = p.e * (1 + 0.55 * w);
-    // Detail normal sa stmieva keď je povrch mokrý (voda vyhladí mikro-detail)
-    if(m.uniforms && m.uniforms.uDetailFade) m.uniforms.uDetailFade.value = w;
-    if(m.uniforms && m.uniforms.uTimePuddle) m.uniforms.uTimePuddle.value = puddleT;
+    // Detail normal sa stmieva, keď je povrch mokrý (voda vyhladí mikro-detail)
+    const u = m.userData.surfUniforms;
+    if(u && u.uDetailFade) u.uDetailFade.value = w;
+    if(u && u.uTimePuddle) u.uTimePuddle.value = puddleT;
   }
 }
 
@@ -258,7 +269,8 @@ export function updatePuddleTime(dt){
   for(const key in PROFILES){
     const m = S.MAT[key];
     if(!m || !m.isMeshStandardMaterial) continue;
-    if(m.uniforms && m.uniforms.uTimePuddle) m.uniforms.uTimePuddle.value = puddleT;
+    const u = m.userData.surfUniforms;
+    if(u && u.uTimePuddle) u.uTimePuddle.value = puddleT;
   }
 }
 

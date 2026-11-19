@@ -10,22 +10,15 @@ const DEFAULT_FPS_CAP = 60;
 // DPR strop 1, mäkčenie tieňov PCF namiesto PCFSoft (lacnejší filtrovací
 // priechod). shared.js si vlajku číta z localStorage skôr, ako sa tento modul
 // vyhodnotí, takže je tu dostupná priamo pri konštrukcii renderera.
-// MSAA vzorky: 4× na desktope (hladné hrany aut, mostov, zábradlia),
-// 0 na mobile/LOW_END (canvasové MSAA stojíResolve-fillrate, na vysoko-DPI
-// displeji je málo vidieť). Clampujeme na capabilities.maxSamples.
+// POZOR: WebGLRenderer nemá parameter `samples` (ten patrí len WebGLRenderTarget
+// v bloom.js). Canvasové MSAA zapína výhradne `antialias` — preto je tu len on.
 const IS_MOBILE = (typeof window !== 'undefined' && typeof window.matchMedia === 'function')
   && window.matchMedia('(pointer: coarse)').matches;
 const LOW_END = S.LOW_END;
 const MAX_DEVICE_PIXEL_RATIO = LOW_END ? 1 : (IS_MOBILE ? 1.5 : 2);
-// MSAA vzorky: 4× na desktope (hladné hrany aut, mostov, zábradlia),
-// 0 na mobile/LOW_END (canvasové MSAA stojí resolve-fillrate, na vysoko-DPI
-// displeji je málo vidieť). Three.js interné clampuje na maxSamples.
-const MSAA_SAMPLES = LOW_END ? 0 : 4;
-// WebGLRenderer.samples sa aplikuje len na default render target (canvas).
-// Compositor (bloom) si vlastné RT s samples riadi sám v bloom.js.
 
 export function createEngine(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: !LOW_END, samples: MSAA_SAMPLES, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias: !LOW_END, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DEVICE_PIXEL_RATIO));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;

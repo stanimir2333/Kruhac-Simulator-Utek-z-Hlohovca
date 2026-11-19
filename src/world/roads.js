@@ -8,18 +8,31 @@ import { makeLabel } from './textures.js';
 import { regLabel } from './labels.js';
 
 // ---------- VOZOVKA: opotrebovanie pruhov (tire wear) ----------
-// Stred vozovky (kolesové stopy) je mätšší/lesklejší od okrajov — simuluje
-// opotrebovanie asfaltu pneumatikami. Patchuje S.MAT.routeAsphalt (trasu 513)
-// a S.MAT.asphalt (mestské cesty) cez onBeforeCompile: podľa U-koordináty (šírka
-// vozovky) sa drsnosť a farba jemne menia — stred pruhu tmavší a mätši, okraje
-// svetlejšie. Bez dodatočnej textúry (čisto matematicky z UV).
-const LANE_WEAR_GLSL = [
-  '  // Tire-wear: stred vozovky (U ≈ 0.5 vylúčením, tu U je 0..šírka) je opotrebovaný',
-  '  float wearU = vUv.x / (2.0 * 3.5);', // normalize 0..1 across half-width (ROAD_HW = 3.5)
-  '  float wear = 1.0 - abs(wearU - 0.5) * 2.0;', // 1 v strede, 0 na okrajoch
-  '  wear = smoothstep(0.3, 1.0, wear);',          // iba najstrednejší pás
-  '  diffuseColor.rgb *= mix(1.0, 0.88, wear * 0.35);', // stred tmavší
-  '  roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.75, wear * 0.4);', // stred lesklejší
+// Stred vozovky (kolesové stopy) je tmavší/matnejší od okrajov — simuluje
+// opotrebovanie asfaltu pneumatikami. Patchuje S.MAT.routeAsphalt (trasa 513)
+// a S.MAT.asphalt (mestské cesty) cez onBeforeCompile. Bez dodatočnej textúry:
+// U-koordináta pásu je v metroch cez celú šírku (buildStrip: 0..halfW*2), takže
+// ju normalizujeme na 0..1 a wear je najsilnejší v strede.
+//
+// POZOR: `roughnessFactor` je deklarovaný AŽ v <roughnessmap_fragment>, ktorý
+// je v shaderi za <color_fragment>. Preto sú dve injekcie: farba hneď po
+// color_fragment, drsnosť až po roughnessmap_fragment. Jedna injekcia s oboma
+// (pôvodná verzia) shader nezkompilovala → vozovka zmizla a ostala len biela
+// stredová čiara (S.MAT.white).
+const LANE_WEAR_COLOR = [
+  '  float wear = 0.0;',
+  '  #ifdef USE_UV',
+  '    // U = 0..7 m (šírka pásu); stred 0.5 → wear 1, okraje 0.',
+  '    float wearU = clamp(vUv.x / 7.0, 0.0, 1.0);',
+  '    wear = smoothstep(0.35, 1.0, 1.0 - abs(wearU - 0.5) * 2.0);',
+  '    diffuseColor.rgb *= mix(1.0, 0.90, wear * 0.35);',
+  '  #endif',
+].join('\n');
+
+const LANE_WEAR_ROUGH = [
+  '  #ifdef USE_UV',
+  '    roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.80, wear * 0.40);',
+  '  #endif',
 ].join('\n');
 
 export function patchLaneWear(mat){
@@ -30,8 +43,11 @@ export function patchLaneWear(mat){
     if(prev) prev.call(mat, sh, renderer);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <color_fragment>',
-        '#include <color_fragment>\n' + LANE_WEAR_GLSL);
+        '#include <color_fragment>\n' + LANE_WEAR_COLOR)
+      .replace('#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\n' + LANE_WEAR_ROUGH);
   };
+  // vlastný kľúč: inak by program zdielal s materiálom bez tohto patcha
   mat.customProgramCacheKey = function(){ return 'lane-wear'; };
 }
 
