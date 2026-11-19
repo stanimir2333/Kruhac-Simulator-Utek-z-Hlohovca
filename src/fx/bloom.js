@@ -15,6 +15,11 @@
 //  HalfFloat HDR — hladké hrany rovno v kompozite (FXAA ostáva len ako záložný
 //  filter) a prahový bloom má skutočný HDR rozsah namiesto rezu pri jase 1.0.
 //  Na mobile sú samples 0 (MSAA v kompozite je tam najdrahšie) — ostáva FXAA.
+// B33 (AA bez bloomu): keď bloom je VYP., scéna sa renderuje priamo cez
+//  renderer.render() s canvasovým MSAA (4× na desktope, engine.js).
+//  Na mobile/LOW_END (žiadne MSAA) ostáva čistý renderer.render() —
+//  FXAA pre non-bloom cestu by vyžadoval vlastný composer RT, čo je
+//  fillrate-náročné za minimálny zisk na vysoko-DPI displejoch.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -38,6 +43,9 @@ const BLOOM_SCALE = 0.4;
 // oproti plnému DPR, rozdiel v ostrosti je pri bloom móde zanedbateľný
 // (bloom mipy sú aj tak rozostrené a FXAA hrany dohladí).
 const BLOOM_RENDER_SCALE = 0.75;
+// MSAA vzorky pre composer RT. 4× desktop, 0 mobile/LOW_END. Clampuje sa
+// interné Three.js podľa maxSamples.
+const COMPOSER_SAMPLES = S.LOW_END ? 0 : 4;
 
 export function createBloom(renderer, scene, camera) {
   let composer = null, bloomPass = null, fxaaPass = null, mode = 1;
@@ -65,14 +73,14 @@ export function createBloom(renderer, scene, camera) {
       // (desktop) dá hladké hrany rovno v kompozite a HalfFloat drží HDR pre
       // threshold aj mipy. Na mobile sa ostáva bez MSAA (nákladné) — FXAA
       // nižšie sa o aliasing postará ako doteraz.
-      // B32: samples 2 namiesto 4 (MSAA resolve je na RTX 3050 najväčší
-      // jednotlivý náklad bloom priechodu; 2x stále odstráni najhoršie
-      // zubaté hrany a FXAA nižšie dohladí zvyšok). Renderovacia škála 0.75.
+      // B32: samples 4 namiesto 2 (MSAA resolve je drahý, ale 4× vie odviesť
+      //  väčšina desktopových GPU; FXAA nižšie dohladí zvyšok aliasingu).
+      // Renderovacia škála 0.75.
       const pr = composerPixelRatio();
       const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
       const rt = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.HalfFloatType,
-        samples: S.LOW_END ? 0 : 2,
+        samples: COMPOSER_SAMPLES,
       });
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());
@@ -121,8 +129,15 @@ export function createBloom(renderer, scene, camera) {
     },
     getMode() { return mode; },
     render() {
-      if (mode > 0 && (composer || ensure())) composer.render();
-      else renderer.render(scene, camera);
+      if (mode > 0 && (composer || ensure())) {
+        composer.render();
+      } else {
+        // Bloom VYP.: scéna sa kreslí priamo na canvas. Na desktope je aktívne
+        // canvasové MSAA (4×, engine.js) → hladké hrany bez ďalšieho prechodu.
+        // Na mobile/LOW_END (žiadne MSAA) hrany môžu byť mierne zubaté —
+        // kompatibilná obet' za výkon.
+        renderer.render(scene, camera);
+      }
     },
     resize,
   };

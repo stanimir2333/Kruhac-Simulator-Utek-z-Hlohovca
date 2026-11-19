@@ -64,7 +64,14 @@ const WAT_FS = [
 "  vec2 p2 = vWPos.xz*0.115 - vec2(uTime*0.031, uTime*0.020);",   // drobné vlnky
 "  vec3 n1 = texture2D(tNormal, p1).xyz*2.0 - 1.0;",
 "  vec3 n2 = texture2D(tNormal, p2).xyz*2.0 - 1.0;",
-"  vec3 n = normalize(vec3((n1.x+n2.x)*0.55, 2.2, (n1.y+n2.y)*0.55));",
+"  vec2 p3 = vWPos.xz*0.42  + vec2(uTime*0.050, uTime*0.040);",   // mikro-ľale (blízky pohľad)
+"  vec3 n3 = texture2D(tNormal, p3).xyz*2.0 - 1.0;",
+"  float detailFade = 1.0 - 0.85*smoothstep(5.0, 25.0, vDist);",
+"  vec3 n = normalize(vec3(",
+"    (n1.x+n2.x)*0.55 + n3.x*0.30*detailFade,",
+"    2.2,",
+"    (n1.y+n2.y)*0.55 + n3.y*0.30*detailFade",
+"  ));",
 "  vec3 V = normalize(uCamPos - vWPos);",
 "  if(dot(n, V) < 0.0) n = -n;",                       // hladina sa neotočí pod hľadisko
 "  float fres = 0.025 + 0.975*pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 5.0);",

@@ -151,7 +151,15 @@ export function buildCarMeshes() {
   const wg = S.GEO.wheel.clone();
   wg.rotateZ(Math.PI / 2); // náprava pozdĺž X (rotácia kolies okolo nej)
   S.DYN_GEO.push(wg);
-  IM.body = new THREE.InstancedMesh(S.GEO.body, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.4, envMapIntensity: 0.7 }), MAXC);
+  // AI autá dostanú fyzikálny lak s clearcoatom (ako hráčovo auto) — odlesky
+  // karosérie sú ostrejší, rozdiel medzi farbou a lakovanou vrstvou je vidieť.
+  // Náklad: per-fragment clearcoat, ale len ~44 inštancií → zanedbateľné.
+  const aiPaint = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, roughness: 0.38, metalness: 0.35,
+    clearcoat: 0.6, clearcoatRoughness: 0.28, envMapIntensity: 0.75,
+  });
+  aiPaint.userData.shared = true;
+  IM.body = new THREE.InstancedMesh(S.GEO.body, aiPaint, MAXC);
   IM.cabin = new THREE.InstancedMesh(S.GEO.cabin, S.MAT.glass, MAXC);
   IM.wheel = new THREE.InstancedMesh(wg, S.MAT.dark, MAXC * 4);
   IM.head = new THREE.InstancedMesh(S.GEO.light, S.MAT.head, MAXC * 2);

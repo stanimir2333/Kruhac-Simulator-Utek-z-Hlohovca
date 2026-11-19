@@ -177,10 +177,10 @@ export function ensureVegShapes(){
   S.GEO.crownC = cc;
   S.DYN_GEO.push(S.GEO.trunkV, S.GEO.crownV, S.GEO.crownC, S.GEO.coniferV, S.GEO.bushV);
   // kmeny stromov vo svete sú 3953 inštancií GEO.trunkV (CylinderGeometry, UV 0..1)
-  S.MAT.vegTrunk = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xc8b49c, roughness: 0.96, metalness: 0.0 });
-  S.MAT.vegCrown = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
-  S.MAT.vegConifer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0.0 });
-  S.MAT.vegBush = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0 });
+  S.MAT.vegTrunk = new THREE.MeshStandardMaterial({ map: S.TEX.wood, normalMap: S.TEX.woodN, normalScale: new THREE.Vector2(0.7, 0.7), color: 0xc8b49c, roughness: 0.92, metalness: 0.02 });
+  S.MAT.vegCrown = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.0 });
+  S.MAT.vegConifer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.90, metalness: 0.0 });
+  S.MAT.vegBush = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0 });
   // Vietor: koruny sa jemne kývu (vrchol viac než kmeň) — rozsah výšok je
   // spodok a vrchol geometrie, aby sa neohýbal aj kmeň pod korunou.
   windSway(S.MAT.vegCrown, 0.075, 1.6, 5.4);

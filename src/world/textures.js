@@ -83,9 +83,37 @@ export function texFromCanvas(c, srgb, repeat){
   t.generateMipmaps = true;                      // minifikácia v diaľke bez šípkov
   t.minFilter = THREE.LinearMipmapLinearFilter;  // trilinear
   t.magFilter = THREE.LinearFilter;
-  t.anisotropy = S.TEX_ANISO;                      // ostré aj pri ostrom uhle
+  t.anisotropy = S.TEX_ANISO;                      // ostré aj pri ostrom uhle (clamped to getMaxAnisotropy in main.js)
   if(repeat) t.repeat.set(repeat[0], repeat[1]);
   return t;
+}
+
+// Detailná normálová mapa pre mikro-detail povrchov (asfalt, betón, chodníky).
+// Snímková vysokofrekvenčná normálová perturbácia, ktorú shadery blends-pnú
+// s povrchovou normálovou mapou pri bližskom pohľade (pixel footprints < ~2 texely).
+// Tileable, bez žiadnych externých súborov — čisto procedurálna.
+export function fDetailNormal(SZ){
+  const c = newCanvas(SZ), g = c.getContext("2d");
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] fDetailNormal: getContext null"); return c; }
+  const img = g.createImageData(SZ, SZ), d = img.data;
+  for(let y = 0; y < SZ; y++){
+    for(let x = 0; x < SZ; x++){
+      const u = x/SZ, v = y/SZ, i = (y*SZ + x)*4;
+      // Vysokofrekvenčný šum: malé kamienky, zrno, mikro-trhlinky
+      const n1 = tfbm(u, v, 512, 2, 5001);
+      const n2 = tfbm(u, v, 1024, 1, 5002);
+      const nx = (n1 - 0.5) * 0.35 + (n2 - 0.5) * 0.15;
+      const ny = (n1 - 0.5) * 0.35 + (n2 - 0.5) * 0.15;
+      const nz = 0.9 + (n1 - 0.5) * 0.1;
+      const L = 1/Math.sqrt(nx*nx + ny*ny + nz*nz);
+      d[i]   = ((nx*L)*0.5 + 0.5)*255;
+      d[i+1] = ((ny*L)*0.5 + 0.5)*255;
+      d[i+2] = ((nz*L)*0.5 + 0.5)*255;
+      d[i+3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
 }
 
 export function makeTex(size, painter){ return texFromCanvas(paintCanvas(size, painter), true); }
@@ -896,6 +924,10 @@ S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCan
     g.fillStyle="rgba(50,40,25,0.35)";
     for(let i=0;i<12;i++){ g.fillRect(0,(i*23)%s,s,3); }
   });
+  // DETAILNÁ NORMÁLOVÁ MAPA: mikro-zrno pre asfalt, betón, chodníky — shadery
+  // ju blendujú s hlavnou normálovou mapou pri bližskom pohľade.
+  const DN = fDetailNormal(256);
+  S.TEX.detailNormal = texFromCanvas(DN, false, [4, 4]); // vysoká frekvencia, opakuje sa často
   mark("fasády+strechy");
   texReport(true);
 }
@@ -996,7 +1028,7 @@ export function buildShared(){
   // podľa aBlend z výšky/sklonu/poľa, každá v INOM meradle a pod INÝM uhlom
   // (34°) - dve periodicité sa nedajú spoĺať do jednej viditeľnej mriežky.
   // repeat trávnika je 1 dlažba / ~32 m (odvodené v buildTextures z bbox mapy).
-  S.MAT.ground  = new THREE.MeshStandardMaterial({ map: S.TEX.grass, normalMap: S.TEX.terrainN, normalScale: new THREE.Vector2(0.55, 0.55), roughness: 1.0, metalness: 0.0, vertexColors: true, dithering: true });
+  S.MAT.ground  = new THREE.MeshStandardMaterial({ map: S.TEX.grass, normalMap: S.TEX.terrainN, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.98, metalness: 0.0, vertexColors: true, dithering: true });
   // DETAIL FADE PODĽA SKUTOČNEJ MINIFIKÁCIE. Pri pohľade nízko po zemi alebo
   // z výšky pokrýva jeden pixel v hĺbke aj desiatky metrov terénu, ale naprieč
   // len desiatky centimetrov. Akákoľkova 2D textúra sa tak vertikálne spriemeruje,

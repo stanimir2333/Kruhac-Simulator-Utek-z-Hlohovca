@@ -18,63 +18,67 @@ import { S } from './shared.js';
 // r = drsnosť (roughness)  m = kovovosť (metalness)
 // e = envMapIntensity (sila odrazu prostredia)
 // w = vnímavosť na vodu (0 = nikdy, 1 = celý povrch)
+// Detail-normal scale: koľko sa mikro-detail (TEX.detailNormal) aplicuje na
+// povrch. Vyššia hodnota = výraznejšie mikro-trhlinky/kamienky pri blízkom pohľade.
+const DETAIL_NORMAL_SCALE = 0.12;
+
 const PROFILES = {
   // --- vozovky a chodníky ---
-  asphalt:      { r: 0.88, m: 0.02, e: 0.55, w: 1.00 },
-  routeAsphalt: { r: 0.88, m: 0.02, e: 0.55, w: 1.00 },
-  bridge:       { r: 0.82, m: 0.08, e: 0.75, w: 0.95 },
-  sidewalk:     { r: 0.96, m: 0.00, e: 0.50, w: 0.85 },
-  cycle:        { r: 0.90, m: 0.00, e: 0.55, w: 0.85 },
-  dirt:         { r: 0.97, m: 0.00, e: 0.22, w: 0.75 },
-  ballast:      { r: 0.92, m: 0.00, e: 0.35, w: 0.70 },
-  park:         { r: 0.95, m: 0.00, e: 0.30, w: 0.60 },
-  island:       { r: 0.90, m: 0.00, e: 0.40, w: 0.70 },
+  asphalt:      { r: 0.86, m: 0.02, e: 0.55, w: 1.00, dn: 1.0 },
+  routeAsphalt: { r: 0.86, m: 0.02, e: 0.55, w: 1.00, dn: 1.0 },
+  bridge:       { r: 0.80, m: 0.08, e: 0.75, w: 0.95, dn: 0.8 },
+  sidewalk:     { r: 0.94, m: 0.00, e: 0.50, w: 0.85, dn: 1.0 },
+  cycle:        { r: 0.88, m: 0.00, e: 0.55, w: 0.85, dn: 0.9 },
+  dirt:         { r: 0.95, m: 0.00, e: 0.22, w: 0.75, dn: 1.0 },
+  ballast:      { r: 0.90, m: 0.00, e: 0.35, w: 0.70, dn: 1.0 },
+  park:         { r: 0.94, m: 0.00, e: 0.30, w: 0.60, dn: 0.6 },
+  island:       { r: 0.88, m: 0.00, e: 0.40, w: 0.70, dn: 0.7 },
   // --- terén ---
   // Trávnik/hlina sa lesknú len jemne: vlhká zem je matná, ostrý odraz oblohy
   // by vyzeral ako mokrá fólia.
-  ground:       { r: 1.00, m: 0.00, e: 0.22, w: 0.35 },
+  ground:       { r: 0.96, m: 0.00, e: 0.22, w: 0.35, dn: 0.8 },
   // --- budovy ---
-  houseWall:    { r: 0.84, m: 0.02, e: 0.60, w: 0.35 },
-  panelWall:    { r: 0.88, m: 0.06, e: 0.70, w: 0.35 },
-  histWall:     { r: 0.90, m: 0.00, e: 0.55, w: 0.35 },
-  indWall:      { r: 0.50, m: 0.38, e: 1.00, w: 0.30 },
-  pitchedRoof:  { r: 0.95, m: 0.02, e: 0.70, w: 0.90 },
-  flatRoof:     { r: 0.93, m: 0.02, e: 0.65, w: 0.90 },
-  concrete:     { r: 0.88, m: 0.00, e: 0.55, w: 0.60 },
-  pillar:       { r: 0.88, m: 0.00, e: 0.55, w: 0.60 },
-  trim:         { r: 0.85, m: 0.00, e: 0.60, w: 0.45 },
-  chimneyBrick: { r: 0.93, m: 0.00, e: 0.50, w: 0.55 },
-  chimneyConcrete: { r: 0.91, m: 0.00, e: 0.50, w: 0.55 },
+  houseWall:    { r: 0.82, m: 0.02, e: 0.60, w: 0.35, dn: 0.7 },
+  panelWall:    { r: 0.86, m: 0.06, e: 0.70, w: 0.35, dn: 0.6 },
+  histWall:     { r: 0.88, m: 0.00, e: 0.55, w: 0.35, dn: 0.8 },
+  indWall:      { r: 0.48, m: 0.38, e: 1.00, w: 0.30, dn: 0.9 },
+  pitchedRoof:  { r: 0.94, m: 0.02, e: 0.70, w: 0.90, dn: 0.8 },
+  flatRoof:     { r: 0.92, m: 0.02, e: 0.65, w: 0.90, dn: 0.9 },
+  concrete:     { r: 0.86, m: 0.00, e: 0.55, w: 0.60, dn: 0.9 },
+  pillar:       { r: 0.86, m: 0.00, e: 0.55, w: 0.60, dn: 0.9 },
+  trim:         { r: 0.83, m: 0.00, e: 0.60, w: 0.45, dn: 0.8 },
+  chimneyBrick: { r: 0.92, m: 0.00, e: 0.50, w: 0.55, dn: 1.0 },
+  chimneyConcrete: { r: 0.90, m: 0.00, e: 0.50, w: 0.55, dn: 0.9 },
   // --- sklo a kov (najviac viditeľné odrazy) ---
-  glass:        { r: 0.10, m: 0.70, e: 1.60 },
-  chrome:       { r: 0.16, m: 0.95, e: 1.50 },
-  rail:         { r: 0.34, m: 0.62, e: 1.15 },
-  pole:         { r: 0.42, m: 0.68, e: 1.10 },
-  dark:         { r: 0.62, m: 0.40, e: 0.90 },
-  playerCar:    { r: 0.30, m: 0.42, e: 1.00 },
-  tail:         { r: 0.35, m: 0.25, e: 0.95 },
-  plate:        { r: 0.55, m: 0.05, e: 0.80 },
+  glass:        { r: 0.08, m: 0.70, e: 1.60, dn: 0.0 },
+  chrome:       { r: 0.14, m: 0.95, e: 1.50, dn: 0.0 },
+  rail:         { r: 0.32, m: 0.62, e: 1.15, dn: 0.5 },
+  pole:         { r: 0.40, m: 0.68, e: 1.10, dn: 0.5 },
+  dark:         { r: 0.60, m: 0.40, e: 0.90, dn: 0.4 },
+  playerCar:    { r: 0.28, m: 0.42, e: 1.00, dn: 0.0 },
+  tail:         { r: 0.33, m: 0.25, e: 0.95, dn: 0.0 },
+  plate:        { r: 0.53, m: 0.05, e: 0.80, dn: 0.2 },
   // --- zeleň (listie sa lesní najmä vďaka rozptylu, nie zrkadlu) ---
-  vegTrunk:     { r: 0.95, m: 0.00, e: 0.40 },
-  vegCrown:     { r: 0.88, m: 0.00, e: 0.45 },
-  vegConifer:   { r: 0.90, m: 0.00, e: 0.40 },
-  vegBush:      { r: 0.93, m: 0.00, e: 0.40 },
-  trunk:        { r: 0.94, m: 0.00, e: 0.35 },
-  leaf:         { r: 0.85, m: 0.00, e: 0.50 },
-  leafDark:     { r: 0.90, m: 0.00, e: 0.45 },
-  tuft:         { r: 0.95, m: 0.00, e: 0.30 },
+  vegTrunk:     { r: 0.92, m: 0.00, e: 0.40, dn: 1.0 },
+  vegCrown:     { r: 0.86, m: 0.00, e: 0.45, dn: 0.5 },
+  vegConifer:   { r: 0.88, m: 0.00, e: 0.40, dn: 0.5 },
+  vegBush:      { r: 0.91, m: 0.00, e: 0.40, dn: 0.5 },
+  trunk:        { r: 0.92, m: 0.00, e: 0.35, dn: 1.0 },
+  leaf:         { r: 0.83, m: 0.00, e: 0.50, dn: 0.4 },
+  leafDark:     { r: 0.88, m: 0.00, e: 0.45, dn: 0.4 },
+  tuft:         { r: 0.94, m: 0.00, e: 0.30, dn: 0.3 },
   // --- mobiliár (src/world/props.js) ---
-  propMetal:    { r: 0.40, m: 0.72, e: 1.15, w: 0.80 },
-  propMatte:    { r: 0.86, m: 0.00, e: 0.60, w: 0.70 },
-  propWood:     { r: 0.90, m: 0.00, e: 0.35, w: 0.70 },
-  propLeaf:     { r: 0.93, m: 0.00, e: 0.40, w: 0.50 },
-  propGlass:    { r: 0.10, m: 0.60, e: 1.40, w: 0.90 },
+  propMetal:    { r: 0.38, m: 0.72, e: 1.15, w: 0.80, dn: 0.4 },
+  propMatte:    { r: 0.84, m: 0.00, e: 0.60, w: 0.70, dn: 0.6 },
+  propWood:     { r: 0.88, m: 0.00, e: 0.35, w: 0.70, dn: 1.0 },
+  propLeaf:     { r: 0.91, m: 0.00, e: 0.40, w: 0.50, dn: 0.4 },
+  propGlass:    { r: 0.08, m: 0.60, e: 1.40, w: 0.90, dn: 0.0 },
 };
 
 // Suchý stav každého materiálu (pred zmenou) — držíme ho, aby sa dal
 // obnoviť presne, a aby vedelo, či sme materiál už upravovali my.
 const BASE = new Map();
-let wetCur = 0, wetTarget = 0;
+let wetCur = 0, wetTarget = 0, puddleT = 0;
 
 // ---------- GLSL: šum a kaluže ----------
 const NOISE_GLSL = [
@@ -89,6 +93,8 @@ const NOISE_GLSL = [
 
 // Kaluže: hrubý šum (veľké jamy) + jemný (okraje). Čím väčšia mokrosť, tým
 // nižší prah → viac kaluží. Kaluža je ZRKADLO: drsnosť padá na ~0,05.
+// Pri mokrých kalužách sa normálová mapa jemne perturbuje — vodná plocha nie je
+// nikdy dokonale rovná (jemné vlnky), čo rozbije ploché zrkadlo.
 const PUDDLE_FRAG = [
   '  float pud = 0.0;',
   '  if(uWet > 0.002){',
@@ -98,7 +104,23 @@ const PUDDLE_FRAG = [
   '    float thr = 0.60 - uWet * 0.24;',
   '    pud = clamp((pn - thr) / 0.13, 0.0, 1.0) * uWet;',
   '    diffuseColor.rgb *= mix(1.0, 0.46, pud);',
+  // Jemná vlnkova perturbácia normály na mokrých miestach (rozbíje ploché zrkadlo)
+  '    if(pud > 0.01){',
+  '      float wave = sin(vSurfPos.x * 0.3 + uTimePuddle) * 0.08 + cos(vSurfPos.z * 0.25 + uTimePuddle * 0.7) * 0.06;',
+  '      normalScale *= mix(1.0, 1.0 + wave * 0.5, pud);',
+  '    }',
   '  }',
+].join('\n');
+
+// Detail-normal blending: mikro-detail (kúsky, kamienky, mikro-trhlinky) sa
+// blenduje s hlavnou normálovou mapou podľa pixel-footprintu (blížšie = viac detailu).
+const DETAIL_NORMAL_FRAG = [
+  '  #ifdef USE_DETAIL_NORMAL',
+  '  vec3 detailN = texture2D(tDetailNormal, vDetailUv).xyz * 2.0 - 1.0;',
+  '  detailN = normalize(detailN);',
+  '  float detailMix = uDetailScale * (1.0 - uDetailFade);',
+  '  normal = normalize(normal + detailN * detailMix * normalScale);',
+  '  #endif',
 ].join('\n');
 
 // Vlhký povrch bez kaluží (trávnik, strechy, hlina): iba stmavnutie.
@@ -120,11 +142,17 @@ function patchMat(mat, key, frag, rough, wetAmt){
   if(!mat || mat.userData.surfPatched) return;
   mat.userData.surfPatched = true;
   const prev = mat.onBeforeCompile;
+  const dn = mat.userData.detailNormal !== undefined ? mat.userData.detailNormal : 0;
   mat.onBeforeCompile = function(sh, renderer){
     if(prev) prev.call(mat, sh, renderer);
     sh.uniforms.uWet = S.UNI.wet;
+    sh.uniforms.uDetailScale = { value: DETAIL_NORMAL_SCALE * dn };
+    sh.uniforms.uDetailFade = { value: 0 };
+    sh.uniforms.uTimePuddle = { value: 0 };
+    sh.uniforms.tDetailNormal = { value: S.TEX.detailNormal };
+    // Detail-normal UV: vSurfPos-based, tiled at 4x (matches TEX.detailNormal repeat)
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vSurfPos;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSurfPos;\nvarying vec2 vDetailUv;')
       .replace('#include <begin_vertex>', [
         '#include <begin_vertex>',
         '#ifdef USE_INSTANCING',
@@ -132,18 +160,27 @@ function patchMat(mat, key, frag, rough, wetAmt){
         '#else',
         '  vSurfPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
         '#endif',
+        '  vDetailUv = vSurfPos.xz * 0.25;', // 4 m tiling for detail normal
       ].join('\n'));
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', [
         '#include <common>',
         'varying vec3 vSurfPos;',
+        'varying vec2 vDetailUv;',
         'uniform float uWet;',
+        'uniform float uDetailScale;',
+        'uniform float uDetailFade;',
+        'uniform float uTimePuddle;',
+        'uniform sampler2D tDetailNormal;',
         NOISE_GLSL,
       ].join('\n'))
       .replace('#include <color_fragment>',
         '#include <color_fragment>\n' + frag.split('WET_AMT').join(wetAmt.toFixed(3)))
       .replace('#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\n' + rough.split('WET_AMT').join(wetAmt.toFixed(3)));
+        '#include <roughnessmap_fragment>\n' + rough.split('WET_AMT').join(wetAmt.toFixed(3)))
+      // Detail normal blending right after normal map is applied (before lighting)
+      .replace('#include <normal_fragment>',
+        '#include <normal_fragment>\n' + DETAIL_NORMAL_FRAG);
   };
   mat.customProgramCacheKey = function(){ return 'surf-' + key; };
 }
@@ -162,6 +199,7 @@ export function applySurfaces(){
     m.roughness = p.r;
     m.metalness = p.m;
     m.envMapIntensity = p.e;
+    if(p.dn !== undefined) m.userData.detailNormal = p.dn;
   }
   // Kaluže: len vodorovné povrchy, po ktorých sa voda dá zbierať.
   patchMat(S.MAT.asphalt,      'puddle-asphalt',      PUDDLE_FRAG, ROUGH_FRAG, 0);
@@ -208,6 +246,19 @@ function applyWet(){
     const w = (p.w || 0) * wetCur;
     m.roughness = p.r * (1 - 0.80 * w);
     m.envMapIntensity = p.e * (1 + 0.55 * w);
+    // Detail normal sa stmieva keď je povrch mokrý (voda vyhladí mikro-detail)
+    if(m.uniforms && m.uniforms.uDetailFade) m.uniforms.uDetailFade.value = w;
+    if(m.uniforms && m.uniforms.uTimePuddle) m.uniforms.uTimePuddle.value = puddleT;
+  }
+}
+
+// Animovaný čas pre puddle vlnky (volá sa z main.js ticku).
+export function updatePuddleTime(dt){
+  puddleT += dt;
+  for(const key in PROFILES){
+    const m = S.MAT[key];
+    if(!m || !m.isMeshStandardMaterial) continue;
+    if(m.uniforms && m.uniforms.uTimePuddle) m.uniforms.uTimePuddle.value = puddleT;
   }
 }
 

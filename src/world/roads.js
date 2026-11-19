@@ -7,6 +7,34 @@ import { groundRayY, staticDone, gridAdd, gridQuery, GQ_MAX } from './ground.js'
 import { makeLabel } from './textures.js';
 import { regLabel } from './labels.js';
 
+// ---------- VOZOVKA: opotrebovanie pruhov (tire wear) ----------
+// Stred vozovky (kolesové stopy) je mätšší/lesklejší od okrajov — simuluje
+// opotrebovanie asfaltu pneumatikami. Patchuje S.MAT.routeAsphalt (trasu 513)
+// a S.MAT.asphalt (mestské cesty) cez onBeforeCompile: podľa U-koordináty (šírka
+// vozovky) sa drsnosť a farba jemne menia — stred pruhu tmavší a mätši, okraje
+// svetlejšie. Bez dodatočnej textúry (čisto matematicky z UV).
+const LANE_WEAR_GLSL = [
+  '  // Tire-wear: stred vozovky (U ≈ 0.5 vylúčením, tu U je 0..šírka) je opotrebovaný',
+  '  float wearU = vUv.x / (2.0 * 3.5);', // normalize 0..1 across half-width (ROAD_HW = 3.5)
+  '  float wear = 1.0 - abs(wearU - 0.5) * 2.0;', // 1 v strede, 0 na okrajoch
+  '  wear = smoothstep(0.3, 1.0, wear);',          // iba najstrednejší pás
+  '  diffuseColor.rgb *= mix(1.0, 0.88, wear * 0.35);', // stred tmavší
+  '  roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.75, wear * 0.4);', // stred lesklejší
+].join('\n');
+
+export function patchLaneWear(mat){
+  if(!mat || mat.userData.laneWearPatched) return;
+  mat.userData.laneWearPatched = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = function(sh, renderer){
+    if(prev) prev.call(mat, sh, renderer);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <color_fragment>',
+        '#include <color_fragment>\n' + LANE_WEAR_GLSL);
+  };
+  mat.customProgramCacheKey = function(){ return 'lane-wear'; };
+}
+
 export function putBox(mat, sx, sy, sz, x, y, z, ry){
   const m = new THREE.Mesh(S.GEO.box, mat);
   m.scale.set(sx, sy, sz);
@@ -284,6 +312,10 @@ export function routeDeckY(x, z, s){
 }
 
 export function buildRoads(){
+  // Tire-wear na vozovke: stredy pruhov sú opotrebované (mätšie, tmavšejšie).
+  patchLaneWear(S.MAT.routeAsphalt);
+  patchLaneWear(S.MAT.asphalt);
+
   // Nájazdy mosta sa kreslia presne po fyzike (terén -> DECK_Y), žiadne skoky.
   // (roadY/lineY odstránené: nepoužívali sa — rY/lY volajú routeDeckY, ktorý
   //  je delegát na fyzikálny wheelGroundY.)

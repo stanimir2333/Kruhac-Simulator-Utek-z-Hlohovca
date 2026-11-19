@@ -21,7 +21,7 @@ import {
 import { buildRiver, initWater, updateWater, waterResize, setWaterQuality } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
-import { applySurfaces, updateSurfaceWet } from './world/surface.js';
+import { applySurfaces, updateSurfaceWet, updatePuddleTime } from './world/surface.js';
 import { buildProps } from './world/props.js';
 import { initLeaves, updateLeaves } from './world/leaves.js';
 import { buildSkyDome, cullChunks } from './world/sky.js';
@@ -499,6 +499,7 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     // Mokrosť povrchov (src/world/surface.js): búrka nastavuje cieľ, prechod
     // do mokra/do sucha je plynulý. Beží aj v menu — mokré cesty nechajú vyschnúť.
     updateSurfaceWet(dt);
+    updatePuddleTime(dt); // animácia vĺn na kalužách
     // Padajúce listy: rodia sa v korunách stromov okolo kamery.
     updateLeaves(dt, camera.position.x, camera.position.z);
     if (!state.started || state.paused) {
