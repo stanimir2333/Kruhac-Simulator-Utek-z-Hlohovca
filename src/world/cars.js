@@ -11,6 +11,7 @@ import * as THREE from 'three';
 // pôsobil "kartónovo". Zaoblene hraná hmota drží EXAKTNE rovnaké rozmery aj
 // pozicie (kolidéry a usadenie dielov sa nemenia), len hrany dostane 6–12 cm polomer.
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 // B31: RoundedBoxGeometry = BoxGeometry s hoblinami na hranách (bevel).
 // Hlavné hmoty karosérie (spodok, kapota, hatch, strecha) mali tvrdé 90° hrany
@@ -199,6 +200,111 @@ function octaviaDetails(parent, bodyMat) {
   box(parent, antennaGeo, dark, 0.45, 1.755, -0.75);
 }
 
+// ---------- 3D model (Skoda Octavia) z assets/models ----------
+// Nacita sa async v main.js (preloadCarModels) pred prvym buildPlayerMesh.
+// Ak model nie je dostupny (file://, chybajuci subor), fallback na proceduralny.
+let carModelCache = null;
+const MODEL_SCALE_XZ = 0.0368;
+const MODEL_SCALE_Y = 0.0308;
+
+const MODEL_FILES = ['skoda_body.obj', 'skoda_tyre.obj', 'skoda_wheel.obj'];
+
+function modelCandidates(file) {
+  return [
+    `assets/models/${file}`,
+    `./assets/models/${file}`,
+    `/assets/models/${file}`,
+    `models/${file}`,
+    `./models/${file}`,
+    `/models/${file}`,
+    `public/models/${file}`,
+    `./public/models/${file}`,
+    `/public/models/${file}`,
+    `public/assets/models/${file}`,
+    `./public/assets/models/${file}`,
+    `/public/assets/models/${file}`,
+  ];
+}
+
+async function fetchModelText(file) {
+  for (const url of modelCandidates(file)) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return await res.text();
+    } catch (_e) { /* try next */ }
+  }
+  throw new Error('model not found: ' + file);
+}
+
+function geomFromObj(obj) {
+  let geo = null;
+  obj.traverse((o) => {
+    if (o.isMesh && !geo) geo = o.geometry;
+  });
+  return geo;
+}
+
+export async function preloadCarModels() {
+  if (carModelCache) return carModelCache;
+  try {
+    const loader = new OBJLoader();
+    const geos = await Promise.all(MODEL_FILES.map(async (f) => {
+      const txt = await fetchModelText(f);
+      const obj = loader.parse(txt);
+      return geomFromObj(obj);
+    }));
+    if (!geos[0] || !geos[1] || !geos[2]) throw new Error('empty geometry');
+    carModelCache = { body: geos[0], tyre: geos[1], wheel: geos[2] };
+  } catch (e) {
+    carModelCache = null;
+  }
+  return carModelCache;
+}
+
+function buildSkodaMesh(color) {
+  const g = new THREE.Group();
+  const bodyMat = carPaint(color);
+  const bodyGeo = carModelCache.body;
+  const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+  bodyMesh.scale.set(MODEL_SCALE_XZ, MODEL_SCALE_Y, MODEL_SCALE_XZ);
+  bodyMesh.castShadow = true;
+  bodyGeo.computeBoundingBox();
+  const bb = bodyGeo.boundingBox.clone();
+  bb.min.multiply(bodyMesh.scale);
+  bb.max.multiply(bodyMesh.scale);
+  const cx = (bb.min.x + bb.max.x) / 2;
+  const cz = (bb.min.z + bb.max.z) / 2;
+  bodyMesh.position.set(-cx, -bb.min.y + 0.45, -cz);
+  g.add(bodyMesh);
+
+  const dark = std(0x11161a, 0.72, 0.12);
+  const rimMat = std(0xc9cdcb, 0.38, 0.45);
+  rimMat.envMapIntensity = 0.8;
+  const tyreGeo = carModelCache.tyre;
+  const wheelGeo = carModelCache.wheel;
+  const wh = [];
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const z = sz > 0 ? 1.35 : -1.35;
+    const wg = new THREE.Group();
+    const tyreMesh = new THREE.Mesh(tyreGeo, std(0x141414, 0.9, 0.1));
+    const rimMesh = new THREE.Mesh(wheelGeo, rimMat);
+    tyreMesh.scale.set(MODEL_SCALE_XZ, MODEL_SCALE_XZ, MODEL_SCALE_XZ);
+    rimMesh.scale.set(MODEL_SCALE_XZ, MODEL_SCALE_XZ, MODEL_SCALE_XZ);
+    tyreMesh.castShadow = true;
+    rimMesh.castShadow = true;
+    wg.add(tyreMesh);
+    wg.add(rimMesh);
+    wg.position.set(sx * 0.82, 0.33, z);
+    wg.rotation.z = Math.PI / 2;
+    g.add(wg);
+    wh.push(wg);
+  }
+
+  // svetla (emisivne) z povodneho vzoru
+  lights(g, 0.76, 2.11);
+  return { group: g, bodyMat, wheels: wh, spin: 0 };
+}
+
 export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
   const g = new THREE.Group();
   const bodyMat = carPaint(color);
@@ -207,6 +313,11 @@ export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
     rx7Lights(g);
     const wh = wheels(g, 1.38, -1.38, 0x6a6f74); // tmavé športové ráfika
     return { group: g, bodyMat, wheels: wh, spin: 0 };
+  }
+  if (carModelCache) {
+    // model je nacitany - pouzi ho (proceduralne kolesa nahradene modelom)
+    const m = buildSkodaMesh(color);
+    return m;
   }
   octaviaDetails(g, bodyMat);
   lights(g, 0.76, 2.11);

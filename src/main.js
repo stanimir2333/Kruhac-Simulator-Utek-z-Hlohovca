@@ -29,7 +29,7 @@ import { initDayNight, updateDayNight } from './world/daynight.js';
 import { buildBridgeLights, updateBridgeLights } from './world/bridgelights.js';
 import { cullLabels } from './world/labels.js';
 import {
-  buildPlayerMesh, syncMesh, disposeCarMesh,
+  buildPlayerMesh, syncMesh, disposeCarMesh, preloadCarModels,
 } from './world/cars.js';
 import {
   createVehicle, updateVehicle, vehicleTelemetry, collideWorld, KMH_PER_MPS,
@@ -78,7 +78,6 @@ async function boot(mapId) {
   mapId = mapId || 'hlohovec';
   pre.step(0.04, 'inicializujem renderer…');
   await nextFrame();
-
   const engine = createEngine(document.getElementById('game'));
   const { renderer, scene, camera, sun, fill } = engine;
   S.scene = scene;
@@ -248,7 +247,9 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   initDayNight({ scene, sun, fill });
   engine.onResizeExtra(() => waterResize());
 
-  // 3) AUTÁ
+  // 3) AUTÁ (predtym nacitaj 3D modely aut)
+  await step(0.915, 'modely aut…');
+  await preloadCarModels();
   await step(0.92, 'autá…');
   routePose(8, _v3, _hWrap, LANE_OFF);
   const car = createVehicle({ x: _v3.x, z: _v3.z });
