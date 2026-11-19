@@ -11,7 +11,7 @@
     font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
     color: #dff6ff;
   }
-  canvas { display: block; }
+  canvas { display: block; touch-action: none; }
 
   /* ---------- HUD ---------- */
   #hud {
@@ -49,13 +49,79 @@
     opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 10; white-space: nowrap;
   }
 
+  /* ---------- MOBILE / TOUCH ---------- */
+  /* Ovládanie sa zapína len na zariadeniach s hrubým ukazovátkom
+     (body.touch pridáva JS). Na desktope ostáva pôvodný pointer lock. */
+  .touch-only { display: none; }
+  body.touch .touch-only { display: inline; }
+  body.touch .kb-only { display: none; }
+
+  #touch-controls {
+    position: fixed; inset: 0; z-index: 15; display: none;
+    pointer-events: none; opacity: 0; visibility: hidden;
+    transition: opacity .18s;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  body.touch #touch-controls { display: block; }
+  body.touch-active #touch-controls { opacity: 1; visibility: visible; }
+  body.term-open #touch-controls { opacity: 0; visibility: hidden; }
+
+  #stick {
+    position: absolute; left: calc(18px + env(safe-area-inset-left, 0px));
+    bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    width: 124px; height: 124px; border-radius: 50%;
+    border: 1px solid rgba(92,225,255,0.32);
+    background: radial-gradient(circle, rgba(8,24,34,0.5), rgba(4,10,16,0.28));
+    box-shadow: inset 0 0 24px rgba(92,225,255,0.08);
+    pointer-events: auto; touch-action: none;
+  }
+  #stick.active { border-color: rgba(92,225,255,0.7); }
+  #stick-knob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%; background: rgba(92,225,255,0.22);
+    border: 1px solid rgba(92,225,255,0.6);
+    box-shadow: 0 0 18px rgba(92,225,255,0.28);
+    will-change: transform;
+  }
+  #touch-use {
+    position: absolute; right: calc(22px + env(safe-area-inset-right, 0px));
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+    width: 68px; height: 68px; padding: 0; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit; font-size: 22px; font-weight: 800;
+    color: rgba(2,18,26,0.75); -webkit-appearance: none;
+    background: rgba(92,225,255,0.16); border: 1px solid rgba(92,225,255,0.38);
+    pointer-events: auto; touch-action: manipulation;
+    transition: background .15s, box-shadow .15s, color .15s;
+  }
+  #touch-use.ready {
+    color: #02121a; background: #5ce1ff;
+    box-shadow: 0 0 22px rgba(92,225,255,0.55);
+  }
+  #touch-menu {
+    position: absolute; top: calc(14px + env(safe-area-inset-top, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
+    padding: 8px 12px; border-radius: 4px; -webkit-appearance: none;
+    background: rgba(4,10,14,0.55); border: 1px solid rgba(92,225,255,0.3);
+    color: #cdefff; font-family: inherit; font-size: 10px; letter-spacing: 0.18em;
+    pointer-events: auto; touch-action: manipulation;
+  }
+  #touch-look-hint {
+    position: absolute; right: calc(24px + env(safe-area-inset-right, 0px));
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+    font-size: 9px; letter-spacing: 0.16em;
+    color: rgba(127,163,184,0.55); white-space: nowrap;
+  }
+
   /* ---------- START SCREEN ---------- */
   #start-screen {
     position: fixed; inset: 0; z-index: 20; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
+    overflow-y: auto; touch-action: manipulation;
     background: radial-gradient(circle at 50% 40%, rgba(12,26,40,0.92), rgba(2,4,8,0.985));
   }
-  .start-inner { text-align: center; max-width: 680px; padding: 30px; }
+  .start-inner { text-align: center; max-width: 680px; padding: 30px; margin: auto; }
   .start-inner h1 {
     margin: 0; font-size: 46px; letter-spacing: 0.34em; color: #e8f6ff;
     text-shadow: 0 0 30px rgba(90,200,255,0.55); font-weight: 700;
@@ -81,9 +147,10 @@
   #win-screen {
     display: none; position: fixed; inset: 0; z-index: 40; cursor: pointer;
     align-items: center; justify-content: center;
+    overflow-y: auto; touch-action: manipulation;
     background: radial-gradient(circle at 50% 45%, rgba(8,34,44,0.94), rgba(1,3,6,0.988));
   }
-  .win-inner { text-align: center; max-width: 660px; padding: 30px; }
+  .win-inner { text-align: center; max-width: 660px; padding: 30px; margin: auto; }
   .win-kicker {
     color: #5ce1ff; letter-spacing: 0.42em; font-size: 11px; margin-bottom: 16px;
     text-shadow: 0 0 16px rgba(92,225,255,0.6);
@@ -115,7 +182,7 @@
     border-bottom: 1px solid rgba(92,255,176,0.18);
     color: var(--term-accent, #5cffb0); font-size: 12px; letter-spacing: 0.1em;
   }
-  #terminal .term-close { color: #5a7a6a; }
+  #terminal .term-close { color: #5a7a6a; cursor: pointer; pointer-events: auto; }
   #term-output {
     flex: 1; overflow-y: auto; padding: 14px 18px;
     color: #b9ffd8; white-space: pre-wrap; word-break: break-word;
@@ -137,6 +204,29 @@
   body.term-open #crosshair,
   body.term-open #prompt,
   body.term-open #hud { display: none; }
+
+  /* Malé obrazovky: start screen sa musí zmestiť aj na telefón na šírku. */
+  @media (max-width: 620px) {
+    #hud { top: 14px; left: 14px; }
+    #hud .count { font-size: 18px; }
+    #toast { font-size: 12px; max-width: 92vw; white-space: normal; text-align: center; }
+    .start-inner { padding: 20px; }
+    .start-inner h1 { font-size: 31px; letter-spacing: 0.22em; }
+    .start-inner h2 { font-size: 13px; letter-spacing: 0.44em; margin-bottom: 14px; }
+    .start-inner p { font-size: 12px; line-height: 1.65; margin-bottom: 18px; }
+    .controls { gap: 8px 14px; margin-bottom: 20px; }
+    .start-btn { padding: 13px 26px; }
+    #terminal { inset: 3vh 3vw; }
+    .win-inner h2 { font-size: 28px; }
+    .win-inner p { font-size: 12px; }
+  }
+  @media (max-height: 540px) {
+    .start-inner h1 { font-size: 26px; }
+    .start-inner h2 { font-size: 12px; margin-bottom: 10px; }
+    .start-inner p { margin-bottom: 12px; line-height: 1.5; }
+    .controls { margin-bottom: 12px; }
+    .start-btn { padding: 10px 22px; }
+  }
 </style>
 </head>
 <body>
@@ -152,7 +242,7 @@
 <div id="terminal">
   <div class="term-header">
     <span id="term-title">root@tatra-core: ~</span>
-    <span class="term-close">ESC to close</span>
+    <span class="term-close" id="term-close"><span class="kb-only">ESC to close</span><span class="touch-only">TAP to close</span></span>
   </div>
   <div id="term-output"></div>
   <div class="term-line">
@@ -171,15 +261,24 @@
       Find the Raspberry Pi node — and the TATRA CORE server room at the centre.
     </p>
     <div class="controls">
-      <span><b>WASD</b> move</span>
-      <span><b>MOUSE</b> look</span>
-      <span><b>SHIFT</b> sprint</span>
+      <span class="kb-only"><b>WASD</b> move</span>
+      <span class="kb-only"><b>MOUSE</b> look</span>
+      <span class="kb-only"><b>SHIFT</b> sprint</span>
+      <span class="touch-only"><b>STICK</b> move</span>
+      <span class="touch-only"><b>SWIPE</b> look</span>
       <span><b>E</b> interact</span>
-      <span><b>ESC</b> close terminal</span>
+      <span class="kb-only"><b>ESC</b> close terminal</span>
     </div>
     <button class="start-btn" id="start-btn">ENTER THE LABYRINTH</button>
     <button class="start-btn back-btn" id="start-home">&larr; SPÄŤ DO HLOHOVCA</button>
   </div>
+</div>
+
+<div id="touch-controls">
+  <div id="stick"><div id="stick-knob"></div></div>
+  <div id="touch-look-hint">SWIPE TO LOOK</div>
+  <button id="touch-menu" type="button">MENU</button>
+  <button id="touch-use" type="button" aria-label="Interact">E</button>
 </div>
 
 <div id="win-screen">
@@ -248,6 +347,20 @@ const canCountEl = document.getElementById('can-count');
 const pigCountEl = document.getElementById('pig-count');
 const winScreen = document.getElementById('win-screen');
 const winStats = document.getElementById('win-stats');
+const touchUseEl = document.getElementById('touch-use');
+const touchMenuEl = document.getElementById('touch-menu');
+const stickEl = document.getElementById('stick');
+const stickKnobEl = document.getElementById('stick-knob');
+const termCloseEl = document.getElementById('term-close');
+
+// Dotykové zariadenia: na telefóne pointer lock neexistuje, takže hru
+// odštartuje tap a pohyb/pohľad rieši stick + ťahanie. `body.touch`
+// odkrýva touch-only texty a skrýva klávesové skratky. Rovnaká detekcia
+// ako v hlavnej hre (S.IS_MOBILE): primárny ukazovateľ je hrubý.
+const IS_TOUCH = typeof window.matchMedia === 'function'
+  ? window.matchMedia('(pointer: coarse)').matches
+  : (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
+if (IS_TOUCH) document.body.classList.add('touch');
 
 /* =========================================================
    PROCEDURAL TEXTURES
@@ -1206,8 +1319,36 @@ function collides(wx, wz) {
 const keys = {};
 let locked = false;
 let terminalOpen = false;
+let touchActive = false;
+
+// ---------- DOTYK: stav ----------
+const touchMove = { x: 0, y: 0 };
+const TOUCH_LOOK_SENS = 0.006; // rad/px — prst sa hýbe po pixeloch
+let stickPointer = -1;
+let lookPointer = -1;
+let lookX = 0, lookY = 0;
+
+function resetStick() {
+  stickPointer = -1;
+  touchMove.x = 0;
+  touchMove.y = 0;
+  stickEl?.classList.remove('active');
+  if (stickKnobEl) stickKnobEl.style.transform = 'translate(-50%, -50%)';
+}
+
+function resetTouch() {
+  resetStick();
+  lookPointer = -1;
+}
+
+function setTouchActive(on) {
+  touchActive = on;
+  document.body.classList.toggle('touch-active', on);
+  if (!on) resetTouch();
+}
 
 function requestLock() {
+  if (typeof canvas.requestPointerLock !== 'function') return;
   try {
     const p = canvas.requestPointerLock();
     if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -1217,13 +1358,23 @@ function requestLock() {
 startScreen.addEventListener('click', () => {
   if (terminalOpen) return;
   initAudio();
+  if (IS_TOUCH) {
+    startScreen.style.display = 'none';
+    setTouchActive(true);
+    return;
+  }
   requestLock();
 });
 
 winScreen.addEventListener('click', () => {
   winScreen.style.display = 'none';
-  startScreen.style.display = 'flex';
   initAudio();
+  if (IS_TOUCH) {
+    startScreen.style.display = 'none';
+    setTouchActive(true);
+    return;
+  }
+  startScreen.style.display = 'flex';
   requestLock();
 });
 
@@ -1246,7 +1397,94 @@ if (window.parent && window.parent !== window) {
   }
 }
 
+// ---------- DOTYK: stick / pohľad / E / MENU --------------------------------
+// Ľavý palec = analogový stick, pravý = ťahanie po plátne. Obe naraz, každý
+// s vlastným pointerId, takže pohyb a rozhliadanie sa neblokujú.
+if (IS_TOUCH) {
+  const moveStick = (e) => {
+    const r = stickEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const max = r.width / 2 - 12;
+    let dx = e.clientX - cx;
+    let dy = e.clientY - cy;
+    const len = Math.hypot(dx, dy);
+    if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+    const nx = dx / max;
+    const ny = dy / max;
+    const mag = Math.min(1, Math.hypot(nx, ny));
+    const dead = 0.14;
+    if (mag < dead) {
+      touchMove.x = 0;
+      touchMove.y = 0;
+    } else {
+      const k = (mag - dead) / (1 - dead) / mag;
+      touchMove.x = nx * k;
+      touchMove.y = -ny * k; // prst hore = dopredu
+    }
+    if (stickKnobEl) {
+      stickKnobEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    }
+  };
+
+  stickEl?.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || terminalOpen || !touchActive) return;
+    e.preventDefault();
+    stickPointer = e.pointerId;
+    stickEl.classList.add('active');
+    try { stickEl.setPointerCapture(e.pointerId); } catch (_e) { /* ignore */ }
+    moveStick(e);
+  });
+  stickEl?.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== stickPointer) return;
+    e.preventDefault();
+    moveStick(e);
+  });
+  const stickEnd = (e) => { if (e.pointerId === stickPointer) resetStick(); };
+  stickEl?.addEventListener('pointerup', stickEnd);
+  stickEl?.addEventListener('pointercancel', stickEnd);
+  stickEl?.addEventListener('lostpointercapture', stickEnd);
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || terminalOpen || !touchActive) return;
+    e.preventDefault();
+    lookPointer = e.pointerId;
+    lookX = e.clientX;
+    lookY = e.clientY;
+    try { canvas.setPointerCapture(e.pointerId); } catch (_e) { /* ignore */ }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== lookPointer) return;
+    const dx = e.clientX - lookX;
+    const dy = e.clientY - lookY;
+    lookX = e.clientX;
+    lookY = e.clientY;
+    camera.rotation.y -= dx * TOUCH_LOOK_SENS;
+    camera.rotation.x -= dy * TOUCH_LOOK_SENS;
+    camera.rotation.x = Math.max(-1.45, Math.min(1.45, camera.rotation.x));
+  });
+  const lookEnd = (e) => { if (e.pointerId === lookPointer) lookPointer = -1; };
+  canvas.addEventListener('pointerup', lookEnd);
+  canvas.addEventListener('pointercancel', lookEnd);
+  canvas.addEventListener('lostpointercapture', lookEnd);
+
+  touchUseEl?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!touchActive || terminalOpen) return;
+    tryInteract();
+  });
+
+  touchMenuEl?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (terminalOpen) return;
+    setTouchActive(false);
+    startScreen.style.display = 'flex';
+  });
+}
+
 canvas.addEventListener('click', () => {
+  if (IS_TOUCH) return;
   if (!terminalOpen && !locked) requestLock();
 });
 
@@ -1255,7 +1493,7 @@ document.addEventListener('pointerlockchange', () => {
   if (locked) {
     startScreen.style.display = 'none';
     initAudio();
-  } else if (!terminalOpen) {
+  } else if (!terminalOpen && !IS_TOUCH) {
     startScreen.style.display = 'flex';
   }
 });
@@ -1324,6 +1562,7 @@ function updatePrompt() {
   if (terminalOpen) {
     promptEl.style.opacity = '0';
     currentTerminal = null;
+    touchUseEl?.classList.remove('ready');
     return;
   }
   let best = null;
@@ -1338,9 +1577,11 @@ function updatePrompt() {
     currentTerminal = best;
     promptText.textContent = best.label;
     promptEl.style.opacity = '1';
+    touchUseEl?.classList.add('ready');
   } else {
     currentTerminal = null;
     promptEl.style.opacity = '0';
+    touchUseEl?.classList.remove('ready');
   }
 }
 
@@ -1408,6 +1649,7 @@ function triggerWin(source) {
   }
 
   if (document.pointerLockElement) document.exitPointerLock();
+  if (IS_TOUCH) setTouchActive(false);
 
   startScreen.style.display = 'none';
   winScreen.style.display = 'flex';
@@ -1445,6 +1687,7 @@ function openTerminal(kind) {
   terminal.open = true;
   terminal.kind = kind;
   terminalOpen = true;
+  resetTouch();
   accessedTerminals.add(kind);
   document.body.classList.add('term-open');
   termEl.style.display = 'flex';
@@ -1476,7 +1719,7 @@ function openTerminal(kind) {
     termPrint('');
   }
 
-  document.exitPointerLock();
+  if (typeof document.exitPointerLock === 'function') document.exitPointerLock();
   setTimeout(() => termInput.focus(), 60);
 }
 
@@ -1485,9 +1728,16 @@ function closeTerminal() {
   terminalOpen = false;
   document.body.classList.remove('term-open');
   termEl.style.display = 'none';
-  startScreen.style.display = 'flex';
+  termInput.blur();
   beep(420, 0.07, 'sine', 0.03);
-  requestLock();
+  if (IS_TOUCH) {
+    // Na mobile nemá kto stlačiť ESC: zavretie terminálu hru rovno vráti.
+    startScreen.style.display = 'none';
+    setTouchActive(true);
+  } else {
+    startScreen.style.display = 'flex';
+    requestLock();
+  }
 }
 
 function submitCommand() {
@@ -1529,6 +1779,12 @@ termInput.addEventListener('keydown', (e) => {
     else terminal.histIndex = terminal.history.length;
     termInput.value = terminal.history[terminal.histIndex] || '';
   }
+});
+
+// Na mobile je ESC nedostupný — hlavička terminálu je zároveň tlačidlo.
+termCloseEl?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeTerminal();
 });
 
 /* =========================================================
@@ -2041,8 +2297,12 @@ function updatePlayer(dt) {
   if (keys['KeyS']) f -= 1;
   if (keys['KeyD']) s += 1;
   if (keys['KeyA']) s -= 1;
+  // Dotykový stick je analogový: 0..1, takže pomalý posun pri malom vychýlení.
+  f += touchMove.y;
+  s += touchMove.x;
 
-  const moving = f !== 0 || s !== 0;
+  const mag = Math.min(1, Math.hypot(f, s));
+  const moving = mag > 0.1;
   let speed = 4.2;
   if (keys['ShiftLeft'] || keys['ShiftRight']) speed = 7.4;
 
@@ -2053,7 +2313,7 @@ function updatePlayer(dt) {
   const len = Math.hypot(dx, dz);
   if (len > 0) { dx /= len; dz /= len; }
 
-  const step = speed * dt;
+  const step = speed * dt * mag;
   const nx = player.x + dx * step;
   if (!collides(nx, player.z)) player.x = nx;
   const nz = player.z + dz * step;
@@ -2078,7 +2338,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   elapsed += dt;
 
-  if (locked && !terminalOpen) updatePlayer(dt);
+  if ((locked || touchActive) && !terminalOpen) updatePlayer(dt);
 
   for (const can of cans) {
     if (can.collected) continue;
@@ -2134,6 +2394,7 @@ window.__tatra = {
   cans, pigs, terminals, obstacles, piRun, coreRun, openTerminal, closeTerminal, triggerWin, collectCan, collectPig,
   get locked() { return locked; },
   get terminalOpen() { return terminalOpen; },
+  get touchActive() { return touchActive; },
   get won() { return won; }
 };
 
