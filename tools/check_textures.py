@@ -43,6 +43,8 @@ SLOTS = {
     "road/asphalt_diffuse.jpg":     ("diffuse", 61.0),
     "road/asphalt_normal.png":      ("normal",  None),
     "road/asphalt_roughness.png":   ("rough",   None),
+    "road/tiremark.png":            ("diffuse", None),
+    "road/crosswalk.png":           ("diffuse", None),
     "terrain/grass_diffuse.jpg":    ("diffuse", 81.0),
     "terrain/dirt_diffuse.png":     ("diffuse", 77.7),
     "terrain/terrain_normal.png":   ("normal",  None),
@@ -55,6 +57,7 @@ SLOTS = {
     "buildings/wood.png":           ("diffuse", None),
     "buildings/wood_normal.png":    ("normal",  None),
     "buildings/gravel.png":         ("diffuse", 120.0),
+    "veg/shrubs.png":               ("diffuse", None),
 }
 
 

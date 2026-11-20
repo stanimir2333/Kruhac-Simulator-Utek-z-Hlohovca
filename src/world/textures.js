@@ -117,6 +117,79 @@ export function fDetailNormal(SZ){
   return c;
 }
 
+// ---------- GTA SA DEKALTY: fallbacky (platí aj vtedy, keď dochádza k LOW_END) ----------
+// tiremark = biely opotrebovaný kolieskom asfalt (krátke výstupky, radiaca alfa);
+// crosswalk = biely štrajkpolia; shrubs = sprite z trstin + kvetináčov.
+
+export function fTireMark(SZ){
+  const f = newField(SZ), g = f.g;
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] fTireMark: getContext null"); return f; }
+  const img = g.createImageData(SZ, SZ), d = img.data;
+  const cx = SZ/2, cy = SZ/2;
+  for(let y = 0; y < SZ; y++) for(let x = 0; x < SZ; x++){
+    const i = (y*SZ + x)*4;
+    const r = Math.sqrt((x-cx)*(x-cx) + (y-cy)*(y-cy)) / SZ;
+    let a = sstep(0.38, 0.02, r);
+    for(let k = 0; k < 3; k++) a += sstep(0.10, 0.36, Math.abs(y/SZ - 0.35 - k*0.12)) * sstep(0.5, 0.85, r) * 0.5;
+    a += (thash(x, y, SZ, 77) - 0.5) * 0.2;
+    d[i] = 240; d[i+1] = 235; d[i+2] = 218;
+    d[i+3] = Math.max(0, Math.min(1, a)) * 255;
+  }
+  g.putImageData(img, 0, 0);
+  return f;
+}
+
+export function fCrosswalk(SZ){
+  const f = newField(SZ), g = f.g;
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] fCrosswalk: getContext null"); return f; }
+  const img = g.createImageData(SZ, SZ), d = img.data;
+  for(let i = 0; i < SZ*SZ; i++){
+    const v = Math.floor(i / SZ) / SZ;
+    let a = 0;
+    for(let c = 0; c < 7; c++){ const cc = 0.06 + c*0.145; a = Math.max(a, sstep(cc - 0.09, cc + 0.09, v)); }
+    const j = i*4;
+    d[j] = 250; d[j+1] = 246; d[j+2] = 234; d[j+3] = Math.max(0, a*0.93 + 0.02)*255;
+  }
+  g.putImageData(img, 0, 0);
+  return f;
+}
+
+export function fShrubs(SZ){
+  const f = newField(SZ), g = f.g;
+  if(!g){ if(typeof console!=="undefined") console.warn("[TEX] fShrubs: getContext null"); return f; }
+  const img = g.createImageData(SZ, SZ), d = img.data;
+  const put = (x, y, r, col) => {
+    for(let yy = Math.max(0, Math.round(y)-r); yy <= Math.min(SZ-1, Math.round(y)+r); yy++)
+      for(let xx = Math.max(0, Math.round(x)-r); xx <= Math.min(SZ-1, Math.round(x)+r); xx++){
+        const t = Math.min(1, Math.hypot(xx-x, yy-y)/r);
+        const m = (1-t)*(1-t)*(3-2*t);
+        if(m <= 0) continue;
+        const i = (yy*SZ + xx)*4;
+        d[i] = col[0]*m*255; d[i+1] = col[1]*m*255; d[i+2] = col[2]*m*255;
+        d[i+3] = Math.max(d[i+3], m*255);
+      }
+  };
+  const ybase = SZ*0.65;
+  for(let k = 0; k < 3; k++){
+    const x = SZ*(0.25+k*0.25) + (k-1)*12;
+    const top = SZ*0.14 + k*SZ*0.13 + (k%2 ? -6 : 6);
+    const bw = SZ*0.045;
+    for(let y = Math.min(ybase, top); y <= ybase; y++){
+      const t = (ybase - y)/Math.max(1, ybase - top);
+      const w = Math.max(1, Math.round(bw*t));
+      for(let xx = Math.round(x)-w/2; xx <= Math.round(x)+w/2; xx++){
+        const i = (Math.round(y)*SZ + Math.round(xx))*4;
+        d[i] = 52; d[i+1] = 66; d[i+2] = 30; d[i+3] = 255;
+      }
+    }
+    put(x, top-10, 3, [205, 176, 40]);
+    put(x, top-7, 2, [238, 232, 206]);
+    for(let j = 0; j < 4; j++) put(x + SZ*0.18*(j-1.5), ybase - 10 + j*4, 2.2, [170, 30, 40]);
+  }
+  g.putImageData(img, 0, 0);
+  return f;
+}
+
 export function makeTex(size, painter){ return texFromCanvas(paintCanvas(size, painter), true); }
 
 // Slot = hotový canvas: založí textúru a POZADIA ju nahradiť súborom z disku.
@@ -697,6 +770,15 @@ export function paintFacade(g,s,W){
       g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x-W.fr, y+h+W.fr+Math.max(1,W.sill/2), w+2*W.fr, 3*s/128);
     }
   }
+  // NÁLEZ: dvere GTA SA – 3 vertikálne lišty medzi oknávymi radami
+  // (netreba ich meniť na fotku – vertex tint ich prefarbí do odtieňov kategórií)
+  const dh = 6*s/128;
+  const dy0 = W.y + W.dy - dh*0.9;
+  for(let c = 0; c < 3; c++){
+    const x = W.x + c*W.dx;
+    g.fillStyle = "#c1b192"; g.fillRect(x, dy0, W.w, dh*0.8);
+    g.fillStyle = "rgba(0,0,0,0.08)"; g.fillRect(x-1, dy0, W.w+2, 1);
+  }
   g.fillStyle = "rgba(20,14,8,0.35)"; g.fillRect(0, s-W.foot, s, W.foot); // zapečený kontaktný tieň päty
 }
 
@@ -804,6 +886,15 @@ export function buildTextures(){
   S.TEX.asphaltN = texSlotCanvas("asphaltN", "road/asphalt_normal.png", normalCanvas(A.S, A.hf, 1.4), false, ROAD_REP);
 S.TEX.asphaltR = texSlotCanvas("asphaltR", "road/asphalt_roughness.png", grayCanvas(A.S, A.rg),  false,  ROAD_REP);
   mark("asphalt");
+
+  // ---------- GTA SA: opotrebovaný asfalt + crosswalk ----------
+  // tiremark/crosswalk/shrubs = GTA SA–štýlové dekality – rovnaké rozloženie, ako sa zvyklo
+  // na pozície (tire marks sa nepokrývajú – naša "crosstisky" tu berú miestu po silnicách)
+  const Q = 512;   // velkosť dekal
+  S.TEX.tireMark = texSlotCanvas("tireMark", "road/tiremark.png",  commitField(fTireMark(Q)),  true, null);
+  S.TEX.crosswalk = texSlotCanvas("crosswalk", "road/crosswalk.png", commitField(fCrosswalk(Q)), true, null);
+  S.TEX.shrubs  = texSlotCanvas("shrubs",  "veg/shrubs.png",      commitField(fShrubs(Q)),       true, null);
+  mark("decality: tiremark/crosswalk/shrubs");
 
   // ---------- TERRAIN: trávnik + hlina + zvlnenie ----------
   // repeat je odvodený z reálnej šírky mapy: 1 dlažba = ~32 m, teda 128 px / 32 m.
@@ -1144,6 +1235,17 @@ export function buildShared(){
   S.MAT.propLeaf  = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.93, metalness: 0.00, envMapIntensity: 0.40 });
   S.MAT.propGlass = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.10, metalness: 0.60, envMapIntensity: 1.40 });
   S.MAT.propGlow  = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true });
+  // ---------- GTA SA DEKALTY ----------
+  // tire mark — biely opotrebovaný asfalt (transparent, alphaTest, bez env mapy)
+  S.MAT.tireMark = new THREE.MeshStandardMaterial({ map: S.TEX.tireMark, color: 0xffffff,
+    transparent: true, alphaTest: 0.25, depthWrite: false, side: THREE.DoubleSide,
+    roughness: 0.36, metalness: 0.04, envMapIntensity: 0.6 });
+  // crosswalk — biela štrajková územná (viditeľné štrajky po ulice)
+  S.MAT.crosswalk = new THREE.MeshStandardMaterial({ map: S.TEX.crosswalk, color: 0xffffff,
+    alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.90, metalness: 0.0 });
+  // shrubs — sprite kvetináčov a trstin
+  S.MAT.shrubs = new THREE.MeshStandardMaterial({ map: S.TEX.shrubs, alphaTest: 0.40,
+    side: THREE.DoubleSide, roughness: 0.92, metalness: 0.0, color: 0x5da24a });
   const palette = [0xb03030, 0x2b5aa0, 0xc7c7c7, 0x303035, 0xc07a20, 0x3f7a3f, 0x7a7a8a, 0xd42a1e];
   for(let i=0;i<palette.length;i++){ S.CAR_COLORS.push(new THREE.Color(palette[i])); }
 }

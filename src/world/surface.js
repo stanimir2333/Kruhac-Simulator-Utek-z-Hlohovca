@@ -33,6 +33,10 @@ const PROFILES = {
   ballast:      { r: 0.90, m: 0.00, e: 0.35, w: 0.70, dn: 1.0 },
   park:         { r: 0.94, m: 0.00, e: 0.30, w: 0.60, dn: 0.6 },
   island:       { r: 0.88, m: 0.00, e: 0.40, w: 0.70, dn: 0.7 },
+  // --- GTA SA decality (vozovka opotrebovaná v ťahach, crosstisky) ---
+  tireMark:     { r: 0.36, m: 0.04, e: 0.55, w: 1.00, dn: 0 },
+  crosswalk:    { r: 0.88, m: 0.00, e: 0.55, w: 0.70, dn: 0 },
+  shrubs:       { r: 0.92, m: 0.00, e: 0.35, w: 0.50, dn: 0.5 },
   // --- terén ---
   // Trávnik/hlina sa lesknú len jemne: vlhká zem je matná, ostrý odraz oblohy
   // by vyzeral ako mokrá fólia.

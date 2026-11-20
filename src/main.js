@@ -21,6 +21,8 @@ import {
 import { buildRiver, initWater, updateWater, waterResize, setWaterQuality } from './world/water.js';
 import { buildBuildings, photoPreload } from './world/buildings.js';
 import { buildVegInstanced, buildLampsTrees, snapVegetationToTerrain } from './world/nature.js';
+import { buildShrubs } from './world/shrubs.js';
+import { buildTireMarks, buildCrosswalks } from './world/decals.js';
 import { applySurfaces, updateSurfaceWet, updatePuddleTime } from './world/surface.js';
 import { buildProps } from './world/props.js';
 import { initLeaves, updateLeaves } from './world/leaves.js';
@@ -217,11 +219,15 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   await step(0.55, 'profily ciest…'); buildRoadProfiles(); buildRoundHeights(); beat('profily ciest');
   await step(0.60, 'terén…');         buildGround(); beat('terén');
   await step(0.68, 'cesty…');         buildRoads(); beat('cesty');
+  await step(0.69, 'decality: tire marks + crosswalks…');
+  buildTireMarks(); buildCrosswalks(); beat('decality');
   await step(0.71, 'kruháče…');       buildRoundabouts(); beat('kruháče');
   await step(0.73, 'Váh…');           buildRiver(); beat('Váh');
   await step(0.75, 'koľaje + zeleň…'); buildRails(); buildGreens(); buildCemetery(); beat('koľaje + zeleň');
   await step(0.80, 'budovy…');        await photoPreload(); buildBuildings(); beat('budovy');
   await step(0.86, 'stromy + lampy…'); buildLampsTrees(); buildVegInstanced(); snapVegetationToTerrain(); beat('vegetácia');
+  // Záhonky GTA SA: zelená vedľa ciest (hlavná trasa + komunálne križnice), jeden InstancedMesh
+  buildShrubs();
   // Odrázy povrchov podľa materiálu + kaluže: až teraz existujú VŠETKY
   // materiály (vegCrown z vegetácie, propMetal z mobiliáru), takže profil
   // drsnosti a envMapIntensity sa aplikuje na celý svet naraz.

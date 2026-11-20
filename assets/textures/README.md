@@ -43,17 +43,27 @@ a anizotropiou.
 
 | súbor | slot | zdroj |
 |---|---|---|
-| `asphalt_diffuse.jpg` | `asphalt` | ambientCG `asphalt_02` 1k, zmenšené na 512 |
-| `asphalt_normal.png` | `asphaltN` | `asphalt_02_nor_gl` (EXR → straight uint8) |
-| `asphalt_roughness.png` | `asphaltR` | `asphalt_02_rough` (raw lineárna hodnota) |
+| `asphalt_diffuse.jpg` | `asphalt` | GTA SA kamenný asfalt: trhliny, zrno, opotrebovanie, tire tread — obsadiť bez akéhokoľvek dát, stačí prepísať rovným menom |
+| `asphalt_normal.png` | `asphaltN` | normálová mapa z výškového poľa (tzv. tire tread + trhlinky) |
+| `asphalt_roughness.png` | `asphaltR` | drsnosť (trhlinky 0,62, opotrebované jamky) |
+| `tiremark.png` | `tireMark` | opotrebovanie asfaltu — biele výstupky od pneumatíkov s radiacou alfa (inštancované v `decals.js`) |
+| `crosswalk.png` | `crosswalk` | biely crosswalk — štrajky perfekulárne na cestu (inštancované v `decals.js`) |
+
+Regenerovanie cez `python3 tools/gen_gta_textures.py` (idempotentné).
 
 ## terrain/ — dlažba každých 16 m (1024 px / 16 m = 64 px/m)
 
 | súbor | slot | zdroj |
 |---|---|---|
-| `grass_diffuse.jpg` | `grass` | ambientCG `leafy_grass` 1k, 1024 |
-| `dirt_diffuse.png` | `dirt` | placeholder (2. vrstva terénu + nespevnené cesty) |
+| `grass_diffuse.jpg` | `grass` | GTA SA trávnik: trstiny + kvetináče, holé pôdoky |
+| `dirt_diffuse.png` | `dirt` | nespevnené cesty (hlina, tire tracks, vedra) |
 | `terrain_normal.png` | `terrainN` | placeholder (nízkoamplitúdové zvlnenie, `normalScale` 0,35) |
+
+## veg/ — zelená vedľa ciest (`buildShrubs()` v `src/world/shrubs.js`)
+
+| súbor | slot | použitie |
+|---|---|---|
+| `shrubs.png` | `shrubs` | sprite záhoniak (trstiny + kvetináče, štýl GTA SA) |
 
 ## buildings/ — fasády (8 m/dlažbu), komíny (tehla 3×12), stromy
 
