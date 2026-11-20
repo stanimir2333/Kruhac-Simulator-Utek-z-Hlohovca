@@ -93,8 +93,10 @@ const NOISE_GLSL = [
 
 // Kaluže: hrubý šum (veľké jamy) + jemný (okraje). Čím väčšia mokrosť, tým
 // nižší prah → viac kaluží. Kaluža je ZRKADLO: drsnosť padá na ~0,05.
-// Pri mokrých kalužách sa normálová mapa jemne perturbuje — vodná plocha nie je
-// nikdy dokonale rovná (jemné vlnky), čo rozbije ploché zrkadlo.
+// Vlnky v kaluži sa NErobia tu: `normalScale` je uniform a GLSL zakazuje zápis
+// do uniformu (`l-value required`) — celý shader asfaltu sa vtedy neskompiluje
+// a vozovka zmizne. Vlnky preto skladáme až do lokálnej tangensovej normály
+// v detailNormalFrag() nižšie.
 const PUDDLE_FRAG = [
   '  float pud = 0.0;',
   '  if(uWet > 0.002){',
@@ -104,15 +106,6 @@ const PUDDLE_FRAG = [
   '    float thr = 0.60 - uWet * 0.24;',
   '    pud = clamp((pn - thr) / 0.13, 0.0, 1.0) * uWet;',
   '    diffuseColor.rgb *= mix(1.0, 0.46, pud);',
-  // Jemná vlnková perturbácia normály na mokrých miestach (rozbije ploché zrkadlo).
-  // `normalScale` existuje LEN s normalMap; most (S.MAT.bridge) ju nemá, preto
-  // #ifdef — bez neho by celý shader nezkompiloval a most by zmizol.
-  '    #ifdef USE_NORMALMAP',
-  '    if(pud > 0.01){',
-  '      float wave = sin(vSurfPos.x * 0.3 + uTimePuddle) * 0.08 + cos(vSurfPos.z * 0.25 + uTimePuddle * 0.7) * 0.06;',
-  '      normalScale *= mix(1.0, 1.0 + wave * 0.5, pud);',
-  '    }',
-  '    #endif',
   '  }',
 ].join('\n');
 
@@ -120,15 +113,30 @@ const PUDDLE_FRAG = [
 // primiešava do tangensovej normály AŽ po normal mape, takže hlavná normálová
 // mapa (asfalt, dlažba, omietka) ostáva dominantná. `mapN` a `tbn` sú v scope
 // len vtedy, keď materiál má tangent-space normalMap — preto ten #if.
-const DETAIL_NORMAL_FRAG = [
-  '  #if defined( USE_NORMALMAP_TANGENTSPACE )',
-  '  if(uDetailScale > 0.001){',
-  '    vec3 dnT = texture2D(tDetailNormal, vDetailUv).xyz * 2.0 - 1.0;',
-  '    dnT.xy *= normalScale * uDetailScale * (1.0 - uDetailFade);',
-  '    normal = normalize(tbn * normalize(mapN + dnT));',
-  '  }',
-  '  #endif',
-].join('\n');
+// `ripple` = materiál má PUDDLE_FRAG, teda aj `pud`; vlnky v kaluži sa
+// pridávajú do dnT AŽ po fade, aby ich mokrosť nevypla (uDetailFade → 1).
+function detailNormalFrag(ripple){
+  const lines = [
+    '  #if defined( USE_NORMALMAP_TANGENTSPACE )',
+    '  if(uDetailScale > 0.001){',
+    '    vec3 dnT = texture2D(tDetailNormal, vDetailUv).xyz * 2.0 - 1.0;',
+    '    dnT.xy *= normalScale * uDetailScale * (1.0 - uDetailFade);',
+  ];
+  if(ripple){
+    lines.push(
+      '    // kaluža nikdy nie je dokonale rovná: jemné vlnky rozbijú zrkadlo',
+      '    float pr = sin(vSurfPos.x * 0.3 + uTimePuddle) * 0.08',
+      '             + cos(vSurfPos.z * 0.25 + uTimePuddle * 0.7) * 0.06;',
+      '    dnT.xy += vec2(pr) * pud;',
+    );
+  }
+  lines.push(
+    '    normal = normalize(tbn * normalize(mapN + dnT));',
+    '  }',
+    '  #endif',
+  );
+  return lines.join('\n');
+}
 
 // Vlhký povrch bez kaluží (trávnik, strechy, hlina): iba stmavnutie.
 const WET_FRAG = [
@@ -145,7 +153,7 @@ const ROUGH_FRAG = [
 // onBeforeCompile je reťazený (MAT.ground si už svoj patch má) a customProgram
 // CacheKey je VŽDY vlastný — inak by tri zdielil program medzi dvoma
 // materiálmi s rovnakým zdrojovým kódom patchu.
-function patchMat(mat, key, frag, rough, wetAmt){
+function patchMat(mat, key, frag, rough, wetAmt, ripple){
   if(!mat || mat.userData.surfPatched) return;
   mat.userData.surfPatched = true;
   const prev = mat.onBeforeCompile;
@@ -190,7 +198,7 @@ function patchMat(mat, key, frag, rough, wetAmt){
         '#include <roughnessmap_fragment>\n' + rough.split('WET_AMT').join(wetAmt.toFixed(3)))
       // Detail normal AŽ po normal mape (pred osvetlením), nie pred ňou
       .replace('#include <normal_fragment_maps>',
-        '#include <normal_fragment_maps>\n' + DETAIL_NORMAL_FRAG);
+        '#include <normal_fragment_maps>\n' + detailNormalFrag(ripple));
   };
   mat.customProgramCacheKey = function(){ return 'surf-' + key; };
 }
@@ -211,11 +219,12 @@ export function applySurfaces(){
     m.envMapIntensity = p.e;
     if(p.dn !== undefined) m.userData.detailNormal = p.dn;
   }
-  // Kaluže: len vodorovné povrchy, po ktorých sa voda dá zbierať.
-  patchMat(S.MAT.asphalt,      'puddle-asphalt',      PUDDLE_FRAG, ROUGH_FRAG, 0);
-  patchMat(S.MAT.routeAsphalt, 'puddle-routeAsphalt', PUDDLE_FRAG, ROUGH_FRAG, 0);
-  patchMat(S.MAT.sidewalk,     'puddle-sidewalk',     PUDDLE_FRAG, ROUGH_FRAG, 0);
-  patchMat(S.MAT.bridge,       'puddle-bridge',       PUDDLE_FRAG, ROUGH_FRAG, 0);
+  // Kaluže: len vodorovné povrchy, po ktorých sa voda dá zbierať. `true` =
+  // materiál má `pud`, takže do detailnej normály môže pridať vlnky v kaluži.
+  patchMat(S.MAT.asphalt,      'puddle-asphalt',      PUDDLE_FRAG, ROUGH_FRAG, 0, true);
+  patchMat(S.MAT.routeAsphalt, 'puddle-routeAsphalt', PUDDLE_FRAG, ROUGH_FRAG, 0, true);
+  patchMat(S.MAT.sidewalk,     'puddle-sidewalk',     PUDDLE_FRAG, ROUGH_FRAG, 0, true);
+  patchMat(S.MAT.bridge,       'puddle-bridge',       PUDDLE_FRAG, ROUGH_FRAG, 0, true);
   // Vlhký povrch bez kaluží: trávnik, hlina, strechy.
   patchMat(S.MAT.ground,      'wet-ground',      WET_FRAG, '', 0.55);
   patchMat(S.MAT.dirt,        'wet-dirt',        WET_FRAG, '', 0.60);
