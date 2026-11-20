@@ -254,6 +254,14 @@ export async function preloadCarModels() {
       return geomFromObj(obj);
     }));
     if (!geos[0] || !geos[1] || !geos[2]) throw new Error('empty geometry');
+    // Orientácia OBJ: X = výška (hore je −X), Y = šírka, Z = dĺžka (predok v −Z).
+    // three.js potrebuje +Y hore a predok v +Z (svetlá sú na z = +2.11).
+    // Otočíme len karosériu: −90° okolo Z (výška → +Y), potom 180° okolo Y
+    // (predok → +Z). Zloženie je čistá rotácia (det = +1), nie zrkadlenie.
+    // Kolesá necháme: ich os je v modelovom Y a buildSkodaMesh ich otočí o +90°
+    // okolo Z, takže os nakoniec sedí na svetovom X.
+    geos[0].rotateZ(-Math.PI / 2);
+    geos[0].rotateY(Math.PI);
     carModelCache = { body: geos[0], tyre: geos[1], wheel: geos[2] };
   } catch (e) {
     carModelCache = null;
