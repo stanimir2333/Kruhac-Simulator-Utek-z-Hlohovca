@@ -45,6 +45,10 @@ const tdiGeo = new THREE.BoxGeometry(0.34, 0.065, 0.025);
 const mirrorStalkGeo = new THREE.BoxGeometry(0.12, 0.04, 0.1);
 const mirrorHeadGeo = rbox(0.07, 0.14, 0.16, 0.025, 2);
 const handleGeo = new THREE.BoxGeometry(0.03, 0.035, 0.18);
+const seatBaseGeo = rbox(0.58, 0.20, 0.62, 0.07, 3);
+const seatBackGeo = rbox(0.58, 0.62, 0.16, 0.06, 3);
+const dashGeo = rbox(1.34, 0.22, 0.28, 0.04, 2);
+const steeringGeo = new THREE.TorusGeometry(0.16, 0.018, 8, 18);
 // Kolesá: viac segmentov valca (32/24 namiesto 24/20) — okraj pneu aj ráfika
 // pri pohľade zblízka nepôsobi ako oholený mnohouholník. Totočenie (syncMesh:
 // spin) sa segmentmi nijako nemení.
@@ -113,6 +117,30 @@ function carPaint(color) {
   });
 }
 
+function carGlass() {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0x142638, roughness: 0.08, metalness: 0.08, clearcoat: 0.65,
+    clearcoatRoughness: 0.04, envMapIntensity: 1.6, transparent: true, opacity: 0.72,
+    depthWrite: false,
+  });
+}
+
+function addInterior(parent, sport = false) {
+  const upholstery = std(sport ? 0x171a1d : 0x303236, 0.88, 0.02);
+  const dash = std(0x15191d, 0.62, 0.08);
+  const trim = std(sport ? 0xa9afb6 : 0x777d84, 0.30, 0.60);
+  const z = sport ? -0.20 : -0.28;
+  for (const sx of [-1, 1]) {
+    box(parent, seatBaseGeo, upholstery, sx * 0.38, 0.98, z, true);
+    box(parent, seatBackGeo, upholstery, sx * 0.38, 1.26, z - 0.23, true);
+  }
+  box(parent, dashGeo, dash, 0, 1.17, 0.54, true);
+  const wheel = new THREE.Mesh(steeringGeo, trim);
+  wheel.position.set(-0.38, 1.24, 0.33);
+  wheel.rotation.x = 0.20;
+  parent.add(wheel);
+}
+
 function wheels(parent, zf = 1.35, zr = -1.35, rimColor = 0xc9cdcb) {
   const list = [];
   const mat = std(0x141414, 0.9, 0.1);
@@ -146,7 +174,7 @@ function box(parent, geo, mat, x, y, z, shadow = false) {
 
 function octaviaDetails(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
-  const glass = std(0x0d1620, 0.06, 0.0);
+  const glass = carGlass();
   glass.envMapIntensity = 1.5; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x252a2a, 0.7, 0.15);
   const plate = std(0xe9e8dc, 0.55, 0.05);
@@ -175,6 +203,7 @@ function octaviaDetails(parent, bodyMat) {
   frontScreen.rotation.x = 0.72;
   const rearScreen = box(parent, rearScreenGeo, glass, 0, 1.24, -1.225);
   rearScreen.rotation.x = -0.6;
+  addInterior(parent);
   // Kryty pod sklami: čelný leží na kapote, zadný na kufri.
   box(parent, cowlFGeo, bodyMat, 0, 1.02, 0.85, true);
   box(parent, cowlRGeo, bodyMat, 0, 1.0, -1.36, true);
@@ -339,7 +368,7 @@ export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
 /** RX-7 FD: dlhá nízka kapota, fastback zadok + krídlo — boxový štýl ako Octavia. */
 function rx7Details(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
-  const glass = std(0x0d1620, 0.06, 0.0);
+  const glass = carGlass();
   glass.envMapIntensity = 1.5; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x232527, 0.68, 0.2);
   const plate = std(0xe9e8dc, 0.55, 0.05);
@@ -369,6 +398,7 @@ function rx7Details(parent, bodyMat) {
   screen.rotation.x = 0.82;
   const hatch = box(parent, rxHatchGlassGeo, glass, 0, 1.06, -0.86);
   hatch.rotation.x = -1.0;
+  addInterior(parent, true);
 
   // Pop-upky ZDVIHNUTÉ: kryt stojí na kapote (päta 1 cm v nej), šošovka čelom
   // pred ním — svetlá dokresľujú rx7Lights() (emisívne).

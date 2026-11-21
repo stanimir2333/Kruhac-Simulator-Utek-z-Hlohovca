@@ -1189,6 +1189,10 @@ export function buildShared(){
   S.MAT.bridge  = new THREE.MeshStandardMaterial({ map: S.TEX.bridge, color: 0x2a2b2e, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.dark    = new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.7, metalness: 0.3 });
   S.MAT.glass   = new THREE.MeshStandardMaterial({ color: 0x0d1620, roughness: 0.06, metalness: 0.0, envMapIntensity: 1.5 });
+  // Zapustené okenné tabule budov sú samostatná fyzická vrstva, nie maľba na
+  // omietke. Vertex tint odlišuje fasády, nízka drsnosť chytí PMREM oblohy.
+  S.MAT.buildingGlass = new THREE.MeshPhysicalMaterial({ color: 0x5d829b, vertexColors: true,
+    roughness: 0.12, metalness: 0.18, clearcoat: 0.35, clearcoatRoughness: 0.08, envMapIntensity: 1.35 });
   S.MAT.roof    = S.MAT.pitchedRoof; // alias: všetky strechy cez pitched/flat maty
   S.MAT.facadeInd = S.MAT.indWall; // alias: priemyselné steny cez vlnitý plech
   S.MAT.white   = new THREE.MeshBasicMaterial({ color: 0xd8d8d2, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });

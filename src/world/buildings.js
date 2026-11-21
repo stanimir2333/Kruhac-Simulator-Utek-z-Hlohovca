@@ -421,7 +421,61 @@ function pushBalconies(dstTrim, k, baseY, wv, floors, mc){
 // boli úplne ploché. Teraz každé okno dostane skutočnú hĺbku: výrez 12 cm do
 // steny, parapet vyčnievajúci 4 cm a nadpražie 3 cm. Všetko ide do koša trimu,
 // takže žiadny ďalší draw call.
-function pushWindows(dst, k, baseY, h, wv) {
+function pushGlassPane(dst, px, py, pz, ux, uz, nx, nz, width, height, recess) {
+  // OSM stena je zlúčená extrúzia bez otvorov. Tabuľa preto sedí 1,4 cm pred
+  // lícom (aby ju nezakryla), no 2,6 cm za rámom; vizuálne je zapustená a
+  // zároveň nevzniká z-fighting s fasádou.
+  const hx = width / 2;
+  const lip = Math.min(0.014, recess * 0.12);
+  const x = px + nx * lip, z = pz + nz * lip;
+  const p0 = [x - ux * hx, py, z - uz * hx];
+  const p1 = [x + ux * hx, py, z + uz * hx];
+  const p2 = [x + ux * hx, py + height, z + uz * hx];
+  const p3 = [x - ux * hx, py + height, z - uz * hx];
+  bldQuadV(dst, p0, p1, p2, p3, [nx, 0, nz], 0.42, 0.58, 0.70,
+    [0, 0], [width * UVK, 0], [width * UVK, height * UVK], [0, height * UVK]);
+}
+
+function pushEntrance(dstTrim, dstGlass, k, baseY, wv) {
+  const fp = k.fp;
+  const np = (fp.length - 5) / 2;
+  let area = 0, bi = -1, longest = 0;
+  for (let p = 0; p < np; p++) {
+    const q = (p + 1) % np;
+    const ax = fp[5 + p * 2], az = fp[5 + p * 2 + 1];
+    const bx = fp[5 + q * 2], bz = fp[5 + q * 2 + 1];
+    area += ax * bz - bx * az;
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len > longest) { longest = len; bi = p; }
+  }
+  if (bi < 0 || longest < 3.2) return;
+  const q = (bi + 1) % np;
+  const ax = fp[5 + bi * 2], az = fp[5 + bi * 2 + 1];
+  const bx = fp[5 + q * 2], bz = fp[5 + q * 2 + 1];
+  const len = Math.hypot(bx - ax, bz - az) || 1;
+  const ux = (bx - ax) / len, uz = (bz - az) / len;
+  const sign = area >= 0 ? 1 : -1;
+  const nx = sign * uz, nz = -sign * ux;
+  const rot = Math.atan2(-uz, ux);
+  const px = (ax + bx) * 0.5, pz = (az + bz) * 0.5;
+  const doorW = k.zone === 4 ? 2.5 : 1.45;
+  const doorH = k.zone === 4 ? 2.65 : 2.25;
+  bldBox(dstTrim, px + nx * 0.05, baseY, pz + nz * 0.05, doorW + 0.32, 0.14, 0.18, rot,
+    wv[0] * 0.72, wv[1] * 0.72, wv[2] * 0.72);
+  bldBox(dstTrim, px + ux * (doorW * 0.5 + 0.09) + nx * 0.05, baseY, pz + uz * (doorW * 0.5 + 0.09) + nz * 0.05,
+    0.14, doorH + 0.22, 0.20, rot, wv[0] * 0.78, wv[1] * 0.78, wv[2] * 0.78);
+  bldBox(dstTrim, px - ux * (doorW * 0.5 + 0.09) + nx * 0.05, baseY, pz - uz * (doorW * 0.5 + 0.09) + nz * 0.05,
+    0.14, doorH + 0.22, 0.20, rot, wv[0] * 0.78, wv[1] * 0.78, wv[2] * 0.78);
+  bldBox(dstTrim, px + nx * 0.08, baseY + doorH + 0.05, pz + nz * 0.08,
+    doorW + 0.46, 0.22, 0.36, rot, wv[0] * 0.78, wv[1] * 0.78, wv[2] * 0.78);
+  if (k.zone === 4 || k.zone === 3) {
+    bldBox(dstTrim, px + nx * 0.42, baseY + doorH + 0.28, pz + nz * 0.42,
+      doorW + 0.90, 0.10, 0.86, rot, wv[0] * 0.62, wv[1] * 0.62, wv[2] * 0.62);
+  }
+  pushGlassPane(dstGlass, px, baseY + 0.10, pz, ux, uz, nx, nz, doorW - 0.10, doorH - 0.18, 0.135);
+}
+
+function pushWindows(dst, dstGlass, k, baseY, h, wv) {
   const fp = k.fp;
   const np = (fp.length - 5) / 2;
   if (np < 3) return;
@@ -445,6 +499,7 @@ function pushWindows(dst, k, baseY, h, wv) {
     const ux = ex / len, uz = ez / len;
     const nl = len;
     const nxo = (sgn * ez) / nl, nzo = -(sgn * ex) / nl; // vonkajšia normála
+    const rot = Math.atan2(-uz, ux);
     const nWin = Math.max(1, Math.min(4, Math.floor(len / 2.6)));
     for (let w = 0; w < nWin; w++) {
       const t = (w + 1) / (nWin + 1);
@@ -455,18 +510,19 @@ function pushWindows(dst, k, baseY, h, wv) {
         if (wy + WIN_H > baseY + h - 0.4) continue;
         // (výrez ponechaný textúre okna - pridávame len rám, aby ostala viditeľná maľba skla)
         // parapet (vyčnieva von, svetlá omietka)
+        pushGlassPane(dstGlass, px, wy, pz, ux, uz, nxo, nzo, WIN_W - 0.08, WIN_H - 0.08, RECESS);
         bldBox(dst, px + nxo * 0.04, wy - 0.06, pz + nzo * 0.04,
-          WIN_W + 0.18, 0.12, 0.16, k.a,
+          WIN_W + 0.18, 0.12, 0.16, rot,
           wv[0] * 0.92, wv[1] * 0.92, wv[2] * 0.92);
         // nadpražie
         bldBox(dst, px + nxo * 0.04, wy + WIN_H + 0.02, pz + nzo * 0.04,
-          WIN_W + 0.18, 0.10, 0.16, k.a,
+          WIN_W + 0.18, 0.10, 0.16, rot,
           wv[0] * 0.92, wv[1] * 0.92, wv[2] * 0.92);
         // bočné jamby
         bldBox(dst, px + ux * (WIN_W / 2 + 0.02) + nxo * 0.04, wy + WIN_H / 2, pz + uz * (WIN_W / 2 + 0.02) + nzo * 0.04,
-          0.08, WIN_H, 0.12, k.a, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
+          0.08, WIN_H, 0.12, rot, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
         bldBox(dst, px - ux * (WIN_W / 2 + 0.02) + nxo * 0.04, wy + WIN_H / 2, pz - uz * (WIN_W / 2 + 0.02) + nzo * 0.04,
-          0.08, WIN_H, 0.12, k.a, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
+          0.08, WIN_H, 0.12, rot, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
       }
     }
   }
@@ -785,7 +841,7 @@ export function buildBuildings(){
     if(!ch){ ch = { items:[],
       wPlaster:{p:[],n:[],u:[],c:[],i:[],v:0}, wInd:{p:[],n:[],u:[],c:[],i:[],v:0},
       rPitch:{p:[],n:[],u:[],c:[],i:[],v:0}, rFlat:{p:[],n:[],u:[],c:[],i:[],v:0},
-      wTrim:{p:[],n:[],u:[],c:[],i:[],v:0} };
+      wTrim:{p:[],n:[],u:[],c:[],i:[],v:0}, wGlass:{p:[],n:[],u:[],c:[],i:[],v:0} };
       cells.set(key, ch); }
     ch.items.push({ x:k.x, z:k.z, hd:Math.sqrt(k.w*k.w+k.d*k.d)/2 });
     const wv = hx3(ZWALL[k.zone][(i*7+k.zone)%ZWALL[k.zone].length]);
@@ -843,7 +899,10 @@ export function buildBuildings(){
       // OKNÁ ako 3D geometria (výrez + rám + parapet + nadpražie + jamby).
       // Len pre obytné/historické/obchodné budovy (nie priemyselné haly).
       if(k.zone !== 2 && k.h > 3.5){
-        pushWindows(ch.wTrim, k, k.baseY, k.h, wv);
+        pushWindows(ch.wTrim, ch.wGlass, k, k.baseY, k.h, wv);
+        if (k.zone === 0 || k.zone === 3 || k.zone === 4) {
+          pushEntrance(ch.wTrim, ch.wGlass, k, k.baseY, wv);
+        }
       }
     }
   }
@@ -916,6 +975,7 @@ export function buildBuildings(){
     if(ch.rPitch.i.length){ const m = new THREE.Mesh(finishGeo(ch.rPitch), S.MAT.pitchedRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.rFlat.i.length){ const m = new THREE.Mesh(finishGeo(ch.rFlat), S.MAT.flatRoof); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
     if(ch.wTrim.i.length){ const m = new THREE.Mesh(finishGeo(ch.wTrim), S.MAT.trim); S.scene.add(m); m.castShadow = true; m.receiveShadow = true; staticDone(m, true, true); parts.push(m); }
+    if(ch.wGlass.i.length){ const m = new THREE.Mesh(finishGeo(ch.wGlass), S.MAT.buildingGlass); S.scene.add(m); m.castShadow = false; m.receiveShadow = true; staticDone(m, false, true); parts.push(m); }
     S.CHUNKS.push({ x:cx, z:cz, r:r, ms:parts, vis:true });
   });
   // kolízne dáta budov do mriežky + exaktné footprinty (dvor test)

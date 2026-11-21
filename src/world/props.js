@@ -36,6 +36,8 @@ const C_FLOWER = 0xc46a8a;    // kvety
 const C_LEAF2 = 0x4a7a34;     // listie v kvetináči
 const C_LAMP = 0xffe0a8;      // žiarivka
 const C_GLASS = 0x9fb4c0;     // sklo zastávky
+const C_AMBER = 0xffa22b;     // semafor: jantárová
+const C_GREEN_L = 0x42d85a;   // semafor: zelená
 
 // ---------- JEDNOTKOVÉ TELESÁ ----------
 function primOf(g){
@@ -281,6 +283,23 @@ function addSign(x, z, rot){
 }
 
 // Zastávka: štyri stĺpy, strecha, sklenená zadná stena, lavička.
+// Semafor: samostatná hlava, tri optiky a rameno nad okrajom vozovky. Svetlá
+// ostávajú v emissive buckete, preto nočná atmosféra nestojí ďalšie draw cally.
+function addTrafficSignal(x, z, rot){
+  const p = placeProp(x, z, rot);
+  const M = p.ch.b.metal, G = p.ch.b.glow;
+  cyl(M, x, p.y + 0.16, z, 0.22, 0.32, C_METAL_D, 8);
+  cyl(M, x, p.y + 1.92, z, 0.09, 3.52, C_METAL_D, 8);
+  const arm = lx2(x, z, 0, -0.42, rot);
+  box(M, arm[0], p.y + 3.48, arm[1], 0.10, 0.10, 0.78, rot, C_METAL_D);
+  const head = lx2(x, z, 0, -0.82, rot);
+  box(M, head[0], p.y + 3.26, head[1], 0.42, 1.12, 0.24, rot, 0x202326);
+  const lens = lx2(x, z, 0, -0.95, rot);
+  sph(G, lens[0], p.y + 3.58, lens[1], 0.105, C_RED);
+  sph(G, lens[0], p.y + 3.27, lens[1], 0.105, C_AMBER);
+  sph(G, lens[0], p.y + 2.96, lens[1], 0.105, C_GREEN_L);
+}
+
 function addShelter(x, z, rot){
   const p = placeProp(x, z, rot);
   const M = p.ch.b.metal, G = p.ch.b.glass, W = p.ch.b.wood;
@@ -364,9 +383,9 @@ function addPowerPole(x, z, ry){
 
 // ---------- ROZMIEŠŤOVANIE ----------
 const cnt = { lamp:0, bench:0, bin:0, bollard:0, hydrant:0, mailbox:0, sign:0,
-              shelter:0, hedge:0, planter:0, manhole:0, delin:0, shrine:0, pole:0 };
+              traffic:0, shelter:0, hedge:0, planter:0, manhole:0, delin:0, shrine:0, pole:0 };
 const CAP = { lamp:260, bench:170, bin:110, bollard:520, hydrant:40, mailbox:36,
-              sign:300, shelter:14, hedge:150, planter:110, manhole:190, delin:300,
+              sign:300, traffic:90, shelter:14, hedge:150, planter:110, manhole:190, delin:300,
               shrine:10, pole:170 };
 const SCALE = S.LOW_END ? 0.45 : 1;   // slabý stroj: menej propov
 for(const k in CAP) CAP[k] = Math.max(4, Math.round(CAP[k] * SCALE));
@@ -508,6 +527,41 @@ function placeTownProps(rnd){
   }
   // ---- KAPLNKY: len pár kusov popri hlavnej trase ----
   placeShrines(rnd);
+  placeTrafficSignals();
+}
+
+// OSM cesty sa delia presne v uzloch. Zoskupenie ich koncov do 6 m buniek tak
+// nájde ozajstné križovatky bez drahého párovania všetkých segmentov.
+function placeTrafficSignals(){
+  const hubs = new Map();
+  for(let ri=0;ri<S.townRoads.length;ri++){
+    const R = S.townRoads[ri];
+    if(R.hw < 3.2 || R.n < 2) continue;
+    for(const end of [0, R.n-1]){
+      const x = R.pts[end*2], z = R.pts[end*2+1];
+      const key = Math.round(x/6) + ':' + Math.round(z/6);
+      let a = hubs.get(key);
+      if(!a){ a = []; hubs.set(key, a); }
+      a.push({ R:R, end:end, x:x, z:z });
+    }
+  }
+  hubs.forEach((a) => {
+    if(a.length < 2 || !cap('traffic')) return;
+    const h = a[0], R = h.R;
+    const ni = h.end === 0 ? 1 : R.n - 2;
+    const dx = R.pts[ni*2] - h.x, dz = R.pts[ni*2+1] - h.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const nx = -dz / len, nz = dx / len;
+    const rot = Math.atan2(-dx, dz);
+    for(const side of [-1, 1]){
+      if(!cap('traffic')) break;
+      const x = h.x + nx * side * (R.hw + 1.8);
+      const z = h.z + nz * side * (R.hw + 1.8);
+      if(!okSpot(x, z)) continue;
+      addTrafficSignal(x, z, rot + (side > 0 ? 0 : Math.PI));
+      cnt.traffic++;
+    }
+  });
 }
 
 // Kaplnky na brehu cesty (trasa 513) — slovenská detailka.
@@ -614,7 +668,7 @@ function flushChunks(){
   console.log('[propy] ' + meshes + ' meshov, ' + Math.round(tris) + ' trojuholníkov: ' +
     'lampy ' + cnt.lamp + ', lavičky ' + cnt.bench + ', koše ' + cnt.bin +
     ', stíly ' + cnt.bollard + ', značky ' + cnt.sign + ', hydranty ' + cnt.hydrant +
-    ', schránky ' + cnt.mailbox + ', zastávky ' + cnt.shelter + ', ploty ' + cnt.hedge +
+    ', schránky ' + cnt.mailbox + ', semafory ' + cnt.traffic + ', zastávky ' + cnt.shelter + ', ploty ' + cnt.hedge +
     ', kvetináče ' + cnt.planter + ', kanály ' + cnt.manhole + ', značniky ' + cnt.delin +
     ', kaplnky ' + cnt.shrine + ', stĺpy ' + cnt.pole);
 }
