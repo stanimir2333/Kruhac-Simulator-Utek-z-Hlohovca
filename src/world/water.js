@@ -90,9 +90,9 @@ const WAT_FS = [
 "  vec3 Hv = normalize(V + uSunDir);",
 "  float nh = max(dot(n, Hv), 0.0);",
 // HDR lesk -> bloom zachytí slnko na hladine; dfade krotí ďaleké iskrzenie
-"  col += uSunCol*uSpec*dfade*(pow(nh, 420.0)*7.0 + pow(nh, 34.0)*0.45);",
+"  col += uSunCol*uSpec*dfade*(pow(nh, 420.0)*8.5 + pow(nh, 34.0)*0.55);",
 "  float foam = smoothstep(0.13, 0.0, vEdge)*(0.45 + 0.55*sin(vWPos.x*0.55 + vWPos.z*0.42 + uTime*2.1));",
-"  col = mix(col, uSkyHor*1.15, clamp(foam, 0.0, 1.0)*0.35*dfade);",
+"  col = mix(col, uSkyHor*1.10, clamp(foam, 0.0, 1.0)*0.22*dfade);",
 "  float fg = 1.0 - exp(-uFogDensity*uFogDensity*vDist*vDist);",
 "  col = mix(col, uFogCol, clamp(fg, 0.0, 1.0));",
 "  gl_FragColor = vec4(col, 1.0);",
@@ -301,8 +301,8 @@ export function makeWaterMaterial(){
       uSkyZen:{ value:new THREE.Color(S.SKY_ZENITH) },
       uSkyHor:{ value:new THREE.Color(S.SKY_HORIZON) },
       uFogCol:{ value:new THREE.Color(S.SKY_FOG) },
-      uDeep:{ value:new THREE.Color(0x123039) },
-      uShallow:{ value:new THREE.Color(0x356d63) },
+      uDeep:{ value:new THREE.Color(0x0d2733) },
+      uShallow:{ value:new THREE.Color(0x2c6159) },
       uFogDensity:{ value:0.0008 },
       uReflMix:{ value:0 },
       uSpec:{ value:1 }

@@ -34,7 +34,7 @@ const C_BLUE = 0x2f5fa8;      // modrá (štítky značiek)
 const C_GREEN = 0x3f6b30;     // živý plot
 const C_FLOWER = 0xc46a8a;    // kvety
 const C_LEAF2 = 0x4a7a34;     // listie v kvetináči
-const C_LAMP = 0xfff0c0;      // žiarivka
+const C_LAMP = 0xffe0a8;      // žiarivka
 const C_GLASS = 0x9fb4c0;     // sklo zastávky
 
 // ---------- JEDNOTKOVÉ TELESÁ ----------

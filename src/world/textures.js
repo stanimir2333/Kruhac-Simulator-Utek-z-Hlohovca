@@ -359,7 +359,7 @@ export function fAsphalt(SZ){
     if(stone > 0.55) l += (stone - 0.55)*46;                      // svetlý štrk
     if(crack > 0.25) l -= (crack - 0.25)*34;                      // tieň v trhline
     l = Math.max(13, Math.min(118, l));
-    putField(f, i, l*0.98, l*1.00, l*1.10);                       // asfalt je studený
+    putField(f, i, l*0.92, l*0.94, l*0.98);                       // asfalt tmavší, menej modrý
     // drsnost: vyleštený štrk 0,70 / matné jamky 0,97 - žiaden jednotný 0,9
     rg[i] = 0.90 - stone*0.20 + (crack > 0.25 ? 0.07 : 0) + (patch - 0.5)*0.10;
   }
@@ -1188,7 +1188,7 @@ export function buildShared(){
   S.MAT.chimneyDark = new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 0.95, metalness: 0.0 }); // ústa komína
   S.MAT.bridge  = new THREE.MeshStandardMaterial({ map: S.TEX.bridge, color: 0x2a2b2e, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.dark    = new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.7, metalness: 0.3 });
-  S.MAT.glass   = new THREE.MeshStandardMaterial({ color: 0x18242f, roughness: 0.22, metalness: 0.6, envMapIntensity: 1.0 });
+  S.MAT.glass   = new THREE.MeshStandardMaterial({ color: 0x0d1620, roughness: 0.06, metalness: 0.0, envMapIntensity: 1.5 });
   S.MAT.roof    = S.MAT.pitchedRoof; // alias: všetky strechy cez pitched/flat maty
   S.MAT.facadeInd = S.MAT.indWall; // alias: priemyselné steny cez vlnitý plech
   S.MAT.white   = new THREE.MeshBasicMaterial({ color: 0xd8d8d2, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -1215,14 +1215,14 @@ export function buildShared(){
   S.MAT.leaf    = new THREE.MeshStandardMaterial({ color: 0x3d5231, roughness: 0.9, metalness: 0.0 });
   S.MAT.leafDark = new THREE.MeshStandardMaterial({ color: 0x2d5022, roughness: 0.95, metalness: 0.0 });
   S.MAT.pole    = new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.6, metalness: 0.5 });
-  S.MAT.lampOn  = new THREE.MeshBasicMaterial({ color: 0xffd98a });
+  S.MAT.lampOn  = new THREE.MeshBasicMaterial({ color: 0xffe0a8 });
   S.MAT.head    = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
   S.MAT.brakeOn = new THREE.MeshBasicMaterial({ color: 0xff1a1a });
   S.MAT.brakeOff= new THREE.MeshBasicMaterial({ color: 0x550a0a });
   S.MAT.escape  = new THREE.MeshBasicMaterial({ color: 0x39ff6a, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   S.MAT.blob    = new THREE.MeshBasicMaterial({ color: 0x000000, transparent:true, opacity:0.35, depthWrite:false });
-  S.MAT.playerCar = new THREE.MeshStandardMaterial({ color: 0xd42a1e, roughness: 0.32, metalness: 0.4, envMapIntensity: 0.7 }); // exkluzívna červená hráča
-  S.MAT.chrome = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.22, metalness: 0.9, envMapIntensity: 1.0 }); // lišty + puklice
+  S.MAT.playerCar = new THREE.MeshStandardMaterial({ color: 0xd42a1e, roughness: 0.24, metalness: 0.55, envMapIntensity: 1.3, clearcoat: 1.0, clearcoatRoughness: 0.05 }); // exkluzívna červená hráča
+  S.MAT.chrome = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.15, metalness: 0.96, envMapIntensity: 1.3 }); // lišty + puklice
   S.MAT.tail = new THREE.MeshStandardMaterial({ color: 0x7a0f0f, roughness: 0.4, metalness: 0.2 }); // kryty zadných svetiel
   S.MAT.plate = new THREE.MeshStandardMaterial({ color: 0xe8e8e4, roughness: 0.6, metalness: 0.0 }); // EČV
   // ---------- MOBILIÁR A DROBNOSTI (src/world/props.js) ----------

@@ -43,7 +43,7 @@ export function createEngine(container) {
   const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.5, 4000);
   camera.position.set(0, 8, -14);
 
-  const sun = new THREE.DirectionalLight(0xffe0b0, 2.2);
+  const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
   sun.position.set(-400, 500, 200);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -51,10 +51,10 @@ export function createEngine(container) {
   // takže strany budov a áut odvrátené od neho padali do takmer čiernej.
   // Studený fill nemá tiene (castShadow = false), takže nekoštuje tieňový
   // priechod a je zadarmo — dvihne tieto tmavé tváre nad terén.
-  const fill = new THREE.DirectionalLight(0xbcd0e8, 0.35);
+  const fill = new THREE.DirectionalLight(0xa8c4e8, 0.30);
   fill.position.set(300, 260, -240);
   fill.castShadow = false;
-  scene.add(sun, fill, new THREE.HemisphereLight(0x9db8ff, 0x3a2c18, 0.85));
+  scene.add(sun, fill, new THREE.HemisphereLight(0xa8c8ff, 0x4a3a26, 0.75));
 
   const onResize = () => {
     camera.aspect = innerWidth / innerHeight;

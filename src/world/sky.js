@@ -67,10 +67,15 @@ function applySkyTint() {
   const m = domeRef.material;
   if (m && m.isMeshBasicMaterial) {
     m.color.copy(_tint);
-  } else if (m && m.uniforms && m.uniforms.cTop && baseGrad.top) {
-    m.uniforms.cTop.value.copy(baseGrad.top).multiply(_tint);
-    m.uniforms.cHor.value.copy(baseGrad.hor).multiply(_tint);
-    m.uniforms.cSun.value.copy(baseGrad.sun).multiply(_tint);
+  } else if (m && m.uniforms) {
+    // Shader cesta: bázy zostávajú (žiadne kumulatívne stmavovanie), noc sa
+    // rieši cez uDay priamo v shaderi.
+    if (m.uniforms.cTop && baseGrad.top) m.uniforms.cTop.value.copy(baseGrad.top);
+    if (m.uniforms.cHor && baseGrad.hor) m.uniforms.cHor.value.copy(baseGrad.hor);
+    if (m.uniforms.cSun && baseGrad.sun) m.uniforms.cSun.value.copy(baseGrad.sun);
+    if (m.uniforms.uDay) m.uniforms.uDay.value = daynessVal;
+    if (m.uniforms.uTime) m.uniforms.uTime.value = performance.now() * 0.001;
+    if (m.uniforms.uLow) m.uniforms.uLow.value = S.LOW_END ? 1.0 : 0.0;
   }
 }
 
@@ -118,15 +123,16 @@ function applyVariant(v) {
   currentVariant = v;
   if (!domeRef) return;
   const tex = skyTextures[v];
-  if (tex) {
-    try { domeRef.material?.dispose?.(); } catch (_e) { /* noop */ }
-    domeRef.material = new THREE.MeshBasicMaterial({
-      map: tex, side: THREE.BackSide, depthWrite: false, fog: false,
-    });
+  const m = domeRef.material;
+  if (tex && m && m.uniforms) {
+    m.uniforms.tex.value = tex;
+    m.uniforms.uHasTex.value = 1.0;
     bakeEnv();
+  } else if (m && m.uniforms) {
+    m.uniforms.uHasTex.value = 0.0;
   }
-  // ak textúra ešte nie je načítaná, ostáva aktuálny materiál (gradient fallback)
-  // — v oboch prípadoch musí nový materiál niesť aktuálny nočný tón.
+  // ak textúra ešte nie je načítaná, ostáva gradient fallback — v oboch prípadoch
+  // musí materiál niesť aktuálny nočný tón.
   applySkyTint();
 }
 
@@ -174,21 +180,60 @@ export function buildSkyDome(scene, renderer) {
   const top = new THREE.Color(S.SKY_ZENITH);
   const hor = new THREE.Color(S.SKY_HORIZON);
   const sunC = new THREE.Color(S.SKY_SUN);
-  // Bázy gradientu pre nočný tón (setSkyDayness multiplikuje KÓPIE — inak by
-  // sa opakovaným stmavovaním gradient zblčol do čierneho).
+  // Bázy gradientu pre nočný tón (applySkyTint ich obnovuje — inak by sa
+  // opakovaným stmavovaním gradient zblčol do čierneho).
   baseGrad.top = top.clone(); baseGrad.hor = hor.clone(); baseGrad.sun = sunC.clone();
   const sunDir = new THREE.Vector3(S.SUN_OFF.x, S.SUN_OFF.y, S.SUN_OFF.z).normalize();
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       cTop: { value: top }, cHor: { value: hor },
-      cSun: { value: sunC }, dSun: { value: sunDir }, tex: { value: null }
+      cSun: { value: sunC }, dSun: { value: sunDir },
+      tex: { value: null }, uDay: { value: daynessVal },
+      uTime: { value: 0 }, uLow: { value: S.LOW_END ? 1.0 : 0.0 },
+      uHasTex: { value: 0.0 },
     },
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: [
-      'varying vec3 vD; uniform vec3 cTop,cHor,cSun,dSun; uniform sampler2D tex;',
+      'varying vec3 vD;',
+      'uniform vec3 cTop,cHor,cSun,dSun;',
+      'uniform sampler2D tex;',
+      'uniform float uDay,uTime,uLow,uHasTex;',
+      'float hsh(vec3 p){ return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453); }',
       'void main(){',
-      '  gl_FragColor = texture(tex, vec2(vD.x * 0.5 + 0.5, vD.y * 0.5 + 0.5));',
+      '  vec3 dir = normalize(vD);',
+      '  float y = clamp(dir.y, -0.15, 1.0);',
+      '  float t = smoothstep(-0.1, 0.6, y);',
+      '  vec3 col = mix(cHor, cTop, t);',
+      '  float haze = exp(-abs(y)*6.0) * 0.35;',
+      '  col += cHor * haze;',
+      '  float sd = max(dot(dir, dSun), 0.0);',
+      '  float day = uDay;',
+      '  float night = 1.0 - day;',
+      '  col += cSun * (pow(sd,512.0)*1.6 + pow(sd,64.0)*0.35 + pow(sd,8.0)*0.12) * (0.4 + 0.6*day);',
+      '  col += vec3(0.7,0.78,0.95) * (pow(sd,256.0)*0.9 + pow(sd,32.0)*0.15) * night * 0.6;',
+      '  if (uLow < 0.5) {',
+      '    vec3 sc = floor(dir * 180.0);',
+      '    float st = hsh(sc);',
+      '    if (st > 0.986) {',
+      '      float tw = 0.5 + 0.5*sin(uTime*1.3 + st*100.0);',
+      '      col += vec3(0.9,0.92,1.0) * (st - 0.986)*70.0 * tw * night * 0.9;',
+      '    }',
+      '    vec2 uv = dir.xz / (dir.y + 0.35);',
+      '    float cn = (sin(uv.x*2.0+uTime*0.003)*0.5+0.5) * (sin(uv.y*1.7+uTime*0.002)*0.5+0.5);',
+      '    float cn2 = (sin(uv.x*4.3-uTime*0.005)*0.5+0.5) * (sin(uv.y*3.1+uTime*0.004)*0.5+0.5);',
+      '    float cld = cn*0.6 + cn2*0.4;',
+      '    float camount = smoothstep(0.45, 0.75, cld) * (0.35 + 0.25*(1.0 - abs(day-0.5)*2.0));',
+      '    vec3 cloudCol = mix(vec3(0.95,0.9,0.8), cTop, 0.3);',
+      '    col = mix(col, cloudCol, camount * (0.25 + 0.5*day));',
+      '  }',
+      '  if (uHasTex > 0.5) {',
+      '    vec2 texUv = vec2(dir.x*0.5+0.5, dir.y*0.5+0.5);',
+      '    vec3 texCol = texture(tex, texUv).rgb;',
+      '    col = mix(col, texCol, 0.55);',
+      '  }',
+      '  col *= 0.35 + 0.65*day;',
+      '  gl_FragColor = vec4(col, 1.0);',
       '}',
     ].join('\n')
   });

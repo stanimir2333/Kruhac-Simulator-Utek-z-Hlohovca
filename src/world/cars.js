@@ -58,9 +58,9 @@ const headGeo = rbox(0.34, 0.2, 0.12, 0.03, 2);
 const tailGeo = rbox(0.3, 0.16, 0.12, 0.03, 2);
 // Emisívne svetlá: HDR jas (intensity > 1) → chytí ich prahový bloom. Predok = +z.
 // Materiály sú SHARED cez obidve autá (dispose ich neprepaľuje — pozri disposeCarMesh).
-const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffffff, emissiveIntensity: 3.2 });
+const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffe3b0, emissiveIntensity: 4.0 });
 headMat.userData.shared = true;
-const tailMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff1a1a, emissiveIntensity: 1.8 });
+const tailMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2418, emissiveIntensity: 2.5 });
 tailMat.userData.shared = true;
 
 // ---------- RX-7 FD: šírka 1,85 m, dĺžka 4,30 m, výška 1,23 m ----------
@@ -108,8 +108,8 @@ function std(color, rough = 0.55, metal = 0.3) {
 // covaná) jazdi ďalej na lacnom Standard.
 function carPaint(color) {
   return new THREE.MeshPhysicalMaterial({
-    color, roughness: 0.42, metalness: 0.3,
-    clearcoat: 0.7, clearcoatRoughness: 0.25, envMapIntensity: 0.9,
+    color, roughness: 0.30, metalness: 0.55,
+    clearcoat: 1.0, clearcoatRoughness: 0.05, envMapIntensity: 1.3,
   });
 }
 
@@ -146,8 +146,8 @@ function box(parent, geo, mat, x, y, z, shadow = false) {
 
 function octaviaDetails(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
-  const glass = std(0x182b35, 0.2, 0.55);
-  glass.envMapIntensity = 0.9; // sklo: živý odraz oblohy (PMREM okolie)
+  const glass = std(0x0d1620, 0.06, 0.0);
+  glass.envMapIntensity = 1.5; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x252a2a, 0.7, 0.15);
   const plate = std(0xe9e8dc, 0.55, 0.05);
 
@@ -336,8 +336,8 @@ export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
 /** RX-7 FD: dlhá nízka kapota, fastback zadok + krídlo — boxový štýl ako Octavia. */
 function rx7Details(parent, bodyMat) {
   const dark = std(0x11161a, 0.72, 0.12);
-  const glass = std(0x182b35, 0.2, 0.55);
-  glass.envMapIntensity = 0.9; // sklo: živý odraz oblohy (PMREM okolie)
+  const glass = std(0x0d1620, 0.06, 0.0);
+  glass.envMapIntensity = 1.5; // sklo: živý odraz oblohy (PMREM okolie)
   const bumper = std(0x232527, 0.68, 0.2);
   const plate = std(0xe9e8dc, 0.55, 0.05);
 

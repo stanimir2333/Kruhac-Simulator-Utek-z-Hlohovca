@@ -24,10 +24,10 @@ const DETAIL_NORMAL_SCALE = 0.12;
 
 const PROFILES = {
   // --- vozovky a chodníky ---
-  asphalt:      { r: 0.86, m: 0.02, e: 0.55, w: 1.00, dn: 1.0 },
-  routeAsphalt: { r: 0.86, m: 0.02, e: 0.55, w: 1.00, dn: 1.0 },
-  bridge:       { r: 0.80, m: 0.08, e: 0.75, w: 0.95, dn: 0.8 },
-  sidewalk:     { r: 0.94, m: 0.00, e: 0.50, w: 0.85, dn: 1.0 },
+  asphalt:      { r: 0.62, m: 0.02, e: 0.62, w: 1.00, dn: 1.0 },
+  routeAsphalt: { r: 0.62, m: 0.02, e: 0.62, w: 1.00, dn: 1.0 },
+  bridge:       { r: 0.70, m: 0.08, e: 0.85, w: 0.95, dn: 0.8 },
+  sidewalk:     { r: 0.82, m: 0.00, e: 0.55, w: 0.85, dn: 1.0 },
   cycle:        { r: 0.88, m: 0.00, e: 0.55, w: 0.85, dn: 0.9 },
   dirt:         { r: 0.95, m: 0.00, e: 0.22, w: 0.75, dn: 1.0 },
   ballast:      { r: 0.90, m: 0.00, e: 0.35, w: 0.70, dn: 1.0 },
@@ -54,12 +54,12 @@ const PROFILES = {
   chimneyBrick: { r: 0.92, m: 0.00, e: 0.50, w: 0.55, dn: 1.0 },
   chimneyConcrete: { r: 0.90, m: 0.00, e: 0.50, w: 0.55, dn: 0.9 },
   // --- sklo a kov (najviac viditeľné odrazy) ---
-  glass:        { r: 0.08, m: 0.70, e: 1.60, dn: 0.0 },
-  chrome:       { r: 0.14, m: 0.95, e: 1.50, dn: 0.0 },
+  glass:        { r: 0.06, m: 0.72, e: 1.75, dn: 0.0 },
+  chrome:       { r: 0.12, m: 0.96, e: 1.60, dn: 0.0 },
   rail:         { r: 0.32, m: 0.62, e: 1.15, dn: 0.5 },
   pole:         { r: 0.40, m: 0.68, e: 1.10, dn: 0.5 },
   dark:         { r: 0.60, m: 0.40, e: 0.90, dn: 0.4 },
-  playerCar:    { r: 0.28, m: 0.42, e: 1.00, dn: 0.0 },
+  playerCar:    { r: 0.24, m: 0.55, e: 1.30, dn: 0.0 },
   tail:         { r: 0.33, m: 0.25, e: 0.95, dn: 0.0 },
   plate:        { r: 0.53, m: 0.05, e: 0.80, dn: 0.2 },
   // --- zeleň (listie sa lesní najmä vďaka rozptylu, nie zrkadlu) ---
@@ -68,11 +68,11 @@ const PROFILES = {
   vegConifer:   { r: 0.88, m: 0.00, e: 0.40, dn: 0.5 },
   vegBush:      { r: 0.91, m: 0.00, e: 0.40, dn: 0.5 },
   trunk:        { r: 0.92, m: 0.00, e: 0.35, dn: 1.0 },
-  leaf:         { r: 0.83, m: 0.00, e: 0.50, dn: 0.4 },
+  leaf:         { r: 0.83, m: 0.00, e: 0.55, dn: 0.4 },
   leafDark:     { r: 0.88, m: 0.00, e: 0.45, dn: 0.4 },
   tuft:         { r: 0.94, m: 0.00, e: 0.30, dn: 0.3 },
   // --- mobiliár (src/world/props.js) ---
-  propMetal:    { r: 0.38, m: 0.72, e: 1.15, w: 0.80, dn: 0.4 },
+  propMetal:    { r: 0.32, m: 0.80, e: 1.25, w: 0.80, dn: 0.4 },
   propMatte:    { r: 0.84, m: 0.00, e: 0.60, w: 0.70, dn: 0.6 },
   propWood:     { r: 0.88, m: 0.00, e: 0.35, w: 0.70, dn: 1.0 },
   propLeaf:     { r: 0.91, m: 0.00, e: 0.40, w: 0.50, dn: 0.4 },

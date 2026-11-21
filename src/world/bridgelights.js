@@ -180,13 +180,13 @@ let idleAcc = 0;
 function writeColors(dt) {
   if (!mesh || !mesh.instanceColor) return;
   const night = 1 - dayness();          // v noci svietia silnejšie (bloom cez hmlu)
-  const idle = 0.45 + 0.35 * night;     // kľudová žiara
-  const bright = idle + flash * (1.9 + 0.7 * night);
+  const idle = 0.55 + 0.40 * night;     // kľudová žiara
+  const bright = idle + flash * (2.2 + 0.9 * night);
   const n = count;
   for (let i = 0; i < n; i++) {
     // Pozdĺžny dúhový prechod + skok dúhy po každom údere pesničky.
     const hue = (hueBase + i * 0.013) % 1;
-    _c.setHSL(hue, 1.0, 0.5).multiplyScalar(bright);
+    _c.setHSL(hue, 1.0, 0.55).multiplyScalar(bright);
     mesh.setColorAt(i, _c);
   }
   mesh.instanceColor.needsUpdate = true;

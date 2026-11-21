@@ -27,6 +27,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { GradeShader } from './grade.js';
 import { S } from '../world/shared.js';
 
 const MODES = [
@@ -48,7 +49,7 @@ const BLOOM_RENDER_SCALE = 0.75;
 const COMPOSER_SAMPLES = S.LOW_END ? 0 : 4;
 
 export function createBloom(renderer, scene, camera) {
-  let composer = null, bloomPass = null, fxaaPass = null, mode = 1;
+  let composer = null, bloomPass = null, fxaaPass = null, gradePass = null, mode = 1;
 
   // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
   // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
@@ -61,6 +62,7 @@ export function createBloom(renderer, scene, camera) {
     const pr = composerPixelRatio();
     const w = Math.max(2, innerWidth * pr), h = Math.max(2, innerHeight * pr);
     fxaaPass.material.uniforms.resolution.value.set(1 / w, 1 / h);
+    if (gradePass) { gradePass.material.uniforms.uResolution.value.x = w; gradePass.material.uniforms.uResolution.value.y = h; }
   }
 
   function ensure() {
@@ -95,9 +97,11 @@ export function createBloom(renderer, scene, camera) {
       bloomPass.setSize = (w, h) => rawSetSize(
         Math.max(8, Math.round(w * BLOOM_SCALE)), Math.max(8, Math.round(h * BLOOM_SCALE)));
       composer.addPass(bloomPass);
-      // OutputPass: tone mapping + sRGB. Až POTOM FXAA (hrany sa hľadajú
-      // v zobrazovacom priestore, nie v lineárnom HDR).
+      // OutputPass: tone mapping + sRGB. Až POTOM grade (display priestor),
+      // potom FXAA (hrany sa hľadajú vo finálnom obraze).
       composer.addPass(new OutputPass());
+      gradePass = new ShaderPass(GradeShader);
+      composer.addPass(gradePass);
       fxaaPass = new ShaderPass(FXAAShader);
       composer.addPass(fxaaPass);
       resize();
@@ -106,14 +110,29 @@ export function createBloom(renderer, scene, camera) {
       console.warn('[bloom] composer nedostupný:', e?.message);
       composer = null;
       fxaaPass = null;
+      gradePass = null;
       return false;
     }
   }
   function apply() {
-    if (mode > 0 && ensure()) {
+    if (S.LOW_END) {
+      // mobile/raspberry: composer len pri bloom > 0 (žiadny zbytočný náklad)
+      if (mode > 0 && ensure()) {
+        bloomPass.enabled = true;
+        bloomPass.strength = MODES[mode].strength;
+        bloomPass.radius = MODES[mode].radius;
+        bloomPass.threshold = MODES[mode].threshold;
+      }
+      return;
+    }
+    if (!ensure()) return;
+    if (mode > 0) {
+      bloomPass.enabled = true;
       bloomPass.strength = MODES[mode].strength;
       bloomPass.radius = MODES[mode].radius;
       bloomPass.threshold = MODES[mode].threshold;
+    } else {
+      bloomPass.enabled = false; // grade ostáva aktívny aj bez bloomu
     }
   }
   function resize() {
@@ -129,13 +148,14 @@ export function createBloom(renderer, scene, camera) {
     },
     getMode() { return mode; },
     render() {
-      if (mode > 0 && (composer || ensure())) {
+      if (S.LOW_END && mode === 0) {
+        // Raspberry/mobil: žiadny composer — priamy render, MSAA nie je.
+        renderer.render(scene, camera);
+        return;
+      }
+      if (ensure()) {
         composer.render();
       } else {
-        // Bloom VYP.: scéna sa kreslí priamo na canvas. Na desktope je aktívne
-        // canvasové MSAA (4×, engine.js) → hladké hrany bez ďalšieho prechodu.
-        // Na mobile/LOW_END (žiadne MSAA) hrany môžu byť mierne zubaté —
-        // kompatibilná obet' za výkon.
         renderer.render(scene, camera);
       }
     },

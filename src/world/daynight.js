@@ -14,23 +14,25 @@
 import * as THREE from 'three';
 import { S } from './shared.js';
 import { setSkyDayness } from './sky.js';
+import { NIGHT } from '../fx/night.js';
 
 // ---------- KONFIG ----------
 const DAY_LEN = 600;            // s na celý deň (10 min) — používateľ si vybral 10
 const SUNSET_LEN = 90;          // s trvania súmraku/svítania (šírka prechodu)
-const NIGHT_SUN = 0.22;         // mesiac: síce smer "slnka", ale studený a slabý
-const NIGHT_AMB = 0.38;
-const NIGHT_FILL = 0.08;
+const NIGHT_SUN = 0.30;         // mesiac: slabý a studený
+const NIGHT_AMB = 0.34;
+const NIGHT_FILL = 0.06;
 
-// Paleta: denné hodnoty z legacy (S.SKY_*, engine.js svetlá), nočné tmavomodré.
+// Paleta: denné hodnoty teplé (GTA V: teplé slnko, studené tiene), nočné tmavomodré.
 const C = {
   dayBg:   new THREE.Color(S.SKY_HORIZON),
   dayFog:  new THREE.Color(S.SKY_FOG),
-  daySun:  new THREE.Color(0xfff1d8),
+  daySun:  new THREE.Color(0xfff0d2),
+  golden:  new THREE.Color(0xffab5e),  // západ/východ slnka
   nightBg: new THREE.Color(0x0a1226),
-  nightFog: new THREE.Color(0x0c1428),
-  nightSun: new THREE.Color(0x8fa8d8),  // mesiac
-  nightAmb: new THREE.Color(0x2a3a5a),
+  nightFog: new THREE.Color(0x0a1020),
+  nightSun: new THREE.Color(0x9db6e0),  // mesiac
+  nightAmb: new THREE.Color(0x1a2540),
 };
 const _bg = new THREE.Color(), _fogC = new THREE.Color(), _sunC = new THREE.Color();
 
@@ -56,14 +58,19 @@ export function dayness() {
 function apply() {
   const d = dayness();
   const n = 1 - d; // nočný podiel
+  // Zlatá hodina: teplý odlesk okolo horizontu (sunrise/sunset), bez zmytia poludnia.
+  const elev = Math.cos(dayT * Math.PI * 2);
+  const golden = Math.exp(-Math.abs(elev) * 4.5); // bump pri horizonte (východ/západ)
   // Slnko → mesiac: intenzita aj farba sa menia, pozícia ostáva (invariant tieňov).
   if (sun) {
-    sun.intensity = lerp(NIGHT_SUN, 2.4, d) * (1 - 0.45 * gloom);
+    const dayInt = lerp(1.6, 2.7, Math.min(1, d * 1.15));
+    sun.intensity = lerp(NIGHT_SUN, dayInt, d) * (1 - 0.45 * gloom);
     _sunC.copy(C.nightSun).lerp(C.daySun, d);
+    if (golden > 0.05) _sunC.lerp(C.golden, Math.min(0.85, golden));
     sun.color.copy(_sunC);
   }
-  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.35, d);
-  if (hemi) hemi.intensity = lerp(0.18, 0.85, d) * (1 - 0.35 * gloom) + flash * 3;
+  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.30, d);
+  if (hemi) hemi.intensity = lerp(0.20, 0.75, d) * (1 - 0.35 * gloom) + flash * 3;
   if (amb) {
     amb.color.copy(C.nightAmb);
     amb.intensity = NIGHT_AMB * n + flash * 2.5;
@@ -77,9 +84,10 @@ function apply() {
       _fogC.copy(C.nightFog).lerp(C.dayFog, d);
       scene.fog.color.copy(_fogC).multiplyScalar(1 - 0.35 * gloom);
       // Noc = hustejšia hmla (svetlá lamp majú čo žiariť cez), búrka pridáva svoje.
-      scene.fog.density = 0.0008 * (1 + 0.35 * n) * (1 + 0.6 * gloom);
+      scene.fog.density = 0.00055 * (1 + 0.75 * n) * (1 + 0.6 * gloom);
     }
   }
+  NIGHT.value = n;
   setSkyDayness(d);
 }
 

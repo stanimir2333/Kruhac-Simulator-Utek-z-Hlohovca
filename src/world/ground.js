@@ -89,10 +89,10 @@ const GCPAL = (function(){
             Math.min(3, ((hx>>8)&255)/255/0.33),
             Math.min(3, (hx&255)/255/0.23)];
   }
-  return { bed:tcol(0x3f3a30), bank:tcol(0x8c8577), grass:tcol(0x4a7c36),
-           grass2:tcol(0x3f7030), dry:tcol(0x8a8a5a), rock:tcol(0x7a756a),
-           wheat:tcol(0xd4b248), plow:tcol(0x5a4531), meadow:tcol(0x6b9e43),
-           forest:tcol(0x2d5022) };
+  return { bed:tcol(0x3a342a), bank:tcol(0x8a8274), grass:tcol(0x4f8338),
+           grass2:tcol(0x457632), dry:tcol(0x908a5e), rock:tcol(0x7a756a),
+           wheat:tcol(0xd8b650), plow:tcol(0x5a4531), meadow:tcol(0x72a34a),
+           forest:tcol(0x2a4a20) };
 })();
 
 export function gmix(a, b, t){
