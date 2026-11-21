@@ -43,10 +43,10 @@ function primOf(g){
            u:g.attributes.uv.array, i:g.index.array, v:g.attributes.position.count };
 }
 const P_BOX = primOf(new THREE.BoxGeometry(1, 1, 1));
-const P_CYL6 = primOf(new THREE.CylinderGeometry(0.5, 0.5, 1, 10));
-const P_CYL8 = primOf(new THREE.CylinderGeometry(0.5, 0.5, 1, 12));
-const P_CONE = primOf(new THREE.ConeGeometry(0.5, 1, 12));
-const P_SPH = primOf(new THREE.SphereGeometry(0.5, 10, 7));
+const P_CYL6 = primOf(new THREE.CylinderGeometry(0.5, 0.5, 1, 14));
+const P_CYL8 = primOf(new THREE.CylinderGeometry(0.5, 0.5, 1, 16));
+const P_CONE = primOf(new THREE.ConeGeometry(0.5, 1, 16));
+const P_SPH = primOf(new THREE.SphereGeometry(0.5, 14, 10));
 
 // ---------- KOŠE A CHUNKY ----------
 const BUCKETS = ['metal', 'matte', 'wood', 'leaf', 'glow', 'glass'];

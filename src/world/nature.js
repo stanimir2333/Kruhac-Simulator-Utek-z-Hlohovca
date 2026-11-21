@@ -137,7 +137,7 @@ function lumpyCrown(src, amt){
 export function ensureVegShapes(){
   if(S.GEO.trunkV) return;   // idempotentné: geometrie sa vytvoria len raz
   const crownDetail = S.LOW_END ? 1 : 2;
-  S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 12);
+  S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 16);
   S.GEO.trunkV.translate(0, 1.3, 0);
   S.GEO.crownV = lumpyCrown(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
   S.GEO.crownV.translate(0, 3.7, 0);
@@ -146,7 +146,7 @@ export function ensureVegShapes(){
   const tiers = [[1.7, 2.2, 1.6], [1.3, 1.8, 3.4], [0.9, 1.4, 4.8]];
   const coneParts = [];
   for(let t=0;t<3;t++){
-    const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.LOW_END ? 9 : 12);
+    const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.LOW_END ? 9 : 16);
     tg.translate(0, tiers[t][2] + tiers[t][1]/2, 0);
     coneParts.push(tg);
   }

@@ -416,6 +416,62 @@ function pushBalconies(dstTrim, k, baseY, wv, floors, mc){
   }
 }
 
+// OKNÁ ako skutočná 3D geometria: výrez v stene + rám + parapet + nadpražie.
+// Doteraz boli okná len natreté na fasáde (winGrid textúra) — pri blízkom pohľade
+// boli úplne ploché. Teraz každé okno dostane skutočnú hĺbku: výrez 12 cm do
+// steny, parapet vyčnievajúci 4 cm a nadpražie 3 cm. Všetko ide do koša trimu,
+// takže žiadny ďalší draw call.
+function pushWindows(dst, k, baseY, h, wv) {
+  const fp = k.fp;
+  const np = (fp.length - 5) / 2;
+  if (np < 3) return;
+  // signed area pre vonkajšiu normálu
+  let area = 0;
+  for (let p = 0; p < np; p++) {
+    const q = (p + 1) % np;
+    area += fp[5 + p * 2] * fp[5 + q * 2 + 1] - fp[5 + q * 2] * fp[5 + p * 2 + 1];
+  }
+  const sgn = area >= 0 ? 1 : -1;
+  const WIN_W = 1.05, WIN_H = 1.25, RECESS = 0.12;
+  const rows = h > 4.6 ? [1.35, 4.4] : [1.35];
+  if (h > 7.5) rows.push(7.5);
+  for (let p = 0; p < np; p++) {
+    const q = (p + 1) % np;
+    const ax = fp[5 + p * 2], az = fp[5 + p * 2 + 1];
+    const bx = fp[5 + q * 2], bz = fp[5 + q * 2 + 1];
+    const ex = bx - ax, ez = bz - az;
+    const len = Math.hypot(ex, ez);
+    if (len < 2.6) continue;
+    const ux = ex / len, uz = ez / len;
+    const nl = len;
+    const nxo = (sgn * ez) / nl, nzo = -(sgn * ex) / nl; // vonkajšia normála
+    const nWin = Math.max(1, Math.min(4, Math.floor(len / 2.6)));
+    for (let w = 0; w < nWin; w++) {
+      const t = (w + 1) / (nWin + 1);
+      const px = ax + ex * t;
+      const pz = az + ez * t;
+      for (let ri = 0; ri < rows.length; ri++) {
+        const wy = baseY + rows[ri];
+        if (wy + WIN_H > baseY + h - 0.4) continue;
+        // (výrez ponechaný textúre okna - pridávame len rám, aby ostala viditeľná maľba skla)
+        // parapet (vyčnieva von, svetlá omietka)
+        bldBox(dst, px + nxo * 0.04, wy - 0.06, pz + nzo * 0.04,
+          WIN_W + 0.18, 0.12, 0.16, k.a,
+          wv[0] * 0.92, wv[1] * 0.92, wv[2] * 0.92);
+        // nadpražie
+        bldBox(dst, px + nxo * 0.04, wy + WIN_H + 0.02, pz + nzo * 0.04,
+          WIN_W + 0.18, 0.10, 0.16, k.a,
+          wv[0] * 0.92, wv[1] * 0.92, wv[2] * 0.92);
+        // bočné jamby
+        bldBox(dst, px + ux * (WIN_W / 2 + 0.02) + nxo * 0.04, wy + WIN_H / 2, pz + uz * (WIN_W / 2 + 0.02) + nzo * 0.04,
+          0.08, WIN_H, 0.12, k.a, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
+        bldBox(dst, px - ux * (WIN_W / 2 + 0.02) + nxo * 0.04, wy + WIN_H / 2, pz - uz * (WIN_W / 2 + 0.02) + nzo * 0.04,
+          0.08, WIN_H, 0.12, k.a, wv[0] * 0.88, wv[1] * 0.88, wv[2] * 0.88);
+      }
+    }
+  }
+}
+
 // BOX otáčaný okolo Y (komíny, ventily): 5 stien bez dolnej, leží na podložke.
 function bldBox(dst, cx, yb, cz, sx, sy, sz, rot, cr, cg, cb){
   const co = Math.cos(rot), si = Math.sin(rot);
@@ -783,6 +839,11 @@ export function buildBuildings(){
       if(k.zone === 1 && k.h > 12){
         const floors = Math.max(1, Math.min(4, Math.floor((k.h - 1.6)/3.05)));
         pushBalconies(ch.wTrim, k, k.baseY, wv, floors, MCOL);
+      }
+      // OKNÁ ako 3D geometria (výrez + rám + parapet + nadpražie + jamby).
+      // Len pre obytné/historické/obchodné budovy (nie priemyselné haly).
+      if(k.zone !== 2 && k.h > 3.5){
+        pushWindows(ch.wTrim, k, k.baseY, k.h, wv);
       }
     }
   }

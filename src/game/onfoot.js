@@ -59,26 +59,26 @@ function buildBody() {
   const accent = new THREE.MeshStandardMaterial({ color: 0xffb000, roughness: 0.5, metalness: 0.2 });
   const hair = new THREE.MeshStandardMaterial({ color: 0x20150f, roughness: 0.92, metalness: 0 });
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.25), jacket);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.62, 12), jacket);
   torso.position.y = 1.2;
   torso.castShadow = true;
   root.add(torso);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.065, 0.255), accent);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.265, 0.065, 12), accent);
   stripe.position.y = 1.31;
   root.add(stripe);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.29, 0.25), skin);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), skin);
   head.position.y = 1.68;
   head.castShadow = true;
   root.add(head);
-  const hairMesh = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.09, 0.265), hair);
-  hairMesh.position.y = 1.86;
+  const hairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.165, 10, 8), hair);
+  hairMesh.position.y = 1.84;
   root.add(hairMesh);
 
   const legs = [];
   const arms = [];
-  const legGeo = new THREE.BoxGeometry(0.17, 0.8, 0.19);
+  const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.8, 10);
   legGeo.translate(0, -0.4, 0);
-  const armGeo = new THREE.BoxGeometry(0.14, 0.62, 0.15);
+  const armGeo = new THREE.CylinderGeometry(0.07, 0.08, 0.62, 10);
   armGeo.translate(0, -0.31, 0);
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? -1 : 1;
@@ -97,7 +97,7 @@ function buildBody() {
     const arm = new THREE.Mesh(armGeo, jacket);
     arm.castShadow = true;
     shoulder.add(arm);
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.13), skin);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), skin);
     hand.position.y = -0.58;
     shoulder.add(hand);
     root.add(shoulder);

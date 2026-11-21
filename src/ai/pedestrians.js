@@ -64,12 +64,13 @@ export function createPedestrianSystem(opts = {}) {
   const _pt = { seg: 0, cx: 0, cz: 0, dx: 0, dz: 0, h: 0 };
   const _ray = { hit: false, index: -1, dist: 0, x: 0, y: 0, z: 0 };
 
-  const torsoGeo = new THREE.BoxGeometry(0.42, 0.62, 0.24);
-  const headGeo = new THREE.BoxGeometry(0.26, 0.28, 0.24);
-  const hairGeo = new THREE.BoxGeometry(0.29, 0.09, 0.27);
-  const legGeo = new THREE.BoxGeometry(0.16, 0.8, 0.18);
-  const armGeo = new THREE.BoxGeometry(0.13, 0.62, 0.14);
-  legGeo.translate(0, -0.4, 0);
+  // GTA IV štýl: humanoidné siluety — zaoblené tvary namiesto krabičiek.
+  const torsoGeo = new THREE.CylinderGeometry(0.20, 0.24, 0.62, 12);
+  const headGeo = new THREE.SphereGeometry(0.15, 12, 10);
+  const hairGeo = new THREE.SphereGeometry(0.16, 10, 8);
+  const legGeo = new THREE.CylinderGeometry(0.085, 0.10, 0.82, 10);
+  const armGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.62, 10);
+  legGeo.translate(0, -0.41, 0);
   armGeo.translate(0, -0.31, 0);
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 });
 
