@@ -24,6 +24,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
@@ -49,7 +50,7 @@ const BLOOM_RENDER_SCALE = 0.75;
 const COMPOSER_SAMPLES = S.LOW_END ? 0 : 4;
 
 export function createBloom(renderer, scene, camera) {
-  let composer = null, bloomPass = null, fxaaPass = null, gradePass = null, mode = 1;
+  let composer = null, bloomPass = null, ssaoPass = null, fxaaPass = null, gradePass = null, mode = 1;
 
   // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
   // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
@@ -87,6 +88,16 @@ export function createBloom(renderer, scene, camera) {
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());
       composer.addPass(new RenderPass(scene, camera));
+      if (!S.LOW_END) {
+        const ssaoW = Math.max(64, Math.round(innerWidth * composerPixelRatio() * 0.5));
+        const ssaoH = Math.max(64, Math.round(innerHeight * composerPixelRatio() * 0.5));
+        ssaoPass = new SSAOPass(scene, camera, ssaoW, ssaoH, 16);
+        ssaoPass.kernelRadius = 14;
+        ssaoPass.minDistance = 0.005;
+        ssaoPass.maxDistance = 0.20;
+        ssaoPass.output = SSAOPass.OUTPUT.Default;
+        composer.addPass(ssaoPass);
+      }
       bloomPass = new UnrealBloomPass(
         new THREE.Vector2(innerWidth, innerHeight), MODES[mode].strength, MODES[mode].radius, MODES[mode].threshold);
       // 4 mipy namiesto 5 — menej blur passov, na bloom (už rozostrenom) bez
@@ -109,6 +120,7 @@ export function createBloom(renderer, scene, camera) {
     } catch (e) {
       console.warn('[bloom] composer nedostupný:', e?.message);
       composer = null;
+      ssaoPass = null;
       fxaaPass = null;
       gradePass = null;
       return false;
@@ -139,6 +151,12 @@ export function createBloom(renderer, scene, camera) {
     if (!composer) return;
     composer.setPixelRatio?.(composerPixelRatio());
     composer.setSize(innerWidth, innerHeight);
+    if (ssaoPass) {
+      const pr = composerPixelRatio();
+      const w = Math.max(64, Math.round(innerWidth * pr * 0.5));
+      const h = Math.max(64, Math.round(innerHeight * pr * 0.5));
+      ssaoPass.setSize(w, h);
+    }
     syncFxaa();
   }
   return {

@@ -86,7 +86,7 @@ async function boot(mapId) {
   // Vernosť legacy vzhľadu: ACES + sRGB + tiene + hmla
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.12;
   // Anizotropia 16x je na mobilných GPU drahá a pri 1.5x DPR už nie je vidieť
 // rozdiel voči 4x. Desktop ostáva na maxime (až 16x) pre ostré cesty v diaľke.
 S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.getMaxAnisotropy()));
@@ -658,12 +658,22 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
     // — kamera (naháňačka s vyhladením); pešo si kameru riadi onfoot sám —
     if (!walking) {
       const fx = Math.sin(car.h), fz = Math.cos(car.h);
-      const k = Math.min(1, 4.5 * dt);
-      camPos.x += (car.x - fx * 9 - camPos.x) * k;
-      camPos.y += (car.y + 3.6 - camPos.y) * k;
-      camPos.z += (car.z - fz * 9 - camPos.z) * k;
+      const speed = Math.abs(car.speed || 0);
+      // vzdialenosť kamery za autom rastie s rýchlosťou (cinematic, GTA štýl)
+      const dist = 8 + Math.min(6, speed * 0.06);
+      const height = 3.2 + Math.min(1.4, speed * 0.012);
+      const lookAhead = 6 + Math.min(4, speed * 0.04);
+      const k = Math.min(1, 3.2 * dt);
+      const ty = car.y + height;
+      camPos.x += (car.x - fx * dist - camPos.x) * k;
+      camPos.y += (ty - camPos.y) * Math.min(1, 2.4 * dt);
+      camPos.z += (car.z - fz * dist - camPos.z) * k;
       camera.position.copy(camPos);
-      camera.lookAt(car.x + fx * 7, car.y + 1.6, car.z + fz * 7);
+      camera.lookAt(car.x + fx * lookAhead, car.y + 1.5, car.z + fz * lookAhead);
+      // jemné FOV závislé od rýchlosti (dynamické zrýchlenie)
+      const targetFov = 68 + Math.min(8, speed * 0.05);
+      camera.fov += (targetFov - camera.fov) * Math.min(1, 2.0 * dt);
+      camera.updateProjectionMatrix();
     }
 
     // — HUD (5 Hz) —
