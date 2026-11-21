@@ -322,8 +322,11 @@ export function buildPlayerMesh(color = 0xffb000, carId = 'octavia') {
     const wh = wheels(g, 1.38, -1.38, 0x6a6f74); // tmavé športové ráfika
     return { group: g, bodyMat, wheels: wh, spin: 0 };
   }
-  if (carModelCache) {
-    // model je nacitany - pouzi ho (proceduralne kolesa nahradene modelom)
+  // OBJ model Octavie (skoda_*.obj) mal problémy s orientáciou/škálovaním a
+  // blikajúci čierny štvorec — používame stabilný procedurálny model, ktorý
+  // je správne zložený a nemá artefakty. (Model-kód ostáva pre prípadnú
+  // budúcu opravu, ale momentálne sa nepoužíva.)
+  if (false && carModelCache) {
     const m = buildSkodaMesh(color);
     return m;
   }
