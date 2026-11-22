@@ -76,7 +76,7 @@ const ROUTE_PROJECTION_INTERVAL = 1 / PERF.routeProjectionHz;
 const HUD_INTERVAL = 1 / PERF.hudHz;
 const FPS_STATS_INTERVAL = 1 / PERF.fpsHz;
 
-async function boot(mapId) {
+async function boot(mapId, radioManifest) {
   mapId = mapId || 'hlohovec';
   pre.step(0.04, 'inicializujem renderer…');
   await nextFrame();
@@ -354,23 +354,32 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
 
   // 4) AUDIO (len manifest; mp3 až po geste)
   await step(0.95, 'rádio…');
-  const radio = createRadio(document.getElementById('bgm'));
+  const bgmEl = document.getElementById('bgm');
+  const radio = createRadio(bgmEl);
   musicCtl.radio = radio;
-  sfx.attachRadio(document.getElementById('bgm'));
+  sfx.attachRadio(bgmEl);
+  // Manifest už máme z loadingu (ak sa podarilo) — inak ho stiahneme teraz.
+  if (radioManifest && Array.isArray(radioManifest.list) && radioManifest.list.length) {
+    radio.setList(radioManifest.list, radioManifest.base);
+  } else {
+    loadRadioManifest().then(({ list, base }) => radio.setList(list, base));
+  }
   // Uložená voľba hudby (settings.music z localStorage) sa uplatní na obe
   // vrstvy: zisk rádia v sfx aj pauza <audio> elementu.
   state.musicOn = settings.music !== 0;
   sfx.setMusicMuted(!state.musicOn);
   radio.setMusicOn(state.musicOn);
   syncMusicBtn();
-  loadRadioManifest().then(({ list, base }) => radio.setList(list, base));
   const unlock = () => { sfx.unlock(); };
   addEventListener('pointerdown', unlock, { once: true });
   addEventListener('keydown', unlock, { once: true });
-  // Hudba musí začať v RÁMEČI kliknutia na tlačidlo mapy (gesto používateľa),
-  // inak ju prehliadač zablokuje (autoplay). Stanica sa spustí, keď dorazí
-  // manifest (radio.js drží "pending" požiadavku).
-  radio.play(0);
+  // Stanica 1 už hrá z loading screen-u (main.js spustil ju po kliku na mapu).
+  // Tu ju nereštartujeme — len zosynchronizujeme index, ak ešte nie je nastavený.
+  try {
+    const already = bgmEl.src && radioManifest && radioManifest.list && radioManifest.list.length
+      && bgmEl.src.indexOf(String(radioManifest.list[0].file).replace(/^audio\//, '')) !== -1;
+    if (!already) radio.play(0);
+  } catch { radio.play(0); }
 
   // Prepínač zvuku [X] — zdieľaný medzi klávesou a tlačidlom #snd-btn, ktoré
   // malo pointer-events:auto a kurzor, ale NEMALO žiadny handler (klikal sa do
@@ -760,14 +769,27 @@ function pickMap() {
 }
 
 (async () => {
+  // Manifest stiahni už počas výberu mapy (bez gesta to nevadí — len fetch),
+  // aby bol pri kliku pripravený a autoplay sa nestratil čakaním na sieť.
+  const radioManifestPromise = loadRadioManifest();
   const mapId = await pickMap();
   const meta = MAPS[mapId] || MAPS.hlohovec;
   document.title = meta.title;
+  let radioManifest = { list: [], base: '' };
+  try { radioManifest = await radioManifestPromise; } catch (_e) { /* offline */ }
+  const bgmEl = document.getElementById('bgm');
+  if (radioManifest.list && radioManifest.list.length) {
+    const st = radioManifest.list[0];
+    try {
+      bgmEl.src = radioManifest.base + String(st.file).replace(/^audio\//, '');
+      if (settings.music !== 0) bgmEl.play().catch(() => {});
+    } catch (_e) { /* noop */ }
+  }
   // Preloader sa zobrazí až po výbere mapy — predtým je viditeľné menu.
   document.getElementById('preloader')?.classList.remove('off');
   const pt = document.getElementById('pre-title');
   if (pt) pt.textContent = meta.pre;
-  const { state: st, hud } = await boot(mapId);
+  const { state: st, hud } = await boot(mapId, radioManifest);
   // Rovno do hry — používateľ už nič ďalšie netlačí.
   st.started = true;
   try { hud.show(); } catch (e) { console.error('hud.show err', e); }
