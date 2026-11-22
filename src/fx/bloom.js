@@ -11,10 +11,9 @@
 //    bez MSAA, takže zapnutý bloom zároveň ZRUŠIL antialiasing celej scény
 //    (canvasové MSAA sa na RT nevzťahuje) — hrany budov a stromov boli zubaté.
 //    FXAA stojí jeden full-screen priesvit a vráti hladké hrany.
-// B31 (kvalita): composer kreslí do MULTI-SAMPLED RT (samples 4, desktop) v
-//  HalfFloat HDR — hladké hrany rovno v kompozite (FXAA ostáva len ako záložný
-//  filter) a prahový bloom má skutočný HDR rozsah namiesto rezu pri jase 1.0.
-//  Na mobile sú samples 0 (MSAA v kompozite je tam najdrahšie) — ostáva FXAA.
+// B31 (kvalita): prvý RT je custom UnsignedByte; MSAA v kompozite vylúčené
+//  — extension WEBGL_multisampled_render_to_texture nie je dostupná všetkým
+//  driverom (na Edge/SwiftShader výsledok bol čierny). FXAA dohladí hrany.
 // B33 (AA bez bloomu): keď bloom je VYP., scéna sa renderuje priamo cez
 //  renderer.render() s canvasovým MSAA (4× na desktope, engine.js).
 //  Na mobile/LOW_END (žiadne MSAA) ostáva čistý renderer.render() —
@@ -45,9 +44,6 @@ const BLOOM_SCALE = 0.4;
 // oproti plnému DPR, rozdiel v ostrosti je pri bloom móde zanedbateľný
 // (bloom mipy sú aj tak rozostrené a FXAA hrany dohladí).
 const BLOOM_RENDER_SCALE = 0.75;
-// MSAA vzorky pre composer RT. 4× desktop, 0 mobile/LOW_END. Clampuje sa
-// interné Three.js podľa maxSamples.
-const COMPOSER_SAMPLES = S.LOW_END ? 0 : 4;
 
 export function createBloom(renderer, scene, camera) {
   let composer = null, bloomPass = null, ssaoPass = null, fxaaPass = null, gradePass = null, mode = 1;
@@ -69,21 +65,15 @@ export function createBloom(renderer, scene, camera) {
   function ensure() {
     if (composer) return true;
     try {
-      // B31: vlastný render target composera — MULTI-SAMPLED + HalfFloat.
-      // Default composer RT je LDR (UnsignedByte) a bez MSAA: prahový bloom tak
-      // nemá HDR rozsah (svetlomety sa režú na jase 1.0) a hrany budov sú
-      // zubaté, lebo canvasové MSAA sa na composer RT nevzťahuje. samples = 4
-      // (desktop) dá hladké hrany rovno v kompozite a HalfFloat drží HDR pre
-      // threshold aj mipy. Na mobile sa ostáva bez MSAA (nákladné) — FXAA
-      // nižšie sa o aliasing postará ako doteraz.
-      // B32: samples 4 namiesto 2 (MSAA resolve je drahý, ale 4× vie odviesť
-      //  väčšina desktopových GPU; FXAA nižšie dohladí zvyšok aliasingu).
-      // Renderovacia škála 0.75.
+      // B31: vlastný custom RT (UnsignedByteType) — MSAA v kompozite
+      // vylúčené (detailný dôvod v headeri: extension
+      // WEBGL_multisampled_render_to_texture nie je dostupná všetkým
+      // driverom — FXAA sa o hrany stará).
       const pr = composerPixelRatio();
       const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
       const rt = new THREE.WebGLRenderTarget(w, h, {
-        type: THREE.HalfFloatType,
-        samples: COMPOSER_SAMPLES,
+        type: THREE.UnsignedByteType,
+        samples: 0,
       });
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());
