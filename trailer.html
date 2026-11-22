@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kruháč Simulator: Útek z Hlohovca — 3D Cinematic Trailer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:ital,wght@0,700;0,900;1,900&family=Playfair+Display:ital,wght@1,700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; user-select: none; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0b051d;
+      font-family: 'Montserrat', sans-serif;
+      color: #fff;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+    /* Widescreen Cinematic Letterbox Bars */
+    .letterbox {
+      position: fixed;
+      left: 0;
+      width: 100%;
+      height: 10.5vh;
+      background: #04020a;
+      z-index: 20;
+      transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
+    }
+    .letterbox-top { top: 0; border-bottom: 1px solid rgba(255, 42, 133, 0.25); }
+    .letterbox-bottom { bottom: 0; border-top: 1px solid rgba(0, 240, 255, 0.25); }
+    body.hud-hidden .letterbox-top { transform: translateY(-100%); }
+    body.hud-hidden .letterbox-bottom { transform: translateY(100%); }
+
+    /* Vignette & Film Grain Overlay */
+    .vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      background: radial-gradient(circle at center, transparent 52%, rgba(7, 2, 18, 0.72) 100%);
+    }
+    .film-grain {
+      position: fixed;
+      inset: -50%;
+      width: 200%;
+      height: 200%;
+      pointer-events: none;
+      z-index: 11;
+      opacity: 0.045;
+      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 0);
+      background-size: 4px 4px;
+      animation: grainShift 0.35s steps(2) infinite;
+    }
+    @keyframes grainShift {
+      0% { transform: translate(0, 0); }
+      25% { transform: translate(-2%, 1%); }
+      50% { transform: translate(1%, -2%); }
+      75% { transform: translate(-1%, -1%); }
+      100% { transform: translate(2%, 2%); }
+    }
+
+    /* Iconic Kruháč Simulator Logo Overlay */
+    #gta-logo-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 15;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(0.94);
+      transition: opacity 0.85s ease, transform 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #gta-logo-overlay.visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .logo-stack {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      filter: drop-shadow(0 12px 35px rgba(255, 42, 133, 0.55));
+    }
+    .vi-svg {
+      width: clamp(240px, 38vw, 480px);
+      height: auto;
+      overflow: visible;
+    }
+    .hlohovec-title {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 0.84;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-style: italic;
+      letter-spacing: -0.04em;
+      font-size: clamp(1.8rem, 4.4vw, 3.9rem);
+      color: #ffffff;
+      text-transform: uppercase;
+      text-shadow:
+        0 4px 0 #260a42,
+        0 10px 28px rgba(0, 0, 0, 0.85),
+        0 0 24px rgba(255, 42, 133, 0.7);
+      transform: rotate(-3deg);
+    }
+    .vice-subtitle {
+      margin-top: 0.35rem;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-weight: 700;
+      font-size: clamp(0.95rem, 1.8vw, 1.45rem);
+      letter-spacing: 0.22em;
+      color: #00f0ff;
+      text-transform: uppercase;
+      text-shadow: 0 0 14px rgba(0, 240, 255, 0.9), 0 2px 6px rgba(0,0,0,0.9);
+    }
+
+    /* Scene Location Badge */
+    #scene-badge {
+      position: fixed;
+      bottom: 13vh;
+      left: 4vw;
+      z-index: 25;
+      pointer-events: none;
+      transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+    body.hud-hidden #scene-badge { opacity: 0 !important; }
+
+    /* Top & Bottom Cinema Controls */
+    #top-hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 10.5vh;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2.5vw;
+      transition: opacity 0.4s ease;
+    }
+    #bottom-hud {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 10.5vh;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 2.5vw;
+      gap: 6px;
+      transition: opacity 0.4s ease;
+    }
+    body.hud-hidden #top-hud,
+    body.hud-hidden #bottom-hud {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Progress Bar & Chapter Markers */
+    .timeline-track {
+      position: relative;
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      cursor: pointer;
+      overflow: visible;
+    }
+    .timeline-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #00f0ff 0%, #ff2a85 55%, #ff8c42 100%);
+      box-shadow: 0 0 12px rgba(255, 42, 133, 0.85);
+      pointer-events: none;
+    }
+    .chapter-dot {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #14092b;
+      border: 2px solid #00f0ff;
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.2s ease;
+      z-index: 3;
+    }
+    .chapter-dot:hover, .chapter-dot.active {
+      transform: translate(-50%, -50%) scale(1.4);
+      background: #ff2a85;
+      border-color: #ffffff;
+    }
+
+    /* Start Screen Splash */
+    #start-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: radial-gradient(circle at 50% 45%, rgba(28, 10, 58, 0.78) 0%, rgba(5, 2, 14, 0.94) 100%);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+      transition: opacity 0.7s ease, visibility 0.7s ease;
+    }
+    #start-overlay.hidden-splash {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .neon-btn {
+      background: linear-gradient(135deg, #ff2a85 0%, #b829ff 50%, #ff8c42 100%);
+      box-shadow: 0 0 28px rgba(255, 42, 133, 0.65), inset 0 1px 1px rgba(255,255,255,0.4);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .neon-btn:hover {
+      transform: translateY(-2px) scale(1.03);
+      box-shadow: 0 0 40px rgba(0, 240, 255, 0.8), 0 0 25px rgba(255, 42, 133, 0.8);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Three.js 3D Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- Atmospheric Overlays -->
+  <div class="vignette"></div>
+  <div class="film-grain"></div>
+  <div class="letterbox letterbox-top"></div>
+  <div class="letterbox letterbox-bottom"></div>
+
+  <!-- Iconic Kruháč Simulator / HLOHOVEC Center Logo Overlay -->
+  <div id="gta-logo-overlay">
+    <div class="logo-stack">
+      <svg class="vi-svg" viewBox="0 0 420 250" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="viceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff8c42" />
+            <stop offset="48%" stop-color="#ff2a85" />
+            <stop offset="100%" stop-color="#7b1fa2" />
+          </linearGradient>
+          <clipPath id="viClip">
+            <text x="210" y="212" text-anchor="middle" font-family="Anton, Impact, sans-serif" font-size="255" font-weight="900" letter-spacing="-8">K</text>
+          </clipPath>
+        </defs>
+        <!-- Outer Glow & Stroke -->
+        <text x="210" y="212" text-anchor="middle" font-family="Anton, Impact, sans-serif" font-size="245" font-weight="900" letter-spacing="-6"
+              fill="url(#viceGrad)" stroke="#ffffff" stroke-width="5"></text>
+        <!-- Palm & Castle Silhouette Inside K -->
+        <g clip-path="url(#viClip)">
+          <rect x="0" y="0" width="420" height="250" fill="url(#viceGrad)" />
+          <!-- Horizon Sun -->
+          <circle cx="215" cy="145" r="68" fill="#ffd166" opacity="0.55" />
+          <!-- Stylized Palm & Hill Silhouette -->
+          <path d="M40 250 Q140 175 240 205 T400 185 L400 250 Z" fill="#180733" opacity="0.88" />
+          <path d="M108 215 Q116 145 102 95" stroke="#120426" stroke-width="7" fill="none" />
+          <path d="M102 95 Q75 82 58 102 M102 95 Q80 68 62 74 M102 95 Q128 72 146 88 M102 95 Q134 90 144 112" stroke="#120426" stroke-width="4.5" stroke-linecap="round" fill="none" />
+          <path d="M312 215 Q302 155 316 112" stroke="#120426" stroke-width="6" fill="none" />
+          <path d="M316 112 Q292 98 276 114 M316 112 Q338 92 356 108 M316 112 Q342 112 350 130" stroke="#120426" stroke-width="4" stroke-linecap="round" fill="none" />
+        </g>
+        <text x="210" y="212" text-anchor="middle" font-family="Anton, Impact, sans-serif" font-size="245" font-weight="900" letter-spacing="-6"
+              fill="none" stroke="#ffffff" stroke-width="4"></text>
+      </svg>
+
+      <div class="hlohovec-title">
+        <span>KRUHÁČ</span>
+        <span>SIMULATOR</span>
+      </div>
+      <div class="vice-subtitle">ÚTEK Z HLOHOVCA</div>
+    </div>
+  </div>
+
+  <!-- Lower-Third Landmark Title Badge -->
+  <div id="scene-badge">
+    <div class="flex items-center gap-2 mb-1">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#ff2a85] animate-ping"></span>
+      <span id="scene-tag" class="text-[11px] font-bold tracking-[0.25em] uppercase text-[#00f0ff]">SCÉNA 01 / 09</span>
+    </div>
+    <h2 id="scene-title" class="text-xl sm:text-3xl font-black italic tracking-tight uppercase drop-shadow-[0_4px_14px_rgba(0,0,0,0.9)]">
+      ÚDOLIE VÁHU &amp; PANORÁMA MESTA
+    </h2>
+    <p id="scene-sub" class="text-xs sm:text-sm text-pink-200/90 font-medium tracking-wide">
+      Hlohovec, Trnavský kraj • Západ slnka nad riekou Váh
+    </p>
+  </div>
+
+  <!-- Top Cinema HUD -->
+  <div id="top-hud">
+    <div class="flex items-center gap-3">
+      <span class="px-2.5 py-1 rounded-md bg-pink-600/30 border border-pink-400/50 text-xs font-black tracking-widest uppercase text-pink-200">
+        KRUHÁČ SIMULATOR • HLOHOVEC
+      </span>
+      <span id="mode-indicator" class="hidden sm:inline-block text-xs font-semibold tracking-wider text-cyan-300 uppercase">
+        ● AUTO TRAILER DRON
+      </span>
+    </div>
+
+    <div class="flex items-center gap-2 sm:gap-3">
+      <button id="btn-logo-toggle" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold tracking-wider uppercase transition cursor-pointer" title="Zobraziť/skryť logo Kruháč Simulator">
+        Logo K
+      </button>
+      <button id="btn-camera-mode" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-200 text-xs font-bold tracking-wider uppercase transition cursor-pointer">
+        Voľný Dron (WASD)
+      </button>
+      <button id="btn-audio" class="px-3 py-1.5 rounded-lg bg-pink-500/25 hover:bg-pink-500/40 border border-pink-400/50 text-pink-100 text-xs font-bold tracking-wider uppercase transition cursor-pointer">
+        🔊 Synthwave
+      </button>
+      <button id="btn-hide-hud" class="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold uppercase transition cursor-pointer" title="Skryť lišty (kláves H)">
+        HUD [H]
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Timeline HUD -->
+  <div id="bottom-hud">
+    <div class="flex items-center justify-between text-[11px] sm:text-xs font-bold tracking-wider text-white/80">
+      <div class="flex items-center gap-3">
+        <button id="btn-play-pause" class="px-3 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white font-extrabold uppercase tracking-widest transition cursor-pointer">
+          ❚❚ Pauza
+        </button>
+        <span id="time-display" class="font-mono text-cyan-300">00:00 / 00:44</span>
+      </div>
+      <div id="chapter-quick-nav" class="hidden md:flex items-center gap-2 text-[11px]">
+        <!-- Filled dynamically -->
+      </div>
+    </div>
+
+    <div id="timeline-track" class="timeline-track">
+      <div id="timeline-fill" class="timeline-fill"></div>
+      <!-- Chapter dots injected via JS -->
+    </div>
+  </div>
+
+  <!-- Initial Start Overlay -->
+  <div id="start-overlay">
+    <div class="max-w-2xl flex flex-col items-center">
+      <div class="mb-3 px-4 py-1 rounded-full bg-white/10 border border-pink-400/40 text-xs font-extrabold tracking-[0.28em] uppercase text-cyan-300">
+        Oficiálny cinematic trailer · 3D drone experience
+      </div>
+      <h1 class="text-4xl sm:text-6xl font-black italic tracking-tight uppercase leading-none mb-3 drop-shadow-[0_6px_25px_rgba(255,42,133,0.75)]">
+        KRUHÁČ <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#ff2a85] via-[#ff8c42] to-[#00f0ff]">SIMULATOR</span>
+      </h1>
+      <div class="text-lg sm:text-2xl font-black italic tracking-[0.2em] uppercase text-cyan-300 mb-4 drop-shadow-[0_0_14px_rgba(0,240,255,0.6)]">
+        Útek z Hlohovca
+      </div>
+      <p class="text-sm sm:text-base text-purple-100/85 max-w-xl mb-7 leading-relaxed">
+        Si zapichnutý v kolóne na <strong>kruháči</strong> a mieriš na juh. Plyn, volant a <strong>1.9 TDI</strong> — celé mesto je otvorené. Filmový prelet nad <strong>mostmi cez Váh</strong>, <strong>Hlohovským zámkom</strong>, <strong>Námestím sv. Michala</strong>, <strong>vysielačom Dubník</strong> a <strong>Fraštackými vinohradmi</strong>. S <strong>Petrom</strong> na sedačke, rádio Hlohovec v uchu a kľúčom v ruke.
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-4">
+        <button id="btn-start-trailer" class="neon-btn px-8 py-4 rounded-2xl text-white font-black italic text-base sm:text-lg tracking-wider uppercase cursor-pointer">
+          ▶ Spustiť Trailer (0:44)
+        </button>
+        <button id="btn-start-freeroam" class="px-6 py-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/25 text-white font-bold text-sm sm:text-base tracking-wider uppercase transition cursor-pointer">
+          🎮 Voľný let dronom
+        </button>
+      </div>
+      <p class="mt-5 text-[11px] text-white/50 tracking-widest uppercase">
+        Syntetizovaný 80s soundtrack • V hre: W/▲ plyn · A/D volant · H trúbenie · M mapa · Q/E rádio · F Peter · ENTER pešo · ovládanie dronu: myš + WASD
+      </p>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * 1. WEB AUDIO API — SYNTHWAVE / 80s TRAILER SOUNDTRACK
+     * ============================================================================
+     */
+    class ViceSynthAudio {
+      constructor() {
+        this.ctx = null;
+        this.isMuted = false;
+        this.isPlaying = false;
+        this.step = 0;
+        this.intervalId = null;
+        this.masterGain = null;
+      }
+
+      init() {
+        if (this.ctx) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioContext();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.32;
+        this.masterGain.connect(this.ctx.destination);
+      }
+
+      start() {
+        this.init();
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+        if (this.isPlaying) return;
+        this.isPlaying = true;
+        // 116 BPM 16th-note groove (~129ms per step)
+        this.intervalId = setInterval(() => this.tick(), 129);
+      }
+
+      stop() {
+        this.isPlaying = false;
+        if (this.intervalId) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+        }
+      }
+
+      toggleMute() {
+        this.init();
+        this.isMuted = !this.isMuted;
+        if (this.masterGain) {
+          this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.32, this.ctx.currentTime, 0.05);
+        }
+        return !this.isMuted;
+      }
+
+      tick() {
+        if (!this.ctx || this.isMuted || !this.isPlaying) return;
+        const now = this.ctx.currentTime;
+        const s = this.step % 64;
+
+        // 1. Driving 80s Synth Bassline (F# minor -> D major -> E major -> C# minor)
+        const bar = Math.floor(s / 16);
+        const bassRoots = [92.50, 73.42, 82.41, 69.30]; // F#2, D2, E2, C#2
+        const root = bassRoots[bar];
+        const freq = (s % 2 === 1) ? root * 2 : root;
+        this.playBass(freq, now, 0.11);
+
+        // 2. Kick on 1, 5, 9, 13
+        if (s % 4 === 0) {
+          this.playKick(now);
+        }
+
+        // 3. Gated Reverb Snare on 4, 12
+        if (s % 8 === 4) {
+          this.playSnare(now);
+        }
+
+        // 4. Shimmering Retro Synth Lead / Arpeggio
+        const arpNotes = [
+          369.99, 440.00, 554.37, 659.25, // F#m7
+          293.66, 369.99, 440.00, 587.33, // Dmaj7
+          329.63, 415.30, 493.88, 659.25, // E6
+          277.18, 329.63, 415.30, 554.37  // C#m7
+        ];
+        const leadNote = arpNotes[bar * 4 + (s % 4)];
+        if (s % 2 === 0) {
+          this.playArp(leadNote, now, 0.18);
+        }
+
+        // 5. Lush Warm Pad Chord on start of each bar
+        if (s % 16 === 0) {
+          this.playPad([root * 2, root * 3, root * 4], now, 1.9);
+        }
+
+        this.step++;
+      }
+
+      playBass(freq, time, dur) {
+        const osc = this.ctx.createOscillator();
+        const filter = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, time);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(620, time);
+        filter.frequency.exponentialRampToValueAtTime(140, time + dur);
+
+        gain.gain.setValueAtTime(0.42, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(time);
+        osc.stop(time + dur + 0.02);
+      }
+
+      playKick(time) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(135, time);
+        osc.frequency.exponentialRampToValueAtTime(36, time + 0.16);
+
+        gain.gain.setValueAtTime(0.75, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(time);
+        osc.stop(time + 0.19);
+      }
+
+      playSnare(time) {
+        const bufferSize = this.ctx.sampleRate * 0.18;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 950;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.36, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.17);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start(time);
+      }
+
+      playArp(freq, time, dur) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+
+        gain.gain.setValueAtTime(0.14, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(time);
+        osc.stop(time + dur + 0.02);
+      }
+
+      playPad(freqs, time, dur) {
+        freqs.forEach(f => {
+          const osc = this.ctx.createOscillator();
+          const filter = this.ctx.createBiquadFilter();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(f, time);
+
+          filter.type = 'lowpass';
+          filter.frequency.value = 900;
+
+          gain.gain.setValueAtTime(0.001, time);
+          gain.gain.linearRampToValueAtTime(0.065, time + 0.35);
+          gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(time);
+          osc.stop(time + dur + 0.05);
+        });
+      }
+    }
+
+    const audioEngine = new ViceSynthAudio();
+
+    /**
+     * ============================================================================
+     * 2. THREE.JS SCENE SETUP — SUNSET & TWILIGHT PALETTE
+     * ============================================================================
+     */
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x13072b);
+    scene.fog = new THREE.FogExp2(0x1f0b3d, 0.0033);
+
+    const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.5, 1200);
+    camera.position.set(0, 55, 165);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI * 0.485;
+    controls.minDistance = 8;
+    controls.maxDistance = 420;
+    controls.enabled = false;
+
+    // --- Sky Dome Shader (Synthwave Sunset Gradient) ---
+    const skyGeo = new THREE.SphereGeometry(620, 32, 24);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        topColor: { value: new THREE.Color(0x0b0422) },
+        midColor: { value: new THREE.Color(0x4a126b) },
+        horizonColor: { value: new THREE.Color(0xff2a85) },
+        sunGlowColor: { value: new THREE.Color(0xff9e44) }
+      },
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 midColor;
+        uniform vec3 horizonColor;
+        uniform vec3 sunGlowColor;
+        varying vec3 vWorldPosition;
+        void main() {
+          vec3 dir = normalize(vWorldPosition);
+          float h = clamp(dir.y, 0.0, 1.0);
+          vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.28, h));
+          col = mix(col, topColor, smoothstep(0.25, 0.85, h));
+          // Horizon sunset band
+          float sunDist = length(dir - normalize(vec3(-0.35, 0.08, -0.92)));
+          col += sunGlowColor * exp(-sunDist * 4.5) * 0.75;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `
+    });
+    scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // --- Synthwave Striped Sun Disc on Horizon ---
+    const sunGeo = new THREE.CircleGeometry(68, 48);
+    const sunMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: {
+        colorTop: { value: new THREE.Color(0xffe066) },
+        colorBot: { value: new THREE.Color(0xff2a85) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 colorTop;
+        uniform vec3 colorBot;
+        varying vec2 vUv;
+        void main() {
+          vec3 col = mix(colorBot, colorTop, vUv.y);
+          // Classic retro synthwave scanline cuts in lower half
+          float stripe = 1.0;
+          if (vUv.y < 0.48) {
+            float wave = sin(vUv.y * 95.0);
+            stripe = smoothstep(-0.15, 0.2, wave + (vUv.y * 0.7));
+          }
+          if (stripe < 0.1) discard;
+          gl_FragColor = vec4(col, 0.92);
+        }
+      `
+    });
+    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    sunMesh.position.set(-165, 58, -440);
+    sunMesh.lookAt(0, 35, 0);
+    scene.add(sunMesh);
+
+    // --- Lighting ---
+    const hemiLight = new THREE.HemisphereLight(0xff6ec7, 0x160936, 0.95);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xff944d, 1.45);
+    sunLight.position.set(-160, 110, -260);
+    scene.add(sunLight);
+
+    const cyanRimLight = new THREE.DirectionalLight(0x00f0ff, 0.65);
+    cyanRimLight.position.set(180, 90, 140);
+    scene.add(cyanRimLight);
+
+    /**
+     * ============================================================================
+     * 3. PROCEDURAL HLOHOVEC WORLD & LANDMARKS
+     * ============================================================================
+     */
+    const worldGroup = new THREE.Group();
+    scene.add(worldGroup);
+
+    // Shared Materials
+    const matDarkGround = new THREE.MeshStandardMaterial({ color: 0x140b29, roughness: 0.9 });
+    const matHillGreen = new THREE.MeshStandardMaterial({ color: 0x1c1238, roughness: 0.85 });
+    const matNeonPink = new THREE.MeshBasicMaterial({ color: 0xff2a85 });
+    const matNeonCyan = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const matNeonPurple = new THREE.MeshBasicMaterial({ color: 0xb829ff });
+    const matWarmWindow = new THREE.MeshBasicMaterial({ color: 0xffc857 });
+    const matWhiteGlow = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    // --- 3A. Terrain & Váh River Valley ---
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1100, 1100), matDarkGround);
+    ground.rotation.x = -Math.PI / 2;
+    worldGroup.add(ground);
+
+    // Váh River Channel (runs North-South along X = -48 with gentle curve)
+    const riverGeo = new THREE.PlaneGeometry(54, 1050, 24, 96);
+    const riverPos = riverGeo.attributes.position;
+    for (let i = 0; i < riverPos.count; i++) {
+      const y = riverPos.getY(i);
+      const bend = Math.sin(y * 0.008) * 18;
+      riverPos.setX(i, riverPos.getX(i) + bend);
+    }
+    riverGeo.computeVertexNormals();
+
+    const riverMat = new THREE.MeshStandardMaterial({
+      color: 0x0a1333,
+      emissive: 0x260c47,
+      emissiveIntensity: 0.65,
+      roughness: 0.14,
+      metalness: 0.85
+    });
+    const riverMesh = new THREE.Mesh(riverGeo, riverMat);
+    riverMesh.rotation.x = -Math.PI / 2;
+    riverMesh.position.set(-48, 0.15, 0);
+    worldGroup.add(riverMesh);
+
+    // Glowing Riverbanks (Embankment promenades)
+    [-21, -75].forEach((bankX, idx) => {
+      const bankGeo = new THREE.PlaneGeometry(1.4, 1000, 1, 96);
+      const bPos = bankGeo.attributes.position;
+      for (let i = 0; i < bPos.count; i++) {
+        const y = bPos.getY(i);
+        bPos.setX(i, bPos.getX(i) + Math.sin(y * 0.008) * 18);
+      }
+      const bankStrip = new THREE.Mesh(bankGeo, idx === 0 ? matNeonCyan : matNeonPink);
+      bankStrip.rotation.x = -Math.PI / 2;
+      bankStrip.position.set(bankX, 0.25, 0);
+      worldGroup.add(bankStrip);
+    });
+
+    // Helper for stylized Low-Poly Hills (Považský Inovec foothills around Hlohovec)
+    function createHill(x, z, rx, ry, rz, colorHex = 0x1b1036) {
+      const geo = new THREE.ConeGeometry(rx, ry, 14);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.88,
+        flatShading: true
+      }));
+      mesh.position.set(x, ry * 0.45 - 1, z);
+      mesh.scale.set(1, 1, rz / rx);
+      worldGroup.add(mesh);
+      return mesh;
+    }
+
+    // Hills: Castle Hill (Zámocký vrch), Šianec / Dubník, Soroš & Vinohrady
+    createHill(35, 92, 62, 24, 58, 0x221242);    // Castle hill
+    createHill(135, 145, 95, 54, 85, 0x1a0d36);  // Šianec / Dubník ridge
+    createHill(125, -45, 78, 34, 72, 0x20113f);  // Hvezdáreň hill
+    createHill(145, -145, 95, 42, 95, 0x261347); // Fraštacké vinohrady hills
+    createHill(-155, -80, 110, 38, 130, 0x150b2e); // Leopoldov / western hills
+
+    // --- 3B. LANDMARK 1 & 2: HLOHOVSKÝ ZÁMOK (Hlohovec Castle) & Zámocká záhrada ---
+    const castleGroup = new THREE.Group();
+    castleGroup.position.set(35, 21.5, 92);
+    worldGroup.add(castleGroup);
+
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xf2d7c2, roughness: 0.7 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xb83358, roughness: 0.65 });
+
+    // Four-wing Renaissance/Baroque Chateau around central courtyard
+    const wingSpecs = [
+      { w: 28, h: 9, d: 5, x: 0, z: -11 },
+      { w: 28, h: 9, d: 5, x: 0, z: 11 },
+      { w: 5, h: 9, d: 22, x: -11.5, z: 0 },
+      { w: 5, h: 9, d: 22, x: 11.5, z: 0 }
+    ];
+    wingSpecs.forEach(w => {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(w.w, w.h, w.d), wallMat);
+      wing.position.set(w.x, w.h / 2, w.z);
+      castleGroup.add(wing);
+
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w.w + 0.8, 2.6, w.d + 0.8), roofMat);
+      roof.position.set(w.x, w.h + 1.2, w.z);
+      castleGroup.add(roof);
+    });
+
+    // Four Corner Towers + Clock/Entry Spire
+    [[-12.5, -12.5], [12.5, -12.5], [-12.5, 12.5], [12.5, 12.5]].forEach(([tx, tz]) => {
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 3.1, 13, 8), wallMat);
+      tower.position.set(tx, 6.5, tz);
+      castleGroup.add(tower);
+
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(3.5, 4.8, 8), roofMat);
+      cap.position.set(tx, 15.2, tz);
+      castleGroup.add(cap);
+
+      // Glowing Warm Castle Windows
+      const winRing = new THREE.Mesh(new THREE.CylinderGeometry(3.05, 3.05, 1.2, 8), matWarmWindow);
+      winRing.position.set(tx, 9.5, tz);
+      castleGroup.add(winRing);
+    });
+
+    // Castle Main Clock Tower
+    const mainTower = new THREE.Mesh(new THREE.BoxGeometry(4.4, 17, 4.4), wallMat);
+    mainTower.position.set(0, 8.5, -12.5);
+    castleGroup.add(mainTower);
+    const mainSpire = new THREE.Mesh(new THREE.ConeGeometry(3.4, 6.5, 4), matNeonPink);
+    mainSpire.rotation.y = Math.PI / 4;
+    mainSpire.position.set(0, 20.2, -12.5);
+    castleGroup.add(mainSpire);
+
+    // Castle Park (Zámocká záhrada) — Iconic Plane Trees (Platany)
+    const treeCrownMat = new THREE.MeshStandardMaterial({ color: 0x3b185f, emissive: 0x240b3d, roughness: 0.8 });
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x2b1726 });
+    for (let i = 0; i < 26; i++) {
+      const angle = (i / 26) * Math.PI * 2;
+      const rad = 22 + (i % 4) * 7;
+      const tx = Math.cos(angle) * rad;
+      const tz = Math.sin(angle) * rad;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 3.2, 6), treeTrunkMat);
+      trunk.position.set(tx, 0.5, tz);
+      const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(2.6 + (i % 3) * 0.7, 1), treeCrownMat);
+      crown.position.set(tx, 3.4, tz);
+      castleGroup.add(trunk, crown);
+    }
+
+    // --- 3C. LANDMARK 3: CESTNÝ A ŽELEZNIČNÝ MOST CEZ VÁH (Hlohovec Váh Bridges) ---
+    function buildVahBridge(zPos, isRailway = false) {
+      const bridgeGroup = new THREE.Group();
+      bridgeGroup.position.set(-48, 0, zPos);
+      worldGroup.add(bridgeGroup);
+
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(92, 1.4, isRailway ? 5.5 : 8.5),
+        new THREE.MeshStandardMaterial({ color: 0x251a42, roughness: 0.5, metalness: 0.6 })
+      );
+      deck.position.y = 7.2;
+      bridgeGroup.add(deck);
+
+      // Concrete Pillars in River
+      [-22, 0, 22].forEach(px => {
+        const pillar = new THREE.Mesh(
+          new THREE.BoxGeometry(2.4, 7.5, isRailway ? 4.5 : 7),
+          new THREE.MeshStandardMaterial({ color: 0x352959 })
+        );
+        pillar.position.set(px, 3.7, 0);
+        bridgeGroup.add(pillar);
+      });
+
+      // Glowing Vice-City Neon Arches & Trusses
+      const archMat = isRailway ? matNeonPurple : matNeonCyan;
+      [-2.8, 2.8].forEach(zOff => {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(92, 0.45, 0.35), archMat);
+        rail.position.set(0, 8.2, zOff);
+        bridgeGroup.add(rail);
+
+        // Arch span over main river channel
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(-24, 7.8, zOff),
+          new THREE.Vector3(-12, 15.5, zOff),
+          new THREE.Vector3(0, 18.2, zOff),
+          new THREE.Vector3(12, 15.5, zOff),
+          new THREE.Vector3(24, 7.8, zOff)
+        ]);
+        const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.35, 8, false);
+        bridgeGroup.add(new THREE.Mesh(tubeGeo, isRailway ? matNeonPink : matNeonCyan));
+      });
+    }
+    buildVahBridge(18, false);  // Main road bridge (Cestný most)
+    buildVahBridge(-12, true);  // Railway bridge (Železničný most)
+
+    // --- 3D. LANDMARK 4: VYSIELAČ DUBNÍK & VYHLIADKA ŠIANEC ---
+    const dubnikGroup = new THREE.Group();
+    dubnikGroup.position.set(135, 51, 145);
+    worldGroup.add(dubnikGroup);
+
+    // Tall Red-and-White Lattice TV Transmitter Tower (Vysielač Dubník)
+    const towerHeight = 68;
+    const segments = 10;
+    const segH = towerHeight / segments;
+    for (let i = 0; i < segments; i++) {
+      const rBot = 3.2 * (1 - i / (segments + 2));
+      const rTop = 3.2 * (1 - (i + 1) / (segments + 2));
+      const segMat = new THREE.MeshStandardMaterial({
+        color: i % 2 === 0 ? 0xff2a55 : 0xf4f4f8,
+        emissive: i % 2 === 0 ? 0x660018 : 0x111122,
+        wireframe: i < 7
+      });
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, segH, 4), segMat);
+      seg.position.y = i * segH + segH / 2;
+      dubnikGroup.add(seg);
+    }
+    // Blinking Aviation Beacon at top
+    const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 12), matNeonPink);
+    beaconMesh.position.y = towerHeight + 1.2;
+    dubnikGroup.add(beaconMesh);
+
+    // Šianec Viewpoint Platform
+    const sianecDeck = new THREE.Mesh(new THREE.BoxGeometry(14, 1.5, 10), matNeonCyan);
+    sianecDeck.position.set(-22, -16, -24);
+    dubnikGroup.add(sianecDeck);
+
+    // --- 3E. LANDMARK 5: NÁMESTIE SV. MICHALA (St. Michael's Square & Church) ---
+    const squareGroup = new THREE.Group();
+    squareGroup.position.set(22, 0.3, 14);
+    worldGroup.add(squareGroup);
+
+    // Illuminated Town Square Plaza
+    const plaza = new THREE.Mesh(
+      new THREE.BoxGeometry(36, 0.4, 48),
+      new THREE.MeshStandardMaterial({ color: 0x241547, roughness: 0.4 })
+    );
+    squareGroup.add(plaza);
+
+    const plazaBorder = new THREE.Mesh(new THREE.BoxGeometry(36.8, 0.45, 48.8), matNeonPurple);
+    plazaBorder.position.y = -0.05;
+    squareGroup.add(plazaBorder);
+
+    // Kostol sv. Michala Archanjela (Church of St. Michael)
+    const churchNave = new THREE.Mesh(
+      new THREE.BoxGeometry(10, 11, 20),
+      new THREE.MeshStandardMaterial({ color: 0xe8d5c8, roughness: 0.65 })
+    );
+    churchNave.position.set(0, 5.5, -4);
+    squareGroup.add(churchNave);
+
+    const churchRoof = new THREE.Mesh(new THREE.ConeGeometry(7.8, 5, 4), roofMat);
+    churchRoof.rotation.y = Math.PI / 4;
+    churchRoof.scale.set(1, 1, 1.9);
+    churchRoof.position.set(0, 13.5, -4);
+    squareGroup.add(churchRoof);
+
+    // Tall Church Bell Tower & Spire
+    const churchTower = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 22, 5.2),
+      new THREE.MeshStandardMaterial({ color: 0xf5e6da })
+    );
+    churchTower.position.set(0, 11, 7.5);
+    squareGroup.add(churchTower);
+
+    const churchSpire = new THREE.Mesh(new THREE.ConeGeometry(3.8, 12, 4), matNeonCyan);
+    churchSpire.rotation.y = Math.PI / 4;
+    churchSpire.position.set(0, 28, 7.5);
+    squareGroup.add(churchSpire);
+
+    // Kaplnka sv. Anny (Chapel of St. Anne)
+    const chapelBody = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.4, 7.5, 8), wallMat);
+    chapelBody.position.set(-9, 3.8, 13);
+    const chapelDome = new THREE.Mesh(new THREE.SphereGeometry(3.4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), matNeonPink);
+    chapelDome.position.set(-9, 7.5, 13);
+    squareGroup.add(chapelBody, chapelDome);
+
+    // Drone Light Show Formation above Námestie sv. Michala
+    const droneSwarmGroup = new THREE.Group();
+    droneSwarmGroup.position.set(22, 42, 14);
+    worldGroup.add(droneSwarmGroup);
+    const droneDots = [];
+    for (let i = 0; i < 42; i++) {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 6, 6),
+        i % 2 === 0 ? matNeonCyan : matNeonPink
+      );
+      const t = (i / 42) * Math.PI * 2;
+      // Heart / Crown shape in the night sky
+      const hx = 12 * Math.pow(Math.sin(t), 3);
+      const hy = 9 * Math.cos(t) - 3.5 * Math.cos(2 * t) - 1.5 * Math.cos(3 * t);
+      dot.position.set(hx, hy, (i % 3 - 1) * 1.8);
+      droneSwarmGroup.add(dot);
+      droneDots.push(dot);
+    }
+
+    // --- 3F. LANDMARK 6: HVEZDÁREŇ A PLANETÁRIUM M. R. ŠTEFÁNIKA ---
+    const obsGroup = new THREE.Group();
+    obsGroup.position.set(125, 31.5, -45);
+    worldGroup.add(obsGroup);
+
+    const obsBase = new THREE.Mesh(
+      new THREE.BoxGeometry(22, 6.5, 14),
+      new THREE.MeshStandardMaterial({ color: 0xf0f4ff, roughness: 0.4 })
+    );
+    obsBase.position.y = 3.25;
+    obsGroup.add(obsBase);
+
+    // Main White Astronomical Dome + Planetarium Dome
+    const dome1 = new THREE.Mesh(
+      new THREE.SphereGeometry(5.5, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x1e2c59, roughness: 0.25 })
+    );
+    dome1.position.set(-4, 6.5, 0);
+    obsGroup.add(dome1);
+
+    const dome2 = new THREE.Mesh(
+      new THREE.SphereGeometry(3.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x2b1854, roughness: 0.25 })
+    );
+    dome2.position.set(6.5, 6.5, 1.5);
+    obsGroup.add(dome2);
+
+    // Telescope Sky Laser Beam shooting from Observatory Dome
+    const laserGeo = new THREE.CylinderGeometry(0.25, 0.85, 240, 12, 1, true);
+    const laserMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.34,
+      side: THREE.DoubleSide
+    });
+    const laserBeam = new THREE.Mesh(laserGeo, laserMat);
+    laserBeam.position.set(-4, 126, 0);
+    laserBeam.rotation.z = 0.14;
+    obsGroup.add(laserBeam);
+
+    // --- 3G. LANDMARK 7: FRAŠTACKÉ VINOHRADY (Terraced Vineyards) ---
+    const vineyardGroup = new THREE.Group();
+    vineyardGroup.position.set(132, 14, -145);
+    worldGroup.add(vineyardGroup);
+
+    const vineRowMat = new THREE.MeshStandardMaterial({
+      color: 0x431c66,
+      emissive: 0x2b0a3d,
+      roughness: 0.8
+    });
+    for (let r = 0; r < 14; r++) {
+      const row = new THREE.Mesh(new THREE.BoxGeometry(58, 1.3, 1.4), vineRowMat);
+      row.position.set(0, r * 1.4, -28 + r * 4.2);
+      row.rotation.y = 0.12;
+      vineyardGroup.add(row);
+    }
+
+    // --- 3H. HLOHOVEC URBAN TOWN BLOCKS & NEON STREETS ---
+    const buildingGroup = new THREE.Group();
+    worldGroup.add(buildingGroup);
+
+    const bldgPalette = [0x1c1038, 0x261447, 0x150c2e, 0x2e1754];
+    for (let i = 0; i < 115; i++) {
+      const bx = -12 + (i % 11) * 9.5 + (Math.sin(i * 3.1) * 2.2);
+      const bz = -95 + Math.floor(i / 11) * 16 + (Math.cos(i * 2.4) * 2.5);
+
+      // Keep clear of St. Michael's Square, Castle hill & the kruháč
+      if (Math.hypot(bx - 22, bz - 14) < 28) continue;
+      if (Math.hypot(bx - 35, bz - 92) < 42) continue;
+      if (Math.hypot(bx - 40, bz + 30) < 30) continue;
+
+      const bw = 4.2 + (i % 4) * 1.4;
+      const bd = 4.2 + ((i + 2) % 4) * 1.3;
+      const bh = 5 + ((i * 7) % 16);
+
+      const bMat = new THREE.MeshStandardMaterial({
+        color: bldgPalette[i % bldgPalette.length],
+        roughness: 0.65
+      });
+      const bMesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), bMat);
+      bMesh.position.set(bx, bh / 2, bz);
+      buildingGroup.add(bMesh);
+
+      // Neon Roof Trim on select buildings
+      if (i % 4 === 0) {
+        const trim = new THREE.Mesh(
+          new THREE.BoxGeometry(bw + 0.25, 0.35, bd + 0.25),
+          i % 8 === 0 ? matNeonPink : matNeonCyan
+        );
+        trim.position.set(bx, bh + 0.15, bz);
+        buildingGroup.add(trim);
+      }
+      // Lit Windows band
+      if (i % 2 === 0 && bh > 7) {
+        const winBand = new THREE.Mesh(
+          new THREE.BoxGeometry(bw + 0.12, 0.7, bd + 0.12),
+          matWarmWindow
+        );
+        winBand.position.set(bx, bh * 0.65, bz);
+        buildingGroup.add(winBand);
+      }
+    }
+
+    /**
+     * ============================================================================
+     * 4. DYNAMIC MOVING ACTORS (Speedboat, Bridge Cars, Helicopter, Rally Car)
+     * ============================================================================
+     */
+    // 4A. Speedboat on Váh River
+    const boatGroup = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(1.5, 6.2, 4), matWhiteGlow);
+    hull.rotation.x = Math.PI / 2;
+    hull.rotation.y = Math.PI / 4;
+    const boatNeon = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 5.4), matNeonCyan);
+    boatGroup.add(hull, boatNeon);
+    boatGroup.position.set(-48, 0.6, 120);
+    worldGroup.add(boatGroup);
+
+    // 4B. Police & Sports Cars on Váh Road Bridge
+    const sportsCar = new THREE.Group();
+    const carBody = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.1, 1.8), matNeonPink);
+    const carCabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.8, 1.5), matWhiteGlow);
+    carCabin.position.set(-0.2, 0.85, 0);
+    sportsCar.add(carBody, carCabin);
+    sportsCar.position.set(-85, 8.5, 16.5);
+    worldGroup.add(sportsCar);
+
+    const policeCar = new THREE.Group();
+    const polBody = new THREE.Mesh(new THREE.BoxGeometry(3.9, 1.2, 1.85), new THREE.MeshStandardMaterial({ color: 0x111122 }));
+    const sirenRed = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.35, 0.7), matNeonPink);
+    sirenRed.position.set(0, 0.8, -0.4);
+    const sirenBlue = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.35, 0.7), matNeonCyan);
+    sirenBlue.position.set(0, 0.8, 0.4);
+    policeCar.add(polBody, sirenRed, sirenBlue);
+    policeCar.position.set(-96, 8.5, 16.5);
+    worldGroup.add(policeCar);
+
+    // 4C. Helicopter flying past Dubník Transmitter
+    const heliGroup = new THREE.Group();
+    const heliFuselage = new THREE.Mesh(new THREE.SphereGeometry(2.1, 12, 10), new THREE.MeshStandardMaterial({ color: 0x0d061f }));
+    heliFuselage.scale.set(1.9, 0.9, 0.85);
+    const heliTail = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.45, 0.45), new THREE.MeshStandardMaterial({ color: 0x0d061f }));
+    heliTail.position.set(-4.2, 0.3, 0);
+    const mainRotor = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.12, 0.45), matNeonCyan);
+    mainRotor.position.set(0, 1.9, 0);
+    heliGroup.add(heliFuselage, heliTail, mainRotor);
+    heliGroup.position.set(110, 92, 130);
+    worldGroup.add(heliGroup);
+
+    // 4D. Off-Road Rally Car drifting through Fraštacké vinohrady
+    const rallyCar = new THREE.Group();
+    const rallyShell = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.25, 1.9), new THREE.MeshStandardMaterial({ color: 0xff8c42, emissive: 0x551800 }));
+    const rallyStripe = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.35, 1.95), matNeonCyan);
+    rallyCar.add(rallyShell, rallyStripe);
+    rallyCar.position.set(112, 22, -135);
+    worldGroup.add(rallyCar);
+
+    // 4E. KRUHÁČ — signaturená scéna hry: kruhový objazd s premávkou
+    const kruhac = new THREE.Group();
+    kruhac.position.set(40, 0.35, -30);
+    worldGroup.add(kruhac);
+
+    const asphalt = new THREE.Mesh(
+      new THREE.RingGeometry(13.5, 23, 64),
+      new THREE.MeshStandardMaterial({ color: 0x1a1230, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide })
+    );
+    asphalt.rotation.x = -Math.PI / 2;
+    kruhac.add(asphalt);
+
+    const island = new THREE.Mesh(
+      new THREE.CircleGeometry(13.5, 64),
+      new THREE.MeshStandardMaterial({ color: 0x1d2b24, roughness: 0.9 })
+    );
+    island.rotation.x = -Math.PI / 2;
+    island.position.y = 0.02;
+    kruhac.add(island);
+
+    // Neonové obrubníky
+    [13.4, 23.1].forEach((r, i) => {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.16, 8, 80), i === 0 ? matNeonPink : matNeonCyan);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.18;
+      kruhac.add(ring);
+    });
+
+    // Socha v strede ostrovčeka
+    const monument = new THREE.Mesh(new THREE.TorusKnotGeometry(3.2, 0.75, 96, 12), matNeonPurple);
+    monument.position.y = 5.5;
+    kruhac.add(monument);
+    const monumentBase = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 2, 8), new THREE.MeshStandardMaterial({ color: 0x352959 }));
+    monumentBase.position.y = 1;
+    kruhac.add(monumentBase);
+
+    // Platany na ostrovčeku
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const tx = Math.cos(a) * 10, tz = Math.sin(a) * 10;
+      const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(1.5, 1), treeCrownMat);
+      crown.position.set(tx, 3.2, tz);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.6, 6), treeTrunkMat);
+      trunk.position.set(tx, 1.4, tz);
+      kruhac.add(crown, trunk);
+    }
+
+    // Autá v kolóne — Octavia "hrdinom" + civilisti
+    function makeKCar(colorMat) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.0, 1.85), colorMat);
+      body.position.y = 0.85;
+      const cabin = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 0.75, 1.55),
+        new THREE.MeshStandardMaterial({ color: 0x0c1428, metalness: 0.4, roughness: 0.3 })
+      );
+      cabin.position.set(-0.15, 1.65, 0);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 1.3), matWarmWindow);
+      head.position.set(2.1, 0.95, 0);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 1.3), matNeonPink);
+      tail.position.set(-2.1, 0.95, 0);
+      g.add(body, cabin, head, tail);
+      return g;
+    }
+    const trafficCars = [
+      makeKCar(new THREE.MeshStandardMaterial({ color: 0x2f7fd1, metalness: 0.35, roughness: 0.35, emissive: 0x0a1c33 })),
+      makeKCar(new THREE.MeshStandardMaterial({ color: 0xd8dde6, metalness: 0.3, roughness: 0.4 })),
+      makeKCar(new THREE.MeshStandardMaterial({ color: 0x9b1b3a, metalness: 0.3, roughness: 0.45 })),
+      makeKCar(new THREE.MeshStandardMaterial({ color: 0x1c1c28, metalness: 0.4, roughness: 0.4 })),
+    ];
+    trafficCars.forEach(c => worldGroup.add(c));
+
+    // 4F. PEŠO & PETER — chodec a zaparkovaná Octavia pri námestí
+    const pedestrian = new THREE.Group();
+    const pedTorso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.42, 1.1, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a6ea5, emissive: 0x0d1b2e })
+    );
+    pedTorso.position.y = 1.25;
+    const pedHead = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), new THREE.MeshStandardMaterial({ color: 0xd9a07a }));
+    pedHead.position.y = 2.35;
+    const pedGlow = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.85, 24), matNeonCyan);
+    pedGlow.rotation.x = -Math.PI / 2;
+    pedGlow.position.y = 0.04;
+    pedestrian.add(pedTorso, pedHead, pedGlow);
+    pedestrian.position.set(30, 0.5, 34);
+    worldGroup.add(pedestrian);
+
+    // --- Atmospheric Neon Dust / Spark Particles ---
+    const particleCount = 650;
+    const partGeo = new THREE.BufferGeometry();
+    const partPositions = new Float32Array(particleCount * 3);
+    const partColors = new Float32Array(particleCount * 3);
+    const cPink = new THREE.Color(0xff2a85);
+    const cCyan = new THREE.Color(0x00f0ff);
+    const cGold = new THREE.Color(0xffb703);
+
+    for (let i = 0; i < particleCount; i++) {
+      partPositions[i * 3] = (Math.random() - 0.5) * 440;
+      partPositions[i * 3 + 1] = 2 + Math.random() * 115;
+      partPositions[i * 3 + 2] = (Math.random() - 0.5) * 440;
+      const col = i % 3 === 0 ? cPink : (i % 3 === 1 ? cCyan : cGold);
+      partColors[i * 3] = col.r;
+      partColors[i * 3 + 1] = col.g;
+      partColors[i * 3 + 2] = col.b;
+    }
+    partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+    partGeo.setAttribute('color', new THREE.BufferAttribute(partColors, 3));
+    const particles = new THREE.Points(partGeo, new THREE.PointsMaterial({
+      size: 1.35,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.78
+    }));
+    scene.add(particles);
+
+    /**
+     * ============================================================================
+     * 5. 44-SECOND CINEMATIC TRAILER CHOREOGRAPHY (9 HLOHOVEC SCENES)
+     * ============================================================================
+     */
+    const TRAILER_DURATION = 44.0;
+    const SCENES = [
+      {
+        id: 1,
+        start: 0.0,
+        end: 5.0,
+        short: 'Váh Intro',
+        tag: 'SCÉNA 01 / 09',
+        title: 'ÚDOLIE VÁHU & PANORÁMA MESTA',
+        sub: 'Hlohovec, Trnavský kraj • Slnko ide nadol, tvoj útek začína',
+        showLogo: true,
+        camStart: new THREE.Vector3(-52, 26, 155),
+        camEnd: new THREE.Vector3(-25, 34, 98),
+        lookStart: new THREE.Vector3(-12, 16, 20),
+        lookEnd: new THREE.Vector3(15, 22, 35)
+      },
+      {
+        id: 2,
+        start: 5.0,
+        end: 10.0,
+        short: 'Kruháč',
+        tag: 'SCÉNA 02 / 09',
+        title: 'KRUHÁČ — ŠTART V KOLÓNE',
+        sub: 'Zapichnutý v premávke • 1.9 TDI pod kapotou • len plyn a volant',
+        showLogo: false,
+        camStart: new THREE.Vector3(6, 22, -74),
+        camEnd: new THREE.Vector3(78, 26, 4),
+        lookStart: new THREE.Vector3(40, 4, -30),
+        lookEnd: new THREE.Vector3(40, 5, -30)
+      },
+      {
+        id: 3,
+        start: 10.0,
+        end: 15.0,
+        short: 'Zámok',
+        tag: 'SCÉNA 03 / 09',
+        title: 'HLOHOVSKÝ ZÁMOK & ZÁMOCKÁ ZÁHRADA',
+        sub: 'Renesančno-barokový kaštieľ a storočné platany v zlatej hodinke',
+        showLogo: false,
+        camStart: new THREE.Vector3(-12, 42, 134),
+        camEnd: new THREE.Vector3(72, 38, 122),
+        lookStart: new THREE.Vector3(35, 27, 92),
+        lookEnd: new THREE.Vector3(35, 26, 92)
+      },
+      {
+        id: 4,
+        start: 15.0,
+        end: 20.0,
+        short: 'Mosty Váh',
+        tag: 'SCÉNA 04 / 09',
+        title: 'CESTNÝ A ŽELEZNIČNÝ MOST CEZ VÁH',
+        sub: 'Nočná naháňačka pri rieke • neonové oblúky nad hladinou',
+        showLogo: false,
+        camStart: new THREE.Vector3(-48, 5.2, 54),
+        camEnd: new THREE.Vector3(-34, 13.5, 4),
+        lookStart: new THREE.Vector3(-48, 8.5, 18),
+        lookEnd: new THREE.Vector3(-48, 9.0, -12)
+      },
+      {
+        id: 5,
+        start: 20.0,
+        end: 24.0,
+        short: 'Dubník',
+        tag: 'SCÉNA 05 / 09',
+        title: 'VYSIELAČ DUBNÍK & VYHLIADKA ŠIANEC',
+        sub: 'Dominanta nad mestom v purpurovom súmraku • vrtuľník v oblohe',
+        showLogo: false,
+        camStart: new THREE.Vector3(82, 86, 182),
+        camEnd: new THREE.Vector3(168, 98, 108),
+        lookStart: new THREE.Vector3(135, 82, 145),
+        lookEnd: new THREE.Vector3(120, 74, 135)
+      },
+      {
+        id: 6,
+        start: 24.0,
+        end: 28.0,
+        short: 'Námestie',
+        tag: 'SCÉNA 06 / 09',
+        title: 'NÁMESTIE SV. MICHALA & KOSTOL',
+        sub: 'Kostol sv. Michala, Kaplnka sv. Anny a svetelná dronová šou',
+        showLogo: false,
+        camStart: new THREE.Vector3(-8, 22, 46),
+        camEnd: new THREE.Vector3(52, 26, -12),
+        lookStart: new THREE.Vector3(22, 14, 14),
+        lookEnd: new THREE.Vector3(22, 18, 14)
+      },
+      {
+        id: 7,
+        start: 28.0,
+        end: 33.0,
+        short: 'Pešo & Peter',
+        tag: 'SCÉNA 07 / 09',
+        title: 'PEŠO V MESTE · PETER & ZBRANE',
+        sub: 'Vystúp z auta, pokec s Petrom, vezmi zbraň — mesto má aj temnú stránku',
+        showLogo: false,
+        camStart: new THREE.Vector3(2, 8, 58),
+        camEnd: new THREE.Vector3(52, 11, 24),
+        lookStart: new THREE.Vector3(30, 2, 34),
+        lookEnd: new THREE.Vector3(24, 3, 20)
+      },
+      {
+        id: 8,
+        start: 33.0,
+        end: 38.0,
+        short: 'Hvezdáreň & vinohrady',
+        tag: 'SCÉNA 08 / 09',
+        title: 'HVEZDÁREŇ & FRAŠTACKÉ VINOHRADY',
+        sub: 'Kupoly M. R. Štefánika pod oblohou • drift terasami viníc',
+        showLogo: false,
+        camStart: new THREE.Vector3(88, 46, -24),
+        camEnd: new THREE.Vector3(156, 34, -162),
+        lookStart: new THREE.Vector3(125, 38, -45),
+        lookEnd: new THREE.Vector3(136, 23, -148)
+      },
+      {
+        id: 9,
+        start: 38.0,
+        end: 44.0,
+        short: 'Finále',
+        tag: 'SCÉNA 09 / 09',
+        title: 'ÚTEK Z HLOHOVCA — FINÁLE',
+        sub: 'Celá panoráma kráľovského mesta na Váhu • KRUHÁČ SIMULATOR',
+        showLogo: true,
+        camStart: new THREE.Vector3(15, 58, -45),
+        camEnd: new THREE.Vector3(-42, 108, 195),
+        lookStart: new THREE.Vector3(10, 22, 35),
+        lookEnd: new THREE.Vector3(18, 24, 48)
+      }
+    ];
+
+    /**
+     * ============================================================================
+     * 6. UI STATE, TIMELINE CONTROLS & FREE-ROAM WASD DRONE FLIGHT
+     * ============================================================================
+     */
+    let trailerTime = 0;
+    let isTrailerPlaying = false;
+    let isFreeRoam = false;
+    let forceLogo = null; // null = auto by scene, true/false = manual override
+    let currentSceneIdx = -1;
+
+    const elLogo = document.getElementById('gta-logo-overlay');
+    const elSceneTag = document.getElementById('scene-tag');
+    const elSceneTitle = document.getElementById('scene-title');
+    const elSceneSub = document.getElementById('scene-sub');
+    const elTimeDisplay = document.getElementById('time-display');
+    const elTimelineFill = document.getElementById('timeline-fill');
+    const elTimelineTrack = document.getElementById('timeline-track');
+    const elQuickNav = document.getElementById('chapter-quick-nav');
+    const elBtnPlayPause = document.getElementById('btn-play-pause');
+    const elBtnCameraMode = document.getElementById('btn-camera-mode');
+    const elModeIndicator = document.getElementById('mode-indicator');
+    const elStartOverlay = document.getElementById('start-overlay');
+
+    // Build Timeline Chapter Dots & Quick Nav Buttons
+    const chapterDots = [];
+    SCENES.forEach((sc, idx) => {
+      const pct = (sc.start / TRAILER_DURATION) * 100;
+      const dot = document.createElement('div');
+      dot.className = 'chapter-dot';
+      dot.style.left = `${pct}%`;
+      dot.title = `${sc.short} (${formatTime(sc.start)})`;
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        jumpToTime(sc.start + 0.05);
+      });
+      elTimelineTrack.appendChild(dot);
+      chapterDots.push(dot);
+
+      const chip = document.createElement('button');
+      chip.className = 'px-2 py-0.5 rounded bg-white/10 hover:bg-pink-500/40 text-white/80 hover:text-white transition cursor-pointer';
+      chip.textContent = `${idx + 1}. ${sc.short}`;
+      chip.addEventListener('click', () => jumpToTime(sc.start + 0.05));
+      elQuickNav.appendChild(chip);
+    });
+
+    function formatTime(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      return `${mm}:${ss}`;
+    }
+
+    function jumpToTime(t) {
+      trailerTime = Math.max(0, Math.min(TRAILER_DURATION - 0.05, t));
+      if (isFreeRoam) setCameraMode(false);
+      if (!isTrailerPlaying) {
+        isTrailerPlaying = true;
+        elBtnPlayPause.textContent = '❚❚ Pauza';
+        audioEngine.start();
+      }
+      updateSceneUI();
+    }
+
+    function setCameraMode(freeRoam) {
+      isFreeRoam = freeRoam;
+      controls.enabled = freeRoam;
+      if (freeRoam) {
+        controls.target.set(18, 18, 35);
+        controls.update();
+        elBtnCameraMode.textContent = 'Späť do Trailera';
+        elModeIndicator.textContent = '● VOĽNÝ LET DRONOM (WASD + MYŠ)';
+        elSceneTag.textContent = 'VOĽNÝ REŽIM DRONU';
+        elSceneTitle.textContent = 'PRESKÚMAJ HLOHOVEC 3D';
+        elSceneSub.textContent = 'Ťahaj myšou pre rozhľad • Koliesko = zoom • WASD / Šípky = pohyb';
+      } else {
+        elBtnCameraMode.textContent = 'Voľný Dron (WASD)';
+        elModeIndicator.textContent = '● AUTO TRAILER DRON';
+        currentSceneIdx = -1;
+        updateSceneUI();
+      }
+    }
+
+    function updateSceneUI() {
+      const activeIdx = SCENES.findIndex(s => trailerTime >= s.start && trailerTime < s.end);
+      const sc = SCENES[activeIdx >= 0 ? activeIdx : SCENES.length - 1];
+
+      if (activeIdx !== currentSceneIdx && !isFreeRoam) {
+        currentSceneIdx = activeIdx;
+        elSceneTag.textContent = sc.tag;
+        elSceneTitle.textContent = sc.title;
+        elSceneSub.textContent = sc.sub;
+
+        chapterDots.forEach((d, i) => d.classList.toggle('active', i === activeIdx));
+      }
+
+      const shouldShowLogo = forceLogo !== null ? forceLogo : (!isFreeRoam && sc.showLogo);
+      elLogo.classList.toggle('visible', shouldShowLogo);
+
+      const pct = (trailerTime / TRAILER_DURATION) * 100;
+      elTimelineFill.style.width = `${pct}%`;
+      elTimeDisplay.textContent = `${formatTime(trailerTime)} / 00:44`;
+    }
+
+    // Event Listeners
+    document.getElementById('btn-start-trailer').addEventListener('click', () => {
+      elStartOverlay.classList.add('hidden-splash');
+      trailerTime = 0;
+      isTrailerPlaying = true;
+      setCameraMode(false);
+      audioEngine.start();
+    });
+
+    document.getElementById('btn-start-freeroam').addEventListener('click', () => {
+      elStartOverlay.classList.add('hidden-splash');
+      isTrailerPlaying = false;
+      elBtnPlayPause.textContent = '▶ Prehrať';
+      setCameraMode(true);
+      audioEngine.start();
+    });
+
+    elBtnPlayPause.addEventListener('click', () => {
+      if (isFreeRoam) {
+        setCameraMode(false);
+        isTrailerPlaying = true;
+        elBtnPlayPause.textContent = '❚❚ Pauza';
+        audioEngine.start();
+        return;
+      }
+      isTrailerPlaying = !isTrailerPlaying;
+      elBtnPlayPause.textContent = isTrailerPlaying ? '❚❚ Pauza' : '▶ Prehrať';
+      if (isTrailerPlaying) audioEngine.start();
+      else audioEngine.stop();
+    });
+
+    elBtnCameraMode.addEventListener('click', () => {
+      setCameraMode(!isFreeRoam);
+    });
+
+    document.getElementById('btn-logo-toggle').addEventListener('click', () => {
+      if (forceLogo === null) forceLogo = !elLogo.classList.contains('visible');
+      else forceLogo = !forceLogo;
+      updateSceneUI();
+    });
+
+    const elBtnAudio = document.getElementById('btn-audio');
+    elBtnAudio.addEventListener('click', () => {
+      audioEngine.start();
+      const on = audioEngine.toggleMute();
+      elBtnAudio.textContent = on ? '🔊 Synthwave' : '🔇 Stlmené';
+    });
+
+    document.getElementById('btn-hide-hud').addEventListener('click', () => {
+      document.body.classList.toggle('hud-hidden');
+    });
+
+    elTimelineTrack.addEventListener('click', (e) => {
+      const rect = elTimelineTrack.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      jumpToTime(ratio * TRAILER_DURATION);
+    });
+
+    // Keyboard Controls (WASD / Arrows for Free-Roam + H for HUD + Space for Play/Pause)
+    const keysPressed = {};
+    window.addEventListener('keydown', (e) => {
+      keysPressed[e.code] = true;
+      if (e.code === 'KeyH') {
+        document.body.classList.toggle('hud-hidden');
+      } else if (e.code === 'Space' && elStartOverlay.classList.contains('hidden-splash')) {
+        e.preventDefault();
+        elBtnPlayPause.click();
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      keysPressed[e.code] = false;
+    });
+
+    function handleFreeRoamMovement(dt) {
+      if (!isFreeRoam) return;
+      const speed = (keysPressed['ShiftLeft'] ? 95 : 48) * dt;
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
+
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+      if (keysPressed['KeyW'] || keysPressed['ArrowUp']) {
+        camera.position.addScaledVector(forward, speed);
+        controls.target.addScaledVector(forward, speed);
+      }
+      if (keysPressed['KeyS'] || keysPressed['ArrowDown']) {
+        camera.position.addScaledVector(forward, -speed);
+        controls.target.addScaledVector(forward, -speed);
+      }
+      if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) {
+        camera.position.addScaledVector(right, -speed);
+        controls.target.addScaledVector(right, -speed);
+      }
+      if (keysPressed['KeyD'] || keysPressed['ArrowRight']) {
+        camera.position.addScaledVector(right, speed);
+        controls.target.addScaledVector(right, speed);
+      }
+      if (keysPressed['KeyE']) {
+        camera.position.y += speed * 0.7;
+        controls.target.y += speed * 0.7;
+      }
+      if (keysPressed['KeyQ']) {
+        camera.position.y = Math.max(4, camera.position.y - speed * 0.7);
+        controls.target.y = Math.max(2, controls.target.y - speed * 0.7);
+      }
+      controls.update();
+    }
+
+    // Resize Handler
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /**
+     * ============================================================================
+     * 7. MAIN ANIMATION LOOP
+     * ============================================================================
+     */
+    const clock = new THREE.Clock();
+    const tempCamPos = new THREE.Vector3();
+    const tempLookAt = new THREE.Vector3();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const elapsed = clock.getElapsedTime();
+
+      // 1. Animate Hlohovec World Vehicles & Beacons
+      // Speedboat cruising along Váh river
+      boatGroup.position.z -= 26 * dt;
+      if (boatGroup.position.z < -160) boatGroup.position.z = 160;
+      boatGroup.position.x = -48 + Math.sin(boatGroup.position.z * 0.008) * 18;
+
+      // Sports Car & Police Car racing across Váh Road Bridge
+      sportsCar.position.x += 28 * dt;
+      if (sportsCar.position.x > 0) sportsCar.position.x = -95;
+      policeCar.position.x = sportsCar.position.x - 11;
+      sirenRed.visible = Math.floor(elapsed * 10) % 2 === 0;
+      sirenBlue.visible = !sirenRed.visible;
+
+      // Helicopter orbiting Dubník TV Tower
+      mainRotor.rotation.y += 22 * dt;
+      const heliAngle = elapsed * 0.45;
+      heliGroup.position.set(
+        135 + Math.cos(heliAngle) * 38,
+        92 + Math.sin(elapsed * 1.4) * 2.5,
+        145 + Math.sin(heliAngle) * 38
+      );
+      heliGroup.rotation.y = -heliAngle;
+
+      // Dubník Tower Beacon Pulse
+      const beaconScale = 0.8 + Math.sin(elapsed * 6) * 0.45;
+      beaconMesh.scale.setScalar(beaconScale);
+
+      // Drone Light Show gentle hover above Námestie sv. Michala
+      droneSwarmGroup.rotation.y = Math.sin(elapsed * 0.7) * 0.35;
+      droneSwarmGroup.position.y = 41 + Math.sin(elapsed * 1.6) * 1.4;
+
+      // Rally Car drifting through Fraštacké vinohrady
+      const driftT = elapsed * 0.9;
+      rallyCar.position.set(
+        132 + Math.sin(driftT) * 22,
+        21.5 + Math.cos(driftT) * 4.5,
+        -145 + Math.cos(driftT) * 16
+      );
+      rallyCar.rotation.y = -driftT + 0.35;
+
+      // Kruháč — monument sa točí, autá obiehajú ostrovček
+      monument.rotation.y += dt * 0.45;
+      monument.rotation.x += dt * 0.18;
+      trafficCars.forEach((c, i) => {
+        const a = elapsed * 0.42 + (i / trafficCars.length) * Math.PI * 2;
+        c.position.set(40 + Math.cos(a) * 18.5, 0.35, -30 + Math.sin(a) * 18.5);
+        c.rotation.y = -a - Math.PI / 2;
+      });
+
+      // Chodec pred námestím jemne dýcha a otáča hlavu
+      pedestrian.position.y = 0.5 + Math.sin(elapsed * 2) * 0.035;
+      pedHead.rotation.y = Math.sin(elapsed * 0.8) * 0.6;
+
+      // Subtle particle drift
+      particles.rotation.y = elapsed * 0.015;
+
+      // 2. Camera Choreography (Trailer Sequence vs. Free Drone)
+      if (!isFreeRoam) {
+        if (isTrailerPlaying) {
+          trailerTime += dt;
+          if (trailerTime >= TRAILER_DURATION) {
+            trailerTime = 0; // Loop trailer seamlessly
+          }
+        }
+        updateSceneUI();
+
+        const activeIdx = SCENES.findIndex(s => trailerTime >= s.start && trailerTime < s.end);
+        const sc = SCENES[activeIdx >= 0 ? activeIdx : SCENES.length - 1];
+        const rawProgress = (trailerTime - sc.start) / (sc.end - sc.start);
+        // Smooth ease-in-out curve for cinematic drone motion
+        const ease = rawProgress < 0.5
+          ? 2 * rawProgress * rawProgress
+          : 1 - Math.pow(-2 * rawProgress + 2, 2) / 2;
+
+        tempCamPos.lerpVectors(sc.camStart, sc.camEnd, ease);
+        // Subtle cinematic drone micro-float
+        tempCamPos.y += Math.sin(elapsed * 1.3) * 0.45;
+        camera.position.copy(tempCamPos);
+
+        tempLookAt.lerpVectors(sc.lookStart, sc.lookEnd, ease);
+        camera.lookAt(tempLookAt);
+      } else {
+        handleFreeRoamMovement(dt);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+      updateSceneUI();
+      animate();
+    };
+  </script>
+</body>
+</html>
