@@ -48,7 +48,7 @@ export function createPreloader() {
         slides[current].classList.remove('on');
         current = (current + 1) % slides.length;
         slides[current].classList.add('on');
-      }, 3200);
+      }, 2000);
     } catch { /* obrázky sú voliteľné */ }
   })();
 
