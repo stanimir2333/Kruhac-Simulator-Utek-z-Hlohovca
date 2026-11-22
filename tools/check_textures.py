@@ -6,7 +6,8 @@
 Kontroluje pre kazdy slot v index.html:
   * existenciu suboru
   * format a to, ci ho prehliadač vobec dekoduje
-  * power-of-two rozmery a limit 1024 (inak loader odmietne a pouzije fallback)
+  * power-of-two rozmery a limit 2048 (inak loader odmietne a pouzije fallback;
+    vacsie subory sa pri nacitani zmensuju, ale v repe nemaju co robit)
   * datovy typ: normalova mapa musi mat modru ~248 (tangent-space, +Y nahor),
     roughness musi byt bezfarebny a v 0..1
   * priemernu jasnost difuzii oproti fallbacku (teren nasobi farbou z
@@ -29,7 +30,7 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEXDIR = os.path.join(ROOT, "assets", "textures")
-MAXPX = 1024
+MAXPX = 2048   # desktop strop v textures.js (LOW_END zmenšuje na 1024 pri načítaní)
 
 # Subory, ktorych NEEXISTENCIA je zamerana (slot ide na proceduralny fallback).
 # (prazdne - zatial vsetky sloty v textures.js maju subor alebo su proceduralne
@@ -41,22 +42,35 @@ PROC_ONLY: set[str] = set()
 # Vacsia tolerancia = "tato textura je zamerne ina a viem, ze tak to chcem".
 SLOTS = {
     "road/asphalt_diffuse.jpg":     ("diffuse", 61.0),
-    "road/asphalt_normal.png":      ("normal",  None),
-    "road/asphalt_roughness.png":   ("rough",   None),
+    "road/asphalt_normal.jpg":      ("normal",  None),
+    "road/asphalt_roughness.jpg":   ("rough",   None),
+    "road/pave_diffuse.jpg":        ("diffuse", None),
+    "road/pave_normal.jpg":         ("normal",  None),
+    "road/pave_roughness.jpg":      ("rough",   None),
     "road/tiremark.png":            ("diffuse", None),
     "road/crosswalk.png":           ("diffuse", None),
     "terrain/grass_diffuse.jpg":    ("diffuse", 81.0),
-    "terrain/dirt_diffuse.png":     ("diffuse", 77.7),
-    "terrain/terrain_normal.png":   ("normal",  None),
-    "buildings/wall.png":           ("diffuse", None),
+    "terrain/grass_roughness.jpg":  ("rough",   None),
+    "terrain/dirt_diffuse.jpg":     ("diffuse", 77.7),
+    "terrain/dirt_normal.jpg":      ("normal",  None),
+    "terrain/dirt_roughness.jpg":   ("rough",   None),
+    "terrain/terrain_normal.jpg":   ("normal",  None),
+    "buildings/wall.jpg":           ("diffuse", None),
     # betón je zamerne tmavší než fallback (realne albedo), takže 30 % tolerancie
     "buildings/concrete_diffuse.jpg":  ("diffuse", 165.0, 30),
-    "buildings/concrete_normal.png":  ("normal",  None),
+    "buildings/concrete_normal.jpg":   ("normal",  None),
+    "buildings/concrete_roughness.jpg": ("rough",  None),
     "buildings/brick.jpg":          ("diffuse", 82.5),
-    "buildings/brick_normal.png":   ("normal",  None),
+    "buildings/brick_normal.jpg":   ("normal",  None),
+    "buildings/brick_roughness.jpg": ("rough",  None),
     "buildings/wood.png":           ("diffuse", None),
-    "buildings/wood_normal.png":    ("normal",  None),
-    "buildings/gravel.png":         ("diffuse", 120.0),
+    "buildings/wood_normal.jpg":    ("normal",  None),
+    "buildings/gravel.jpg":         ("diffuse", 120.0),
+    "buildings/gravel_normal.jpg":  ("normal",  None),
+    "buildings/gravel_roughness.jpg": ("rough", None),
+    "buildings/roof_tile.jpg":      ("diffuse", None),
+    "buildings/roof_tile_normal.jpg": ("normal", None),
+    "buildings/roof_tile_roughness.jpg": ("rough", None),
     "veg/shrubs.png":               ("diffuse", None),
 }
 

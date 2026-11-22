@@ -1,7 +1,7 @@
 # assets/textures — textúry hry
 
-Textúry sú **voliteľné**: každý slot si v `buildTextures()` (index.html) vytvorí
-procedurálnu `CanvasTexture` a až potom sa pokúsi načítať súbor z disku. Ak súbor
+Textúry sú **voliteľné**: každý slot si v `buildTextures()` (`src/world/textures.js`)
+vytvorí procedurálnu `CanvasTexture` a až potom sa pokúsi načítať súbor z disku. Ak súbor
 chýba, je pokazený alebo nemá power-of-two rozmery, ostane procedúra — hra nikdy
 nečierne, nikdy nespadne, build nikdy neblikne.
 
@@ -33,9 +33,10 @@ a anizotropiou.
 
 | pravidlo | hodnota |
 |---|---|
-| rozmery | **iba** 256 / 512 / 1024 na oboch stranách (power-of-two) |
+| rozmery | **iba** 256 / 512 / 1024 / 2048 na oboch stranách (power-of-two) |
+| strop | 2048 desktop; na mobil/Raspberry sa väčšie súbory pri načítaní zmenšujú na 1024 |
 | farebný priestor | `*_diffuse` = sRGB, `*_normal` / `*_roughness` = **lineárny** |
-| formát | ľubovoľný, ktorý prehliadač prečíta (PNG odporúčaný) |
+| formát | JPEG pre nepriehľadné mapy (q92; normály 4:2:2, drsnosť sivá), PNG len tam, kde treba alfa |
 | anizotropia | nastavuje sa z `renderer.capabilities.getMaxAnisotropy()` (16× desktop, 4× mobil) |
 | mipmapy | `generateMipmaps = true`, trilinear — nechaj ich zapnuté |
 
@@ -44,8 +45,11 @@ a anizotropiou.
 | súbor | slot | zdroj |
 |---|---|---|
 | `asphalt_diffuse.jpg` | `asphalt` | GTA SA kamenný asfalt: trhliny, zrno, opotrebovanie, tire tread — obsadiť bez akéhokoľvek dát, stačí prepísať rovným menom |
-| `asphalt_normal.png` | `asphaltN` | normálová mapa z výškového poľa (tzv. tire tread + trhlinky) |
-| `asphalt_roughness.png` | `asphaltR` | drsnosť (trhlinky 0,62, opotrebované jamky) |
+| `asphalt_normal.jpg` | `asphaltN` | normálová mapa z výškového poľa (tzv. tire tread + trhlinky) |
+| `asphalt_roughness.jpg` | `asphaltR` | drsnosť (trhlinky 0,62, opotrebované jamky) |
+| `pave_diffuse.jpg` | `pave` | betónové dlaždice chodníkov (8×8 na dlažbu 2,4 m) |
+| `pave_normal.jpg` | `paveN` | škáry a zaoblené hrany kociek |
+| `pave_roughness.jpg` | `paveR` | mokré škvrny hladšie, kocky matné |
 | `tiremark.png` | `tireMark` | opotrebovanie asfaltu — biele výstupky od pneumatíkov s radiacou alfa (inštancované v `decals.js`) |
 | `crosswalk.png` | `crosswalk` | biely crosswalk — štrajky perfekulárne na cestu (inštancované v `decals.js`) |
 
@@ -55,9 +59,12 @@ Regenerovanie cez `python3 tools/gen_gta_textures.py` (idempotentné).
 
 | súbor | slot | zdroj |
 |---|---|---|
-| `grass_diffuse.jpg` | `grass` | GTA SA trávnik: trstiny + kvetináče, holé pôdoky |
-| `dirt_diffuse.png` | `dirt` | nespevnené cesty (hlina, tire tracks, vedra) |
-| `terrain_normal.png` | `terrainN` | placeholder (nízkoamplitúdové zvlnenie, `normalScale` 0,35) |
+| `grass_diffuse.jpg` | `grass` | trávnik: steblá, suché fľaky, holá pôda, kvety |
+| `grass_roughness.jpg` | `grassR` | holé fľaky matnejšie, husté zhluky hladšie |
+| `terrain_normal.jpg` | `terrainN` | nízkoamplitúdové zvlnenie (`normalScale` 0,7) |
+| `dirt_diffuse.jpg` | `dirt` | nespevnené cesty (hlina, koľaje, kamienky) |
+| `dirt_normal.jpg` | `dirtN` | kamienky a koľaje |
+| `dirt_roughness.jpg` | `dirtR` | mokré koľaje hladšie, prach matný |
 
 ## veg/ — zelená vedľa ciest (`buildShrubs()` v `src/world/shrubs.js`)
 
@@ -69,21 +76,23 @@ Regenerovanie cez `python3 tools/gen_gta_textures.py` (idempotentné).
 
 | súbor | slot | poznámka |
 |---|---|---|
-| `wall.png` | `wall` (`TEX.winGrid`) | fasáda, ľubovoľná fotka; ostatné 3 mapy sa odvidia z nej |
-| `concrete_diffuse.png` | `concrete` | zdieľajú komíny, vežu, stĺpy, pamätník |
-| `concrete_normal.png` | `concreteN` | |
-| `wood.png` / `wood_normal.png` | `wood` / `woodN` | kôra kmeňov stromov |
-| `brick.jpg` / `brick_normal.png` | `brick` / `brickN` | ambientCG `dark_brick_wall` 1k → 512 (tehlové komíny) |
-| `gravel.png` | `gravel` | placeholder (ploché strechy) |
+| `wall.jpg` | `wall` (`TEX.winGrid`) | fotka bez okien — okná sú samostatná 3D geometria (`src/world/buildings.js`) |
+| `concrete_diffuse.jpg` | `concrete` | zdieľajú komíny, vežu, stĺpy, pamätník |
+| `concrete_normal.jpg` | `concreteN` | |
+| `concrete_roughness.jpg` | `concreteR` | |
+| `wood.png` / `wood_normal.jpg` | `wood` / `woodN` | kôra kmeňov stromov |
+| `brick.jpg` / `brick_normal.jpg` / `brick_roughness.jpg` | `brick` / `brickN` / `brickR` | tehlové komíny |
+| `roof_tile.jpg` / `roof_tile_normal.jpg` / `roof_tile_roughness.jpg` | `roofTile` / `roofTileN` / `roofTileR` | škridlice streakach |
+| `gravel.jpg` / `gravel_normal.jpg` / `gravel_roughness.jpg` | `gravel` / `gravelN` / `gravelR` | ploché strechy |
 
 `buildings/` má ešte dva čisto procedurálne sloty bez súboru: `sheet` (vlnitý
 plech, Kat. C) a `bridge` (mostovka). Ak ich chceš z disku, stačí doplniť cestu
 do `texSlot*()` v `index.html`.
 
-### `wall.png` môže byť ľubovoľná fasáda
+### `wall.jpg` môže byť ľubovoľná fasáda
 
 Fasáda je difúzia + dve sprievodné mapy, ale **tie sprievodné sa nedrážujú v
-ruká — odvodia sa z jasu difúzie** (`facadeAux()` v `index.html`):
+ruká — odvodia sa z jasu difúzie** (`facadeAux()` v `src/world/textures.js`):
 
 | odvodená mapa | pravidlo |
 |---|---|
@@ -94,7 +103,7 @@ Preto sa **netreba držať mriežky 3×2 ani žiadneho konkrétneho rozvodu okie
 vlož ľubovoľnú fotku fasády a okná sa nájdu, zahladia a vyrežu samy.
 `winLayout()` ostáva už len pre procedurálny fallback (`paintFacade`).
 
-Keď `wall.png` dobehne z disku, `facadeAux()` sa spustí znova (`slot.onAdopt`)
+Keď `wall.jpg` dobehne z disku, `facadeAux()` sa spustí znova (`slot.onAdopt`)
 a prepíše pixely **tých istých** dvoch canvasov — žiadny nový objekt, žiadny leak.
 
 **Fasády nemajú emisívnu mapu** (rozsvietené okná boli vypnuté) a nie sú preto

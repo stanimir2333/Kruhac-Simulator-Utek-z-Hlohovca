@@ -809,6 +809,12 @@ export function buildRoadDetails(){
   // poradie indexov volí strana, aby normál vychádzal zhora (+y).
   const swPos = [], swUV = [], swIdx = [];
   let swQ = 0;
+  // KERNÁČE (obrubníky): široký pohľadový plech kotvený na vozovke v šírke
+  // mestnej cesty — valcům klesá k vozovke, nosí sa na hodnote komory
+  // (terén + 0,28) priečne od okraja vozovky (vozovka + 0,15). Rohy na teréne
+  // zvlášť, aby kernáč vzlal mikroreliéf ako chodník.
+  const kbPos = [], kbUV = [], kbIdx = [];
+  let kbQ = 0;
   for(let li=0;li<S.osm.roads.length && li<S.townRoads.length;li++){
     const R = S.townRoads[li];
     if(R.hw < 2.8) continue;
@@ -854,6 +860,29 @@ export function buildRoadDetails(){
             swIdx.push(b4, b4+1, b4+2, b4+1, b4+3, b4+2);
           }
           swQ++;
+          // KERNÁČ: nosí sa na hodnote komory (+0,28 nad terén), front face klesá
+          // k vozovke (+0,15) na okraji cesty. Rohy na teréne zvlášť.
+          const cIn = side*R.hw, cOut = side*(R.hw + 0.8);
+          const t0x = a0x + nx*cIn, t0z = a0z + nz*cIn;
+          const t1x = a1x + nx*cIn, t1z = a1z + nz*cIn;
+          const u0x = a0x + nx*cOut, u0z = a0z + nz*cOut;
+          const u1x = a1x + nx*cOut, u1z = a1z + nz*cOut;
+          const yT0 = getTerrainHeight(t0x, t0z) + 0.28;
+          const yT1 = getTerrainHeight(t1x, t1z) + 0.28;
+          const yD0 = getTerrainHeight(t0x, t0z) + 0.15;
+          const yD1 = getTerrainHeight(t1x, t1z) + 0.15;
+          const yU0 = getTerrainHeight(u0x, u0z) + 0.28;
+          const yU1 = getTerrainHeight(u1x, u1z) + 0.28;
+          const kq = kbQ*4;
+          // 1) horná doska kernáča: P0..P3 = (t0, t1, u1, u0), UV u 0..0.8
+          kbPos.push(t0x, yT0, t0z, t1x, yT1, t1z, u1x, yU1, u1z, u0x, yU0, u0z);
+          kbUV.push(0, vv0, 0.8, vv1, 0.8, vv1, 0, vv0);
+          kbIdx.push(kq, kq+1, kq+3, kq+1, kq+2, kq+3);
+          // 2) čelná stena k vozovke: rohy (t0,t1) vyskočené, spodky +0,15 na teréne
+          kbPos.push(t0x, yT0, t0z, t1x, yT1, t1z, t0x, yD0, t0z, t1x, yD1, t1z);
+          kbUV.push(0, vv0, 0.15, vv1, 0.15, vv1, 0, vv0);
+          kbIdx.push(kq+4, kq+5, kq+7, kq+5, kq+6, kq+7);
+          kbQ += 2;
         }
       }
     }
@@ -917,5 +946,15 @@ export function buildRoadDetails(){
     S.scene.add(msl);
     staticDone(msl, false, true);
   }
-  console.log("[cesty] chodníky: " + swQ + " pásov, čiary: " + dsQ + " čiarok");
+  if(kbQ){
+    const gkb = new THREE.BufferGeometry();
+    gkb.setAttribute("position", new THREE.BufferAttribute(new Float32Array(kbPos), 3));
+    gkb.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(kbUV), 2));
+    gkb.setIndex(kbIdx);
+    S.DYN_GEO.push(gkb);
+    const mkb = new THREE.Mesh(gkb, S.MAT.curb);
+    S.scene.add(mkb);
+    staticDone(mkb, false, true);
+  }
+  console.log("[cesty] chodníky: " + swQ + " pásov, čiary: " + dsQ + " čiarok, kernáče: " + Math.round(kbQ/2));
 }

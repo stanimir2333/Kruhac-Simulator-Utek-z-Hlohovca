@@ -401,8 +401,12 @@ function pushBalconies(dstTrim, k, baseY, wv, floors, mc){
   const nx = sgn*uz, nz = -sgn*ux;      // vonkajšia normála hrany
   const rot = Math.atan2(-uz, ux);      // lokálne X hrany = dĺžka balkóna
   const count = Math.max(1, Math.min(4, Math.floor(bl/5.5)));
+  // strop podlaží 4 → 14: výškovky (h do 30 m) mali balkóny len na prvých štyroch
+  // podlažíach a nad tým holú stenu. Guard pod posledným podlažím stráži,
+  // aby zábradlie nepresiahlo korunu budovy.
   for(let f=1; f<floors; f++){
     const y = baseY + f*3.05;
+    if(y + 1.6 > baseY + k.h) break;
     for(let c=0;c<count;c++){
       const t = (c + 0.5)/count;
       const px = ax + ex*t, pz = az + ez*t;
@@ -487,8 +491,23 @@ function pushWindows(dst, dstGlass, k, baseY, h, wv) {
   }
   const sgn = area >= 0 ? 1 : -1;
   const WIN_W = 1.05, WIN_H = 1.25, RECESS = 0.12;
-  const rows = h > 4.6 ? [1.35, 4.4] : [1.35];
-  if (h > 7.5) rows.push(7.5);
+  // RADY OKIEN PODĽA TYPU BUDOVY. Doteraz mali všetky budovy najviac 3 rady
+  // (1,35 / 4,4 / 7,5 m) — panelák s 30 m fasády mal teda 22 m prázdnej omietky.
+  // Teraz: paneláky (1) a obchody (4) rady PO PODLAŽÍACH (3,05 / 3,2 m),
+  // historické (3) po 3,4 m (strop vyšší), domy (0) a technické (5) nechajú
+  // pôvodnú riedku mriežku. Parter zostáva na 1,35 m (výška výkladu/dverí).
+  const rows = [];
+  if (k.zone === 1 || k.zone === 4) {
+    const fh = k.zone === 1 ? 3.05 : 3.2;
+    for (let fy = 1.35; fy + WIN_H < h - 1.0; fy += fh) rows.push(fy);
+    if (!rows.length) rows.push(1.35);
+  } else if (k.zone === 3) {
+    for (let fy = 1.35; fy + WIN_H < h - 1.0 && rows.length < 6; fy += 3.4) rows.push(fy);
+    if (!rows.length) rows.push(1.35);
+  } else {
+    if (h > 4.6) rows.push(1.35, 4.4); else rows.push(1.35);
+    if (h > 7.5) rows.push(7.5);
+  }
   for (let p = 0; p < np; p++) {
     const q = (p + 1) % np;
     const ax = fp[5 + p * 2], az = fp[5 + p * 2 + 1];
@@ -500,7 +519,9 @@ function pushWindows(dst, dstGlass, k, baseY, h, wv) {
     const nl = len;
     const nxo = (sgn * ez) / nl, nzo = -(sgn * ex) / nl; // vonkajšia normála
     const rot = Math.atan2(-uz, ux);
-    const nWin = Math.max(1, Math.min(4, Math.floor(len / 2.6)));
+    // viac okien na dlhú fasádu (strop 4 → 6): 30 m stena paneláku tak nedostane
+    // 4 osamotené okná, ale pravidelnú ulicu okien po celom obvode
+    const nWin = Math.max(1, Math.min(6, Math.floor(len / 2.6)));
     for (let w = 0; w < nWin; w++) {
       const t = (w + 1) / (nWin + 1);
       const px = ax + ex * t;
@@ -891,9 +912,9 @@ export function buildBuildings(){
       // ANTÉNY: na plochých strechách (nie na sedlovených), len u časti budov.
       if(!gable && area2 > 200 && rng() < 0.45) pushRoofAerial(ch.wTrim,
         k.x + (rng()-0.5)*wPad*0.5, k.z + (rng()-0.5)*dPad*0.5, topY, rv, rng);
-      // BALKÓNY: paneláky (zóna 1) majú podlažie 3,05 m.
+      // BALKÓNY: paneláky (zóna 1) majú podlažie 3,05 m — teraz po celú výšku budovy.
       if(k.zone === 1 && k.h > 12){
-        const floors = Math.max(1, Math.min(4, Math.floor((k.h - 1.6)/3.05)));
+        const floors = Math.max(1, Math.min(14, Math.floor((k.h - 1.6)/3.05)));
         pushBalconies(ch.wTrim, k, k.baseY, wv, floors, MCOL);
       }
       // OKNÁ ako 3D geometria (výrez + rám + parapet + nadpražie + jamby).
