@@ -34,6 +34,10 @@ export function createPreloader() {
   (async () => {
     try {
       const urls = await Promise.all(IMG_NAMES.map(resolveImage));
+      // Prvá fotka zároveň tvorí pozadie hlavného menu (ten istý resolver,
+      // aby fungovalo z dev servera, dist/, Pages aj http.server v koreni).
+      const menuBg = document.getElementById('menu-bg');
+      if (menuBg && urls[0]) menuBg.style.backgroundImage = `url("${urls[0]}")`;
       if (!bg) return;
       urls.forEach((u, i) => {
         const im = document.createElement('img');

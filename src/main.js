@@ -737,11 +737,11 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
 const MAPS = {
   hlohovec: {
     title: 'Kruháč Simulator: Útek z Hlohovca',
-    pre: 'ÚTEK Z HLOHOVCA · načítavam mesto…',
+    pre: 'NAČÍTAVAM HLOHOVEC · pripravujem útek…',
   },
   drahovce: {
     title: 'Kruháč Simulator: Drahovce',
-    pre: 'DRAHOVCE · načítavam obec…',
+    pre: 'NAČÍTAVAM DRAHOVCE · pripravujem útek…',
   },
 };
 

@@ -15,20 +15,30 @@
 </head>
 <body>
 
-<div id="map-select" class="overlay">
-  <div class="card panel">
-    <h1>KRUHÁČ SIMULATOR</h1>
-    <h2>VYBER LOKALITU</h2>
-    <p>Si zapichnutý v kolóne a mieriš na juh. Jazdi <b>kam chceš</b> — celé mesto je otvorené.
-    Pozor: státie varí motor, ťukance varia motor aj nervy.</p>
-    <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
-    A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
-    M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
-    <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
-    <br>
-    <button class="btn big" id="map-hlohovec" data-map="hlohovec">HLOHOVEC · ÚTEK Z MESTA</button>
-    <br><br>
-    <button class="btn big" id="map-drahovce" data-map="drahovce">DRAHOVCE · OBEC</button>
+<div id="map-select" class="overlay menu-screen">
+  <div id="menu-bg"></div>
+  <div class="menu-scrim"></div>
+  <div class="menu-inner">
+    <!-- Logo podľa screenshotu: ružové V, biely kurzívny názov, tyrkysový tagline. -->
+    <div class="brand">
+      <div class="brand-sun"></div>
+      <div class="brand-v">V</div>
+      <h1 class="brand-title">KRUHÁČ<br>SIMULATOR</h1>
+      <div class="brand-tag">ÚTEK Z HLOHOVCA</div>
+    </div>
+    <div class="card panel menu-card">
+      <h2>VYBER LOKALITU</h2>
+      <p>Si zapichnutý v kolóne a mieriš na juh. Jazdi <b>kam chceš</b> — celé mesto je otvorené.
+      Pozor: státie varí motor, ťukance varia motor aj nervy.</p>
+      <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
+      A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
+      M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
+      <p style="font-size:12px;">Na mobile: vľavo šípky na zatáčanie, vpravo pedále PLYN / BRZDA.</p>
+      <div class="menu-buttons">
+        <button class="btn big" id="map-hlohovec" data-map="hlohovec">HLOHOVEC · ÚTEK Z MESTA</button>
+        <button class="btn big btn-alt" id="map-drahovce" data-map="drahovce">DRAHOVCE · OBEC</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -37,11 +47,11 @@
   <div class="pre-scrim"></div>
   <div class="card panel pre-card">
     <h1>KRUHÁČ SIMULATOR</h1>
-    <h2 id="pre-title">NAČÍTAVAM MESTO…</h2>
+    <h2 id="pre-title">PRIPRAVUJEM ÚTEK…</h2>
     <div id="pre-bar"><i></i></div>
-    <div id="pre-log">štart…</div>
-    <div id="pre-tip">Mapa (0.5 MB) + textúry sa načítavajú asynchrónne — UI nikdy nefreezeuje.</div>
-    <div id="pre-music">♪ RÁDIO HLOHOVEC · stanica 1</div>
+    <div id="pre-log">štartujem motory…</div>
+    <div id="pre-tip">Mapa a textúry sa načítavajú asynchrónne — obrazovka nikdy nezamrzne.</div>
+    <div id="pre-music">♪ RÁDIO HLOHOVEC · hrá od štartu</div>
   </div>
 </div>
 
