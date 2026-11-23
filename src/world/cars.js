@@ -47,6 +47,10 @@ const mirrorHeadGeo = rbox(0.07, 0.14, 0.16, 0.025, 2);
 const handleGeo = new THREE.BoxGeometry(0.03, 0.035, 0.18);
 const seatBaseGeo = rbox(0.58, 0.20, 0.62, 0.07, 3);
 const seatBackGeo = rbox(0.58, 0.62, 0.16, 0.06, 3);
+// RX-7 má omnoho nižšiu kabínu (strecha 1,26 vs 1,53 u Octavie) — pôvodná
+// opierka z Octavie (výška 0,62) jej trčala von strechou do 1,57. Športová
+// opierka je kratšia, aby sedadlá zostali vo vnútri kabíny.
+const seatBackSportGeo = rbox(0.58, 0.34, 0.16, 0.05, 3);
 const dashGeo = rbox(1.34, 0.22, 0.28, 0.04, 2);
 const steeringGeo = new THREE.TorusGeometry(0.16, 0.018, 8, 18);
 // Kolesá: viac segmentov valca (32/24 namiesto 24/20) — okraj pneu aj ráfika
@@ -130,9 +134,15 @@ function addInterior(parent, sport = false) {
   const dash = std(0x15191d, 0.62, 0.08);
   const trim = std(sport ? 0xa9afb6 : 0x777d84, 0.30, 0.60);
   const z = sport ? -0.20 : -0.28;
+  // RX-7: podlaha je v 0,80 a strecha už v 1,26 — sedadlá musia byť posadené
+  // nižšie, inak opierky prechádzajú strešným panelom. Octavia: podlaha 0,87,
+  // strecha 1,53, takže tam sedadlá zostávajú na pôvodných 0,98 / 1,26.
+  const baseY = sport ? 0.90 : 0.98;
+  const backY = sport ? 0.99 : 1.26;
+  const backGeo = sport ? seatBackSportGeo : seatBackGeo;
   for (const sx of [-1, 1]) {
-    box(parent, seatBaseGeo, upholstery, sx * 0.38, 0.98, z, true);
-    box(parent, seatBackGeo, upholstery, sx * 0.38, 1.26, z - 0.23, true);
+    box(parent, seatBaseGeo, upholstery, sx * 0.38, baseY, z, true);
+    box(parent, backGeo, upholstery, sx * 0.38, backY, z - 0.23, true);
   }
   box(parent, dashGeo, dash, 0, 1.17, 0.54, true);
   const wheel = new THREE.Mesh(steeringGeo, trim);
