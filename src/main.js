@@ -43,6 +43,7 @@ import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
 import { createStormManager } from './weather/storm.js';
 import { createBloom } from './fx/bloom.js';
+import { RT_QUALITY_NAMES } from './fx/raytrace.js';
 import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI, toggleSettings } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
@@ -159,12 +160,19 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
   };
   wireMenus(state, engine, hud);
   // bloom composer + nastavenia (ešte pred svetom — pixelRatio ovplyvňuje build textúr)
-  const bloom = createBloom(renderer, scene, camera);
+  // Ray tracing (SSR, contact shadows, SSGI) beží v bloom composer pipeline
+  const bloom = createBloom(renderer, scene, camera, sun);
   engine.setRenderOverride(() => bloom.render());
   engine.onResizeExtra(() => bloom.resize());
   const settingsCtx = {
     renderer, scene, camera, sun, engine,
-    bloom: { setMode: (m) => bloom.setMode(m) },
+    bloom: {
+      setMode: (m) => bloom.setMode(m),
+      setRTEnabled: (v) => bloom.setRTEnabled(v),
+      getRTEnabled: () => bloom.getRTEnabled(),
+      setRTQuality: (q) => bloom.setRTQuality(q),
+      getRTQuality: () => bloom.getRTQuality(),
+    },
     water: { setQuality: (q) => setWaterQuality(q) },
     audio: {
       setBalance: (v) => sfx.setBalance(v),

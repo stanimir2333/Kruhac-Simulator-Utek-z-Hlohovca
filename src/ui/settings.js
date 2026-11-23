@@ -60,8 +60,10 @@ function balLabel(v) {
   if (p === 0) return 'STRED';
   return (p < 0 ? 'Ľ' : 'R') + Math.abs(p);
 }
-// Náhrada labelu za RT_LEVELS[RT.level].name.
-const RT_LEVEL_NAMES = ['LITE', 'STANDARD', 'ULTRA'];
+// Ray tracing kvalita (SSR, contact shadows, SSGI) — zhodné s raytrace.js
+const RT_QUALITY_NAMES = ['LITE', 'STANDARD', 'ULTRA'];
+// Alias pre kompatibilitu so starším kódom
+const RT_LEVEL_NAMES = RT_QUALITY_NAMES;
 // Opačná mapa: RT úroveň → tieňový tier (LITE=2K, STD=4K, ULTRA=8K).
 // shadowTier je jediný zdroj pravdy; tieto dva smery ho nemôžu rozejdeť.
 const SHADOW_FROM_RT = [1, 2, 3];
@@ -553,8 +555,8 @@ export function wireSettingsUI(ctx, toast) {
     saveSettings();
   });
 
-  // RT = dynamické tiene + sunlight (neportovaný ray-tracer; panel riadi realtime svetlá).
-  // Master toggle: tiene ZAP (frustum cestuje s hráčom) / VYP (tieňová mapa off).
+  // RT = dynamické tienen + sunlight + screen-space ray tracing (SSR, contact shadows, SSGI).
+  // Master toggle: RT ZAP / VYP (ovláda tieňovú mapu AJ screen-space RT).
   $('set-rt-toggle')?.addEventListener('click', () => {
     settings.rt = !settings.rt;
     try {
@@ -562,11 +564,14 @@ export function wireSettingsUI(ctx, toast) {
         c.renderer.shadowMap.enabled = settings.rt;
         c.scene?.traverse?.((o) => { if (o.material) o.material.needsUpdate = true; });
       }
+      // Screen-space ray tracing (bloom composer)
+      c?.bloom?.setRTEnabled?.(settings.rt);
     } catch (_e) { /* noop */ }
     syncSettingsUI(c);
     saveSettings();
-    say(settings.rt ? 'Dynamické tiene ZAP.' : 'Tiene VYP.');
+    say(settings.rt ? 'Ray Tracing ZAP (SSR + tieňové stopy + SSGI).' : 'Ray Tracing VYP.');
   });
+  // RT Quality: LITE / STANDARD / ULTRA (preset pre SSR steps, contact shadows, SSGI)
   $('set-rtq')?.addEventListener('click', (e) => {
     const b = e.target.closest ? e.target.closest('button') : null;
     if (!b || b.disabled) return;
@@ -574,7 +579,10 @@ export function wireSettingsUI(ctx, toast) {
     // ÚROVEŇ = preset tieňovej mapy: LITE 2K / STD 4K / ULTRA 8K.
     // applyShadowTier nastaví settings.rtQ z nového shadowTieru (pozri syncSettingsUI).
     applyShadowTier(c, SHADOW_FROM_RT[q]);
+    // Screen-space RT quality
+    c?.bloom?.setRTQuality?.(q);
     saveSettings();
+    say(`Ray Tracing kvalita: ${RT_QUALITY_NAMES[q]}.`);
   });
   const rtRange = (id, labelId, key) => {
     $(id)?.addEventListener('input', (e) => {

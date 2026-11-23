@@ -19,6 +19,9 @@
 //  Na mobile/LOW_END (žiadne MSAA) ostáva čistý renderer.render() —
 //  FXAA pre non-bloom cestu by vyžadoval vlastný composer RT, čo je
 //  fillrate-náročné za minimálny zisk na vysoko-DPI displejoch.
+// B34 (Ray Tracing): pridaný screen-space ray tracing pass (SSR, contact shadows, SSGI)
+//    beží ako custom pass v composer pipeline PO RenderPass, PRED SSAO/Bloom.
+
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -28,6 +31,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { GradeShader } from './grade.js';
+import { createRayTracer } from './raytrace.js';
 import { S } from '../world/shared.js';
 
 const MODES = [
@@ -45,8 +49,11 @@ const BLOOM_SCALE = 0.4;
 // (bloom mipy sú aj tak rozostrené a FXAA hrany dohladí).
 const BLOOM_RENDER_SCALE = 0.75;
 
-export function createBloom(renderer, scene, camera) {
+export function createBloom(renderer, scene, camera, sunLight) {
   let composer = null, bloomPass = null, ssaoPass = null, fxaaPass = null, gradePass = null, mode = 1;
+  let rayTracer = null;
+  let rtEnabled = true;
+  let rtQuality = 1; // STANDARD
 
   // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
   // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
@@ -74,10 +81,67 @@ export function createBloom(renderer, scene, camera) {
       const rt = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.UnsignedByteType,
         samples: 0,
+        depthBuffer: true, // Potrebujeme depth pre ray tracing
+        depthTexture: true,
       });
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());
-      composer.addPass(new RenderPass(scene, camera));
+
+      // 1. RenderPass - hlavná scéna
+      const renderPass = new RenderPass(scene, camera);
+      composer.addPass(renderPass);
+
+      // 2. Ray Tracing Pass (custom) - SSR, Contact Shadows, SSGI
+      rayTracer = createRayTracer(renderer, scene, camera);
+      rayTracer.setQuality(rtQuality);
+      rayTracer.setEnabled(rtEnabled);
+      // Custom pass pre composer
+      const rtPass = {
+        enabled: true,
+        renderToScreen: false,
+        needsSwap: true,
+        setSize: (w, h) => rayTracer.resize(w, h),
+        render: (renderer, writeBuffer, readBuffer) => {
+          if (!rtEnabled || S.LOW_END) {
+            // Preskočíme RT, len skopírujeme readBuffer do writeBuffer
+            if (readBuffer !== writeBuffer) {
+              renderer.setRenderTarget(writeBuffer);
+              renderer.clear();
+              // Blit readBuffer -> writeBuffer
+              const tempScene = new THREE.Scene();
+              const tempCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+              const blitMat = new THREE.MeshBasicMaterial({ map: readBuffer.texture });
+              const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
+              tempScene.add(quad);
+              renderer.render(tempScene, tempCam);
+              renderer.setRenderTarget(null);
+              blitMat.dispose();
+              quad.geometry.dispose();
+              tempScene.remove(quad);
+            }
+            return;
+          }
+          // Ray tracing potrebuje depth texture z readBuffer (ktorý je výstup RenderPass)
+          // readBuffer je WebGLRenderTarget s depthTexture
+          const rtResult = rayTracer.render(renderer, scene, camera, sunLight, readBuffer, readBuffer.depthTexture);
+          // Výsledok do writeBuffer
+          renderer.setRenderTarget(writeBuffer);
+          renderer.clear();
+          const tempScene = new THREE.Scene();
+          const tempCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+          const blitMat = new THREE.MeshBasicMaterial({ map: rtResult });
+          const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
+          tempScene.add(quad);
+          renderer.render(tempScene, tempCam);
+          renderer.setRenderTarget(null);
+          blitMat.dispose();
+          quad.geometry.dispose();
+          tempScene.remove(quad);
+        },
+      };
+      composer.addPass(rtPass);
+
+      // 3. SSAO (ak nie LOW_END)
       if (!S.LOW_END) {
         const ssaoW = Math.max(64, Math.round(innerWidth * composerPixelRatio() * 0.5));
         const ssaoH = Math.max(64, Math.round(innerHeight * composerPixelRatio() * 0.5));
@@ -88,6 +152,8 @@ export function createBloom(renderer, scene, camera) {
         ssaoPass.output = SSAOPass.OUTPUT.Default;
         composer.addPass(ssaoPass);
       }
+
+      // 4. Bloom
       bloomPass = new UnrealBloomPass(
         new THREE.Vector2(innerWidth, innerHeight), MODES[mode].strength, MODES[mode].radius, MODES[mode].threshold);
       // 4 mipy namiesto 5 — menej blur passov, na bloom (už rozostrenom) bez
@@ -98,13 +164,15 @@ export function createBloom(renderer, scene, camera) {
       bloomPass.setSize = (w, h) => rawSetSize(
         Math.max(8, Math.round(w * BLOOM_SCALE)), Math.max(8, Math.round(h * BLOOM_SCALE)));
       composer.addPass(bloomPass);
-      // OutputPass: tone mapping + sRGB. Až POTOM grade (display priestor),
+
+      // 5. OutputPass: tone mapping + sRGB. Až POTOM grade (display priestor),
       // potom FXAA (hrany sa hľadajú vo finálnom obraze).
       composer.addPass(new OutputPass());
       gradePass = new ShaderPass(GradeShader);
       composer.addPass(gradePass);
       fxaaPass = new ShaderPass(FXAAShader);
       composer.addPass(fxaaPass);
+
       resize();
       return true;
     } catch (e) {
@@ -113,9 +181,11 @@ export function createBloom(renderer, scene, camera) {
       ssaoPass = null;
       fxaaPass = null;
       gradePass = null;
+      rayTracer = null;
       return false;
     }
   }
+
   function apply() {
     if (S.LOW_END) {
       // mobile/raspberry: composer len pri bloom > 0 (žiadny zbytočný náklad)
@@ -137,6 +207,7 @@ export function createBloom(renderer, scene, camera) {
       bloomPass.enabled = false; // grade ostáva aktívny aj bez bloomu
     }
   }
+
   function resize() {
     if (!composer) return;
     composer.setPixelRatio?.(composerPixelRatio());
@@ -147,16 +218,34 @@ export function createBloom(renderer, scene, camera) {
       const h = Math.max(64, Math.round(innerHeight * pr * 0.5));
       ssaoPass.setSize(w, h);
     }
+    if (rayTracer) {
+      const pr = composerPixelRatio();
+      const w = Math.max(2, Math.round(innerWidth * pr));
+      const h = Math.max(2, Math.round(innerHeight * pr));
+      rayTracer.resize(w, h);
+    }
     syncFxaa();
   }
+
   return {
     setMode(m) {
       mode = m > 0 ? (m > 1 ? 2 : 1) : 0;
       apply();
     },
     getMode() { return mode; },
+    // Ray tracing ovládanie
+    setRTEnabled(v) {
+      rtEnabled = v;
+      if (rayTracer) rayTracer.setEnabled(v);
+    },
+    getRTEnabled() { return rtEnabled; },
+    setRTQuality(q) {
+      rtQuality = Math.max(0, Math.min(2, q | 0));
+      if (rayTracer) rayTracer.setQuality(rtQuality);
+    },
+    getRTQuality() { return rtQuality; },
     render() {
-      if (S.LOW_END && mode === 0) {
+      if (S.LOW_END && mode === 0 && !rtEnabled) {
         // Raspberry/mobil: žiadny composer — priamy render, MSAA nie je.
         renderer.render(scene, camera);
         return;
@@ -168,5 +257,9 @@ export function createBloom(renderer, scene, camera) {
       }
     },
     resize,
+    dispose() {
+      if (rayTracer) rayTracer.dispose();
+      if (composer) composer.dispose();
+    },
   };
 }
