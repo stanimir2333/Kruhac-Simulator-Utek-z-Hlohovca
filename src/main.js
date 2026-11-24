@@ -717,6 +717,14 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
       fpsAcc = 0; fpsN = 0;
     }
   });
+  // OBLONA: kupola sa musí stredovať na kameru KAŽDÝ snímok. Doteraz ju posunul
+  // len water.js pri odraze Váhu (a hneď vrátil) — mimo neho zostala na svetovom
+  // počiatku, takže pri jazde preč od počiatku sa jej okraj (pologuľa r=4000)
+  // ukazoval ako obrovská "sféra" nad horizontom a zadná polovica sa strácala
+  // vo far plane kamery (5000 m). Sync beží ako druhý tick listener, teda po
+  // hlavnom update-e kamery a tesne pred renderom; menu orbitku a chôdzu to
+  // pokryje tiež. Vodný odraz ju medzitým dočasne presunie a vo finally vráti.
+  engine.onTick(() => { if (skyDome) skyDome.position.copy(camera.position); });
   // FPS limit už nastavil wireSettingsUI → applyAll z uloženého settings.fps.
   // Tento riadok ho prepisoval natvrdo na 60 a zahodil nastavenie pri každom starte.
   engine.start();
