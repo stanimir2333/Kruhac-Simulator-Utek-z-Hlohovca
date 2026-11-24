@@ -54,6 +54,9 @@ export function createBloom(renderer, scene, camera, sunLight) {
   let rayTracer = null;
   let rtEnabled = true;
   let rtQuality = 1; // STANDARD
+  // Jeden full-screen quad pre blity namiesto alokácie Scene/Mesh/Material/
+  // Geometry dvakrát za snímok (bola to najväčšia GC záťaž v composer-e).
+  let blitScene = null, blitCam = null, blitMat = null, blitQuad = null;
 
   // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
   // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
@@ -78,11 +81,18 @@ export function createBloom(renderer, scene, camera, sunLight) {
       // driverom — FXAA sa o hrany stará).
       const pr = composerPixelRatio();
       const w = Math.max(2, Math.round(innerWidth * pr)), h = Math.max(2, Math.round(innerHeight * pr));
+      // Ray tracing potrebuje SKUTOČNÚ DepthTexture — `depthTexture: true`
+      // zapisovalo do render targetu boolean, takže tDepth bol v shadery
+      // neplatný a SSR/contact shadows čítali odpad.
+      const depthTex = new THREE.DepthTexture(w, h, THREE.UnsignedIntType);
+      depthTex.format = THREE.DepthFormat;
+      depthTex.minFilter = THREE.NearestFilter;
+      depthTex.magFilter = THREE.NearestFilter;
       const rt = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.UnsignedByteType,
         samples: 0,
-        depthBuffer: true, // Potrebujeme depth pre ray tracing
-        depthTexture: true,
+        depthBuffer: true,
+        depthTexture: depthTex,
       });
       composer = new EffectComposer(renderer, rt);
       composer.setPixelRatio(composerPixelRatio());
@@ -90,6 +100,22 @@ export function createBloom(renderer, scene, camera, sunLight) {
       // 1. RenderPass - hlavná scéna
       const renderPass = new RenderPass(scene, camera);
       composer.addPass(renderPass);
+
+      blitScene = new THREE.Scene();
+      blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      blitMat = new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false });
+      blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
+      blitQuad.frustumCulled = false;
+      blitScene.add(blitQuad);
+      const blit = (srcTexture) => {
+        if (blitMat.map !== srcTexture) {
+          const hadMap = !!blitMat.map;
+          blitMat.map = srcTexture;
+          // Prvé priradenie textúry mení USE_MAP define → treba nový program.
+          if (!hadMap) blitMat.needsUpdate = true;
+        }
+        renderer.render(blitScene, blitCam);
+      };
 
       // 2. Ray Tracing Pass (custom) - SSR, Contact Shadows, SSGI
       rayTracer = createRayTracer(renderer, scene, camera);
@@ -107,36 +133,19 @@ export function createBloom(renderer, scene, camera, sunLight) {
             if (readBuffer !== writeBuffer) {
               renderer.setRenderTarget(writeBuffer);
               renderer.clear();
-              // Blit readBuffer -> writeBuffer
-              const tempScene = new THREE.Scene();
-              const tempCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-              const blitMat = new THREE.MeshBasicMaterial({ map: readBuffer.texture });
-              const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
-              tempScene.add(quad);
-              renderer.render(tempScene, tempCam);
+              blit(readBuffer.texture);
               renderer.setRenderTarget(null);
-              blitMat.dispose();
-              quad.geometry.dispose();
-              tempScene.remove(quad);
             }
             return;
           }
-          // Ray tracing potrebuje depth texture z readBuffer (ktorý je výstup RenderPass)
+          // Ray tracing potrebuje depth texture z readBuffer (výstup RenderPass)
           // readBuffer je WebGLRenderTarget s depthTexture
           const rtResult = rayTracer.render(renderer, scene, camera, sunLight, readBuffer, readBuffer.depthTexture);
           // Výsledok do writeBuffer
           renderer.setRenderTarget(writeBuffer);
           renderer.clear();
-          const tempScene = new THREE.Scene();
-          const tempCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-          const blitMat = new THREE.MeshBasicMaterial({ map: rtResult });
-          const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
-          tempScene.add(quad);
-          renderer.render(tempScene, tempCam);
+          blit(rtResult);
           renderer.setRenderTarget(null);
-          blitMat.dispose();
-          quad.geometry.dispose();
-          tempScene.remove(quad);
         },
       };
       composer.addPass(rtPass);
@@ -245,8 +254,10 @@ export function createBloom(renderer, scene, camera, sunLight) {
     },
     getRTQuality() { return rtQuality; },
     render() {
-      if (S.LOW_END && mode === 0 && !rtEnabled) {
+      if (S.LOW_END && mode === 0) {
         // Raspberry/mobil: žiadny composer — priamy render, MSAA nie je.
+        // RT sa na LOW_END aj tak preskakuje, takže `!rtEnabled` tu bola
+        // zbytočná a nútila composer aj pri bloom VYP.
         renderer.render(scene, camera);
         return;
       }
@@ -260,6 +271,8 @@ export function createBloom(renderer, scene, camera, sunLight) {
     dispose() {
       if (rayTracer) rayTracer.dispose();
       if (composer) composer.dispose();
+      blitQuad?.geometry.dispose();
+      blitMat?.dispose();
     },
   };
 }

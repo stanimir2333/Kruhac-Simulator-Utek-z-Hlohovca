@@ -158,6 +158,10 @@ candidates, don't switch to an absolute path.
   `// ---------- NADPIS ----------`.
 - Ported modules keep provenance comments naming monolith line ranges — keep them
   accurate when editing.
+- **Use multiple subagents in parallel** for bigger tasks (`subagent` with
+  `explore`/`general`): split independent work — codebase survey, review of the
+  diff, verification — launch them together, then merge their findings into one
+  coherent change. Don't duplicate a running subagent's task yourself.
 
 ### Git: môžeš commitovať a pushovať bez dožiadania
 

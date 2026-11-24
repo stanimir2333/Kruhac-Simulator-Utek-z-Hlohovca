@@ -18,12 +18,15 @@ const RT_VERTEX = `
 `;
 
 const RT_FRAGMENT = `
-  #version 300 es
+  // GLSL3 zapína three cez glslVersion na ShaderMaterial — verziu tu NEPÍŠeme,
+  // inak by sa #version objavil dvakrát a shader by neprešiel kompiláciou.
   precision highp float;
   precision highp sampler2D;
   precision highp usampler2D;
 
   varying vec2 vUv;
+  // GLSL3 nemá gl_FragColor — three ho pri GLSL3 nevytvára, treba vlastný output.
+  out vec4 fragColor;
 
   // === UNIFORMS ===
   uniform sampler2D tDiffuse;        // scéna (farba)
@@ -32,8 +35,8 @@ const RT_FRAGMENT = `
   uniform sampler2D tMetalRough;     // metalness (R), roughness (G)
   uniform mat4 projectionMatrix;
   uniform mat4 projectionMatrixInv;
-  uniform mat4 viewMatrix;
-  uniform mat4 viewMatrixInv;
+  // viewMatrix už three deklaruje v prefixe fragment shaderu — duplicitná
+  // deklarácia je v GLSL3 chyba kompilácie (a rovnako zbytočná viewMatrixInv).
   uniform vec2 resolution;           // rozlíšenie RT cieľa
   uniform float cameraNear;
   uniform float cameraFar;
@@ -57,23 +60,23 @@ const RT_FRAGMENT = `
   #define MAX_STEPS 64
   #define BINARY_SEARCH_STEPS 5
 
-  // --- HĽBKA: linearizácia z [0,1] do view-space Z ---
+  // --- HĽBKA: surová window-depth [0,1] → metre vo view space ---
+  float rawDepth(vec2 uv) { return texture(tDepth, uv).r; }
   float linearDepth(float raw) {
-    return (2.0 * cameraNear) / (cameraFar + cameraNear - raw * (cameraFar - cameraNear));
+    return (cameraNear * cameraFar) / (cameraFar - raw * (cameraFar - cameraNear));
   }
-  float linearDepth(vec2 uv) {
-    return linearDepth(texture(tDepth, uv).r);
-  }
+  float linearDepth(vec2 uv) { return linearDepth(rawDepth(uv)); }
 
   // --- REKONŠTRUKCIA POZÍCIE Z HĽBKY ---
-  vec3 reconstructPosition(vec2 uv, float depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  // Sem PATRÍ surová hĺbka (NDC z = raw*2-1). Pôvodný kód sem dával
+  // linearizovanú hodnotu, takže lúče začínali pri kamere a raymarch
+  // nachádzal "hit" hneď v prvom kroku.
+  vec3 reconstructPosition(vec2 uv, float raw) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, raw * 2.0 - 1.0, 1.0);
     vec4 view = projectionMatrixInv * clip;
     return view.xyz / view.w;
   }
-  vec3 reconstructPosition(vec2 uv) {
-    return reconstructPosition(uv, linearDepth(uv));
-  }
+  vec3 reconstructPosition(vec2 uv) { return reconstructPosition(uv, rawDepth(uv)); }
 
   // --- NORMÁLA Z G-BUFFERU ---
   vec3 getNormal(vec2 uv) {
@@ -256,8 +259,6 @@ const RT_FRAGMENT = `
   }
 
   // === MAIN ===
-  out vec4 fragColor;
-
   void main() {
     vec4 sceneColor = texture(tDiffuse, vUv);
     float depth = linearDepth(vUv);
@@ -341,93 +342,66 @@ const RT_QUALITY = [
 
 export function createRayTracer(renderer, scene, camera) {
   let rtPass = null;
-  let gBufferScene = null;
-  let gBufferTargets = null;
   let currentQuality = 1; // STANDARD
   let enabled = true;
   let thickness = 0.05;
   let roughnessCutoff = 0.4;
   let metalnessBoost = 0.0;
 
-  // G-Buffer shaders (render scény do MRT: color, normal, depth, metalRough)
+  // G-buffer: dva jednoduché passy (normály, metal/rough). Pôvodný pokus o
+  // GLSL3 MRT so štyrmi `out` premennými sa nikdy nekompiloval — ShaderMaterial
+  // nemal glslVersion a nebolo naviazané drawBuffers, takže obe textúry
+  // obsahovali len albedo (alebo nič). Teraz jeden GLSL1 shader s uMode = 0/1.
   const gBufferVertex = `
-    varying vec3 vWorldPos;
     varying vec3 vNormal;
     varying vec2 vUv;
     void main() {
       vUv = uv;
-      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-      vNormal = normalize(normalMatrix * normal);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      vec4 p = vec4(position, 1.0);
+      vec3 n = normal;
+      // Mesto je plné InstancedMesh (autá, chodci, stromy, lístie) — bez
+      // instanceMatrix by sa všetky inštancie zložili na základný transform.
+      #ifdef USE_INSTANCING
+        p = instanceMatrix * p;
+        mat3 im = mat3(instanceMatrix);
+        n /= vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
+        n = im * n;
+      #endif
+      vNormal = normalize(normalMatrix * n);
+      gl_Position = projectionMatrix * modelViewMatrix * p;
     }
   `;
-
   const gBufferFragment = `
-    #version 300 es
     precision highp float;
-    varying vec3 vWorldPos;
     varying vec3 vNormal;
     varying vec2 vUv;
     uniform sampler2D map;
     uniform float metalness;
     uniform float roughness;
-    out vec4 outColor;
-    out vec4 outNormal;
-    out float outDepth;
-    out vec2 outMetalRough;
+    uniform int uMode;
     void main() {
-      vec4 tex = texture(map, vUv);
-      // alpha test pre listy/koruny
-      if (tex.a < 0.1) discard;
-      outColor = tex;
-      outNormal = vec4(vNormal * 0.5 + 0.5, 1.0);
-      outDepth = gl_FragCoord.z / gl_FragCoord.w; // non-linear, linearizujeme v RT
-      outMetalRough = vec2(metalness, roughness);
+      // Alpha test pre listy/koruny. map je vzdy platna (whitePixel fallback),
+      // sample neplatnej textury by inak discardlo cely G-buffer.
+      if (texture2D(map, vUv).a < 0.1) discard;
+      if (uMode == 0) gl_FragColor = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);
+      else gl_FragColor = vec4(metalness, roughness, 0.0, 1.0);
     }
   `;
-
-  const gBufferMaterial = new THREE.ShaderMaterial({
+  const whitePixel = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  whitePixel.needsUpdate = true;
+  const gbufMat = new THREE.ShaderMaterial({
     vertexShader: gBufferVertex,
     fragmentShader: gBufferFragment,
     uniforms: {
-      map: { value: null },
+      map: { value: whitePixel },
       metalness: { value: 0.0 },
       roughness: { value: 0.5 },
+      uMode: { value: 0 },
     },
-    // depthWrite: true, // default
   });
 
-  function createGBufferTargets(w, h) {
-    if (gBufferTargets) {
-      for (const t of Object.values(gBufferTargets)) t.dispose();
-    }
-    const options = {
-      type: THREE.HalfFloatType, // 16-bit pre pozíciu/normály
-      format: THREE.RGBAFormat,
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
-      generateMipmaps: false,
-      depthBuffer: true,
-      stencilBuffer: false,
-    };
-    gBufferTargets = {
-      color: new THREE.WebGLRenderTarget(w, h, { ...options, format: THREE.RGBAFormat, type: THREE.UnsignedByteType }),
-      normal: new THREE.WebGLRenderTarget(w, h, options),
-      depth: new THREE.WebGLRenderTarget(w, h, { ...options, format: THREE.RedFormat, type: THREE.HalfFloatType }),
-      metalRough: new THREE.WebGLRenderTarget(w, h, { ...options, format: THREE.RGFormat, type: THREE.HalfFloatType }),
-    };
-    // MRT nie je v WebGL2 priamo — rendrujeme 4x (ale môžeme zoptimalizovať neskôr)
-    // Pre teraz: jeden MRT shader ktorý píše do 4 render targetov cez drawBuffers
-    // THREE to nepodporuje priamo, takže použijeme single-pass s custom shaderom a gl_FragData
-    // Ale WebGL2 v THREE nepodporuje multiple render targets v ShaderMaterial jednoducho.
-    // WORKAROUND: Rendrujeme scény 4-krát s rôznymi shadermi, ALEBO
-    // Použijeme jeden RenderTarget s RGBA pre color+normal a dedukujeme depth z depth texture.
-    // Pre výkon: color+normal v jednom, depth+metalRough v druhom.
-  }
-
-  // Jednoduchší prístup: používame depth texture z hlavného renderu + normály z G-buffer passu
-  // a metal/roughness z materiálov objektov.
-  // Pre SSR potrebujeme: color, normal, depth, metalness, roughness.
+  // Hĺbku berieme priamo z DepthTexture hlavného renderu (bloom.js).
+  const _sunDir = new THREE.Vector3();
 
   function ensureRT(passW, passH) {
     if (rtPass) return true;
@@ -441,6 +415,7 @@ export function createRayTracer(renderer, scene, camera) {
         depthBuffer: false,
       });
       const material = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3,
         vertexShader: RT_VERTEX,
         fragmentShader: RT_FRAGMENT,
         uniforms: {
@@ -450,8 +425,6 @@ export function createRayTracer(renderer, scene, camera) {
           tMetalRough: { value: null },
           projectionMatrix: { value: camera.projectionMatrix },
           projectionMatrixInv: { value: new THREE.Matrix4().copy(camera.projectionMatrix).invert() },
-          viewMatrix: { value: camera.matrixWorldInverse },
-          viewMatrixInv: { value: camera.matrixWorld },
           resolution: { value: new THREE.Vector2(passW, passH) },
           cameraNear: { value: camera.near },
           cameraFar: { value: camera.far },
@@ -493,8 +466,9 @@ export function createRayTracer(renderer, scene, camera) {
     }
   }
 
-  // Render G-buffer (normály + metal/rough) do separátnych targetov
-  // Použijeme scene.overrideMaterial pre jednoduchý pass
+  // Render G-buffer (normály + metal/rough) do separátnych targetov.
+  // Materiály sa na dva passy vymenia priamo na mesh-och (nie overrideMaterial),
+  // lebo metalness/roughness sú per-materiál uniforms.
   let gBufferNormalTarget = null;
   let gBufferMetalRoughTarget = null;
 
@@ -507,83 +481,68 @@ export function createRayTracer(renderer, scene, camera) {
         minFilter: THREE.NearestFilter,
         magFilter: THREE.NearestFilter,
         generateMipmaps: false,
-        depthBuffer: false,
+        // Bez depth bufferu by vyhrával neskôr nakreslený objekt, nie najbližší —
+        // G-buffer by nepatril viditeľnému povrchu.
+        depthBuffer: true,
       };
       gBufferNormalTarget = new THREE.WebGLRenderTarget(passW, passH, opts);
-      gBufferMetalRoughTarget = new THREE.WebGLRenderTarget(passW, passH, {
-        ...opts,
-        format: THREE.RGFormat,
-      });
+      // RGFormat nie je na každom driveri renderovateľný — stačí RGBA, číta sa .rg.
+      gBufferMetalRoughTarget = new THREE.WebGLRenderTarget(passW, passH, opts);
       return true;
     } catch (e) {
       console.warn('[raytrace] G-buffer nedostupný:', e?.message);
+      gBufferNormalTarget?.dispose();
+      gBufferMetalRoughTarget?.dispose();
+      gBufferNormalTarget = null;
+      gBufferMetalRoughTarget = null;
       return false;
     }
   }
 
-  // Shader pre G-buffer (normály + metal/rough)
-  const gbufMat = new THREE.ShaderMaterial({
-    vertexShader: gBufferVertex,
-    fragmentShader: gBufferFragment,
-    uniforms: {
-      map: { value: null },
-      metalness: { value: 0.0 },
-      roughness: { value: 0.5 },
-    },
-  });
-
   function renderGBuffer(renderer, scene, camera, passW, passH) {
     if (!ensureGBuffer(passW, passH)) return null;
 
-    // Uložíme originálne materiály
-    const originalMaterials = new Map();
+    const originals = new Map();
+    const clones = [];
     scene.traverse((obj) => {
-      if (obj.isMesh && obj.material) {
-        if (Array.isArray(obj.material)) {
-          originalMaterials.set(obj, obj.material.slice());
-        } else {
-          originalMaterials.set(obj, obj.material);
-        }
-      }
+      if (!obj.isMesh || !obj.material) return;
+      originals.set(obj, obj.material);
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      // Jeden clone na materiál, medzi passami len prepneme uMode — polovica
+      // alokácií oproti clone-per-pass.
+      const gbufMats = mats.map((mat) => {
+        const clone = gbufMat.clone();
+        clone.uniforms.map.value = mat.map || whitePixel;
+        clone.uniforms.metalness.value = mat.metalness !== undefined ? mat.metalness : 0;
+        clone.uniforms.roughness.value = mat.roughness !== undefined ? mat.roughness : 0.5;
+        clones.push(clone);
+        return clone;
+      });
+      obj.material = gbufMats.length === 1 ? gbufMats[0] : gbufMats;
     });
+    const restore = () => {
+      for (const [obj, orig] of originals) obj.material = orig;
+    };
+    // G-buffer potrebuje len geometriu, nie tieňový priechod — bez toho by
+    // renderer spravil dva extra full shadow passes každý snímok.
+    const prevShadowAuto = renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate = false;
 
-    // Nastavíme G-buffer materiál
-    scene.traverse((obj) => {
-      if (obj.isMesh) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        const newMats = mats.map((mat) => {
-          const clone = gbufMat.clone();
-          clone.uniforms.map.value = mat.map || null;
-          clone.uniforms.metalness.value = mat.metalness !== undefined ? mat.metalness : 0.0;
-          clone.uniforms.roughness.value = mat.roughness !== undefined ? mat.roughness : 0.5;
-          return clone;
-        });
-        obj.material = newMats.length === 1 ? newMats[0] : newMats;
-      }
-    });
+    try {
+      for (const c of clones) c.uniforms.uMode.value = 0; // normály (view space)
+      renderer.setRenderTarget(gBufferNormalTarget);
+      renderer.render(scene, camera);
 
-    // Render do G-buffer targetov
-    // THREE nepodporuje MRT, takže renderujeme dvakrát (normály, metal/rough)
-    // Ale môžeme použiť jeden shader s gl_FragData[0], gl_FragData[1] — to vyžaduje WebGL2
-    // a raw shader. Pre jednoduchosť: dva passy.
-
-    // Pass 1: Normály
-    renderer.setRenderTarget(gBufferNormalTarget);
-    renderer.render(scene, camera);
-
-    // Pass 2: Metal/Rough
-    renderer.setRenderTarget(gBufferMetalRoughTarget);
-    renderer.render(scene, camera);
-
-    // Obnovíme materiály
-    scene.traverse((obj) => {
-      if (originalMaterials.has(obj)) {
-        obj.material = originalMaterials.get(obj);
-      }
-    });
-    originalMaterials.clear();
-
-    renderer.setRenderTarget(null);
+      for (const c of clones) c.uniforms.uMode.value = 1; // metalness / roughness
+      renderer.setRenderTarget(gBufferMetalRoughTarget);
+      renderer.render(scene, camera);
+    } finally {
+      renderer.shadowMap.autoUpdate = prevShadowAuto;
+      restore();
+      renderer.setRenderTarget(null);
+      originals.clear();
+      for (const c of clones) c.dispose();
+    }
     return {
       normal: gBufferNormalTarget.texture,
       metalRough: gBufferMetalRoughTarget.texture,
@@ -626,15 +585,19 @@ export function createRayTracer(renderer, scene, camera) {
       const gbuf = renderGBuffer(renderer, scene, camera, passW, passH);
       if (!gbuf) return mainColorTarget;
 
-      // 2) Sun direction do view space
-      const sunDirView = new THREE.Vector3().copy(sunLight.direction).transformDirection(camera.matrixWorldInverse).normalize();
-      rtPass.material.uniforms.sunDirection.value.copy(sunDirView);
-      rtPass.material.uniforms.sunIntensity.value = sunLight.intensity;
+      // 2) Smer slnka do view space. DirectionalLight NEMÁ `.direction` —
+      // pôvodný kód tam čítal undefined a každý snímok spadol na TypeError.
+      _sunDir.set(0, 1, 0);
+      if (sunLight && sunLight.position) {
+        _sunDir.copy(sunLight.position);
+        if (sunLight.target) _sunDir.sub(sunLight.target.position);
+      }
+      _sunDir.transformDirection(camera.matrixWorldInverse).normalize();
+      rtPass.material.uniforms.sunDirection.value.copy(_sunDir);
+      rtPass.material.uniforms.sunIntensity.value = sunLight ? sunLight.intensity : 0;
       rtPass.material.uniforms.time.value = performance.now() * 0.001;
       rtPass.material.uniforms.projectionMatrix.value.copy(camera.projectionMatrix);
       rtPass.material.uniforms.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
-      rtPass.material.uniforms.viewMatrix.value.copy(camera.matrixWorldInverse);
-      rtPass.material.uniforms.viewMatrixInv.value.copy(camera.matrixWorld);
       rtPass.material.uniforms.resolution.value.set(passW, passH);
       rtPass.material.uniforms.cameraNear.value = camera.near;
       rtPass.material.uniforms.cameraFar.value = camera.far;
@@ -653,7 +616,13 @@ export function createRayTracer(renderer, scene, camera) {
       return rtPass.renderTarget.texture;
     },
 
-    resize(w, h) {
+    // bloom.js posiela plné rozlíšenie composera, ale RT beží na polovici —
+    // použijeme ten istý výpočet ako ensureRT, inak sa po resize rozchádzala
+    // veľkosť targetu s uniformom `resolution`.
+    resize() {
+      const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+      const w = Math.max(2, Math.round(innerWidth * pr * 0.5));
+      const h = Math.max(2, Math.round(innerHeight * pr * 0.5));
       if (rtPass) {
         rtPass.renderTarget.setSize(w, h);
         rtPass.material.uniforms.resolution.value.set(w, h);
@@ -678,6 +647,7 @@ export function createRayTracer(renderer, scene, camera) {
         gBufferMetalRoughTarget = null;
       }
       gbufMat.dispose();
+      whitePixel.dispose();
     },
   };
 }

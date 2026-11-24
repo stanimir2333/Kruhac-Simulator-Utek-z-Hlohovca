@@ -201,12 +201,12 @@
       <input id="set-rtli" type="range" min="0" max="2" step="0.05" value="1"></div>
     <div class="srow rt-only"><label><span>RENDER · ŠKÁLA</span><span id="set-rtql-v">100%</span></label>
       <input id="set-rtql" type="range" min="0.3" max="1" step="0.05" value="1"></div>
-    <p style="font-size:11px;line-height:1.6;">TIENE = sila kontaktných tieňov (shadow mapa ostáva).<br>
-      SVETLO = odrazené svetlo. KVALITA = rozlíšenie + kroky lúčov.<br>
+    <p style="font-size:11px;line-height:1.6;">TIENE = dosah tieňovej kamery, SVETLO = sila slnka.<br>
+      KVALITA = mapa tieňov + kroky lúčov SSR/SSGI, ŠKÁLA = rozlíšenie renderu.<br>
       BLOOM žiari len svetlomety, lampy, rozsvietené okná a slnko na vode — HUD sa nedotkne.<br>
       VODA riadi odrazy hladiny Váhu; mimo 260 m od rieky sa nekreslia vôbec.<br>
       RASPBERRY režim = jeden prepínač pre slabé stroje (aj Raspberry Pi): render na polovicu, 30 FPS, dohľad 150 m, bez žiarenia a odrazov, 1K tiene. Hustotu sveta (textúry, vegetácia, doprava) zníži po obnovení stránky.<br>
-      Všetky úrovne (LITE/STD/ULTRA) dostupné aj na mobile, vrátane 8K tieňovej mapy (ak ju GPU zvládne). Pod 30 FPS sa RT samo vypne, pod 38 FPS bloom zmenší mriežku.</p>
+      Všetky úrovne (LITE/STD/ULTRA) dostupné aj na mobile, vrátane 8K tieňovej mapy (ak ju GPU zvládne). Screen-space RT beží na polovičnom rozlíšení; na mobiloch/LOW_END je vypnutý.</p>
     <p style="font-size:12px;">ESC / klik mimo / tlačidlo = zavrieť (hra beží ďalej)</p>
     <div id="set-build" class="buildstamp"></div>
     <br>

@@ -1,4 +1,4 @@
-// src/ui/settings.js — NASTAVENIA grafiky (port z monolitu, bez ray-tracingu).
+// src/ui/settings.js — NASTAVENIA grafiky (port z monolitu + RT / shadow tiers).
 //
 // ZDROJ: monolit index.monolith.legacy.html, relatívne od `<script type="module">`
 //   applyPR @9367 · applyViewDist @9375 · vramEstimate @9389 · vramGuard @9410
@@ -13,7 +13,8 @@
 // bloom/water sú voliteľné API { setMode(n) } / { setQuality(n) } — volajú sa
 // cez ctx.bloom?.setMode(...) / ctx.water?.setQuality(...), žiadne priame
 // importy (žiadne cykly: settings nesmie importovať main/engine-loop).
-// RT engine sa NEPORTUJE (stage-3): RT podúrovne sa len uložia + toast.
+// RT engine (screen-space) beží v bloom composeri; kvalita sa odvíja od
+// shadowTieru (ten je jediný zdroj pravdy pre tieňovú mapu aj RT preset).
 // Žiadne volania pri importe; žiadne game/player/input/bgm.
 import { S } from '../world/shared.js';
 import { setShadowRangeScale } from '../fx/sunshadow.js';
@@ -70,12 +71,13 @@ const SHADOW_FROM_RT = [1, 2, 3];
 // Opačná mapa: tieňový tier → RT úroveň. 1K nemá vlastný preset (najnižšie
 // LITE), takže 1K aj 2K zobrazujú LITE; 4K = STANDARD, 8K = ULTRA.
 // (index musí zostať v RT_LEVEL_NAMES — dlhé 3 spôsobilo undefined.)
-const RT_TIER_FROM_SHADOW = [0, 1, 2, 2];
+const RT_TIER_FROM_SHADOW = [0, 0, 1, 2];
 
 // Rozpočet VRAM: pri prekročení ustúpi o JEDEN schod
 // (max 1× za 3 s, drag slideru nekaskáduje): najprv tiene.
-// Monolit potom ustupoval aj RT škálou a bloom lowRes — VYNECHANÉ
-// (RT/bloom engine sa neportuje). Vždy s toastom, nikdy potichu.
+// Monolit potom ustupoval aj RT škálou a bloom lowRes — tie kroky sú
+// VYNECHANÉ (legacy stage-3 logika); RT už beží v src/fx/bloom.js.
+// Vždy s toastom, nikdy potichu.
 const VRAM_BUDGET = (S.LOW_END ? 350 : 900) * 1048576;
 let vramT = 0;
 let setOpen = false;
@@ -102,8 +104,8 @@ export function applyPR(ctx) {
   if (v < 0.1) v = 0.1;
   else if (v > 2) v = 2; // strop 2x: 3x + RT ULTRA + 8K tieň = GB VRAM navyše na iGPU so zdieľanou RAM
   if (c?.renderer?.setPixelRatio) c.renderer.setPixelRatio(v);
-  // VYNECHANÉ: rtResize()/bloomResize() (stage-3 / bloom engine),
-  // prCur/resManual auto-rozlíšenie (engine-loop sa neportuje).
+  // VYNECHANÉ: pôvodné rtResize()/bloomResize() z monolitu — composer
+  // si rozlíšenie rieši sám cez bloom.resize(). Auto-rozlíšenie neportované.
   vramGuard(c, _say); // rozpočet VRAM: prípadný ústup o schod skôr než pád kontextu
 }
 
@@ -120,7 +122,7 @@ export function applyViewDist(ctx) {
   // VYNECHANÉ: waterResize() (odrazová kamera Váhu — vodný modul).
 }
 
-// <- legacy @9389 (bez RT/bloom/vodných bufferov — tie vlastnia neportované moduly)
+// <- legacy @9389 (odhad VRAM; RT/bloom/vodné buffery vlastnia ich moduly)
 export function vramEstimate(ctx) {
   const c = ctx || _ctx;
   let b = 0;
@@ -131,12 +133,11 @@ export function vramEstimate(ctx) {
     const W = Math.max(2, _vb.x | 0), H = Math.max(2, _vb.y | 0);
     b += W * H * 4 * 2; // canvas (s MSAA rezervou)
   }
-  // VYNECHANÉ: RT buffery (stage-3), composer/srcRT/bloom mipy (bloom engine),
-  // odraz hladiny (Váh modul).
+  // VYNECHANÉ: RT/composer/bloom buffery (bloom.js) a odraz hladiny (Váh modul).
   return b;
 }
 
-// <- legacy @9410 (RT škála + bloom lowRes vynechané — neportované enginy)
+// <- legacy @9410 (krok RT škály a bloom lowRes z monolitu vynechaný)
 export function vramGuard(ctx, say) {
   const now = performance.now();
   if (now - vramT < 3000) return;
@@ -157,6 +158,11 @@ export function applyShadowTier(ctx, t) {
   const c = ctx || _ctx;
   shadowTier = Math.max(0, Math.min(SHADOW_TIERS.length - 1, t));
   settings.shq = shadowTier; // store je zdroj pravdy (monolit: shadowTier)
+  // RT preset je z neho odvodený — obe tlačidlá (set-shq aj set-rtq) zapisujú
+  // shadowTier, preto kvalitu screen-space RT musí nastaviť aj tento spoločný
+  // bod. Inak sa label v UI rozchádzal s tým, čo beží v bloom.composeri.
+  settings.rtQ = RT_TIER_FROM_SHADOW[shadowTier];
+  try { c?.bloom?.setRTQuality?.(settings.rtQ); } catch (_e) { /* noop */ }
   const res = SHADOW_TIERS[shadowTier].res;
   const maxTex = c?.renderer ? c.renderer.capabilities.maxTextureSize : 2048;
   const use = Math.min(res, maxTex);
@@ -252,7 +258,7 @@ export function loadSettings() {
     // s.rtq sa už NEČÍTA — pozri komentár vyššie.
     settings.rtSh = storedNum(s.rtsh, 0, 1.5, settings.rtSh);
     settings.rtLi = storedNum(s.rtli, 0, 2, settings.rtLi);
-    settings.rtQl = storedNum(s.rtQl, 0.3, 1, settings.rtQl);
+    settings.rtQl = storedNum(s.rtql, 0.3, 1, settings.rtQl);
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     // AUTO: nové uložisko má `car` (id z CARS). Motor je zviazaný s typom auta
     // — po zvolení auta je engine odvodený (B29). Starý zápis bez `car` premigruje
@@ -354,7 +360,7 @@ export function syncSettingsUI(ctx) {
   if (engV) engV.textContent = ENGINE_NAME[settings.engine] || ENGINE_NAME.tdi;
   const carV = $('set-car-v');
   if (carV) carV.textContent = (CARS[settings.car] || CARS.octavia).name;
-  // --- ray tracing (engine v stage-3: len stav + labely, bez RT_SPLITPOROV.) ---
+  // --- ray tracing (hlavný vypínač + labely; kvalita sa odvíja od shadowTieru) ---
   const tg = $('set-rt-toggle');
   if (tg) {
     tg.classList.toggle('on', settings.rt);
@@ -362,21 +368,21 @@ export function syncSettingsUI(ctx) {
   }
   const rtV = $('set-rt-v');
   if (rtV) rtV.textContent = settings.rt ? 'ZAP.' : 'VYP.';
-// TIENE·MAPA (LITE/STD/ULTRA) ZOBRAZUJE shadowTier, nie vlastný settings.rtQ.
-      // Oba ovládače zapisovali do jednej premennej `shadowTier`, takže uložený
-      // stav závisel od toho, ktorý bol kliknutý naposledy (po starte sa navyše
-      // načítal `rtq` a prepísal `shq`). Teraz je zdroj pravdy jeden: shadowTier
-      // (zapisuje ho set-shq aj set-rtq), a `rtq` sa z neho iba odvádza.
-      const qTier = RT_TIER_FROM_SHADOW[shadowTier];
-      settings.rtQ = qTier;
-      const rtqV = $('set-rtq-v');
-      if (rtqV) rtqV.textContent = RT_LEVEL_NAMES[qTier];
-      $('settings')?.classList.toggle('rt-off', !settings.rt);
-      const segs = $('set-rtq')?.children;
-      if (segs) {
-        // všetky úrovne dostupné aj na mobile (vrátane 8K tieňovej mapy)
-        for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i === qTier);
-      }
+  // TIENE·MAPA (LITE/STD/ULTRA) ZOBRAZUJE shadowTier, nie vlastný settings.rtQ.
+  // Oba ovládače zapisovali do jednej premennej shadowTier, takže uložený
+  // stav závisel od toho, ktorý bol kliknutý naposledy (po starte sa navyše
+  // načítal rtq a prepísal shq). Teraz je zdroj pravdy jeden: shadowTier
+  // (zapisuje ho set-shq aj set-rtq), a rtq sa z neho iba odvádza.
+  const qTier = RT_TIER_FROM_SHADOW[shadowTier];
+  settings.rtQ = qTier;
+  const rtqV = $('set-rtq-v');
+  if (rtqV) rtqV.textContent = RT_LEVEL_NAMES[qTier];
+  $('settings')?.classList.toggle('rt-off', !settings.rt);
+  const segs = $('set-rtq')?.children;
+  if (segs) {
+    // všetky úrovne dostupné aj na mobile (vrátane 8K tieňovej mapy)
+    for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i === qTier);
+  }
   $('set-rtsh') && ($('set-rtsh').value = settings.rtSh);
   const rtshV = $('set-rtsh-v');
   if (rtshV) rtshV.textContent = Math.round(settings.rtSh * 100) + '%';
@@ -404,12 +410,16 @@ export function applyAll(ctx) {
     if (c?.renderer) c.renderer.shadowMap.enabled = settings.rt;
     if (c?.sun) c.sun.intensity = 2.4 * settings.rtLi;
     setShadowRangeScale(settings.rtSh);
+    // Uložený stav RT sa musí dostať aj do screen-space passu — predtým sa
+    // pri štarte uplatnila len shadow mapa a bloom bežal so svojím defaultom.
+    c?.bloom?.setRTEnabled?.(settings.rt);
+    c?.bloom?.setRTQuality?.(settings.rtQ);
   } catch (_e) { /* noop */ }
   syncSettingsUI(c);
 }
 
 // Nové: napoj VŠETKY DOM id z index.html. toast(msg) je voliteľný.
-// RT podúrovne sa len uložia + toast o stage-3 (RT engine sa neportuje).
+// RT ovládače idú cez voliteľné bloom API (setRTEnabled/setRTQuality).
 export function wireSettingsUI(ctx, toast) {
   if (ctx) _ctx = ctx;
   if (toast) _say = toast;
@@ -538,8 +548,8 @@ export function wireSettingsUI(ctx, toast) {
     const b = e.target.closest ? e.target.closest('button') : null;
     if (!b) return;
     settings.bloom = parseInt(b.getAttribute('data-b'), 10);
-    // Monolit resetoval BLOOM.badT/lowRes + applyBloomMode() — VYNECHANÉ
-    // (bloom engine sa neportuje), volá sa len voliteľné API.
+    // Monolit resetoval BLOOM.badT/lowRes + applyBloomMode() — tie staré
+    // degradácie sa neportovali, volá sa len voliteľné bloom API.
     try { c?.bloom?.setMode?.(settings.bloom); } catch (_e) { /* noop */ }
     syncSettingsUI(c);
     saveSettings();
@@ -578,9 +588,8 @@ export function wireSettingsUI(ctx, toast) {
     const q = Math.max(0, Math.min(2, parseInt(b.getAttribute('data-q'), 10)));
     // ÚROVEŇ = preset tieňovej mapy: LITE 2K / STD 4K / ULTRA 8K.
     // applyShadowTier nastaví settings.rtQ z nového shadowTieru (pozri syncSettingsUI).
+    // applyShadowTier nastaví aj RT preset (pozri RT_TIER_FROM_SHADOW).
     applyShadowTier(c, SHADOW_FROM_RT[q]);
-    // Screen-space RT quality
-    c?.bloom?.setRTQuality?.(q);
     saveSettings();
     say(`Ray Tracing kvalita: ${RT_QUALITY_NAMES[q]}.`);
   });

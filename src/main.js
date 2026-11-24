@@ -43,7 +43,6 @@ import { loadRadioManifest, createRadio } from './audio/radio.js';
 import { createSfx } from './audio/sfx.js';
 import { createStormManager } from './weather/storm.js';
 import { createBloom } from './fx/bloom.js';
-import { RT_QUALITY_NAMES } from './fx/raytrace.js';
 import { updateSunShadow } from './fx/sunshadow.js';
 import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI, toggleSettings } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
