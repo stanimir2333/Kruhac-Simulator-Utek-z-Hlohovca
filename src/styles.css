@@ -278,6 +278,19 @@
   .menu-card .btn:hover{transform:translateY(-2px) scale(1.02);filter:brightness(1.12);
     box-shadow:0 0 36px rgba(255,77,126,.85);}
   .menu-card .btn-alt:hover{box-shadow:0 0 36px rgba(95,242,234,.8);}
+  /* RTX výber v hlavnom menu — tyrkysový, aby ladil s tagline/menu akcentom. */
+  .menu-rtx{margin:10px 0 2px;padding:10px 12px;border:1px solid rgba(95,242,234,.35);
+    border-radius:10px;background:rgba(6,22,26,.42);text-align:left;}
+  .menu-rtx-head{display:flex;justify-content:space-between;align-items:center;
+    font-size:11px;letter-spacing:2px;color:#5ff2ea;margin-bottom:8px;}
+  .menu-rtx-head span:last-child{color:#d6f8f5;letter-spacing:1px;}
+  .menu-rtx .segs{gap:5px;}
+  .menu-rtx .segs button{border:1px solid rgba(95,242,234,.55);color:#9ef7f1;
+    background:rgba(6,22,26,.65);font-size:11px;letter-spacing:1px;padding:7px 2px;}
+  .menu-rtx .segs button:hover{border-color:#5ff2ea;color:#fff;}
+  .menu-rtx .segs button.on{background:#5ff2ea;color:#06202a;font-weight:bold;
+    box-shadow:0 0 12px rgba(95,242,234,.55);}
+  .menu-rtx-note{margin-top:7px;font-size:10px;line-height:1.45;color:#9fd8d4;}
   #end-stats{font-size:14px;color:var(--green);margin-top:8px;line-height:2;}
   /* ---------- Dotykové ovládanie: vľavo šípky, vpravo pedále ---------- */
   #touch{position:fixed;inset:auto 0 0 0;z-index:55;display:none;

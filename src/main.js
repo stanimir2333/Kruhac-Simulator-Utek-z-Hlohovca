@@ -44,7 +44,7 @@ import { createSfx } from './audio/sfx.js';
 import { createStormManager } from './weather/storm.js';
 import { createBloom } from './fx/bloom.js';
 import { updateSunShadow } from './fx/sunshadow.js';
-import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI, toggleSettings } from './ui/settings.js';
+import { settings, shadowTierR, setShadowDiag, saveSettings, syncSettingsUI, toggleSettings, wireMenuRTX } from './ui/settings.js';
 import { cheatKey, cheatCancel, cheatLocked, cheatTyping, isNoclip, updateNoclip } from './game/cheats.js';
 import { wireSettingsUI } from './ui/settings.js';
 import { updateDrift, updateDriftHUD, buildParticles, updateParticles, emitDriftSmoke, emitSparks, updateExhaustFlames, loadDriftBest, resetDrift, DR } from './game/drift.js';
@@ -784,6 +784,9 @@ function pickMap() {
 }
 
 (async () => {
+  // RTX výber v hlavnom menu musí byť živý ešte pred bootom (bloom/renderer
+  // vznikajú až v boote) — zapisuje do store, boot ho potom prenesie do GPU.
+  wireMenuRTX();
   // Manifest stiahni už počas výberu mapy (bez gesta to nevadí — len fetch),
   // aby bol pri kliku pripravený a autoplay sa nestratil čakaním na sieť.
   const radioManifestPromise = loadRadioManifest();

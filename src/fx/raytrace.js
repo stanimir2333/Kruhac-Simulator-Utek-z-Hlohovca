@@ -1,13 +1,22 @@
-// src/fx/raytrace.js — Screen-Space Ray Tracing effects (SSR + Contact Shadows).
+// src/fx/raytrace.js — Screen-Space Ray Tracing effects (SSR + Contact Shadows + SSGI).
 // Integruje sa do bloom composer pipeline (src/fx/bloom.js).
 // Tri efekty v jednom priechode (Compute-like cez fragment shader):
 //  1) Screen-Space Reflections (SSR) — voda, mokré cesty, karosérie, okná.
-//  2) Ray-Traced Contact Shadows — jemné tieňy pod autami, chodcami, drobnými objektmi.
-//  3) Screen-Space Global Illumination (SSGI) — jemné odrazové svetlo v záverych.
-// Všetko beží na polovičnom rozlíšení (ako bloom) pre výkon.
+//     Pri miniatí lúča sa použije obloha (sky fallback), takže kovy nikdy
+//     neostanú čierne; zmes je Fresnelova, nie "screen blend".
+//  2) Ray-Traced Contact Shadows — jemné tiene pod autami, chodcami, drobnými
+//     objektmi. Obmedzené na pár metrov, aby nedublovali tieňovú mapu.
+//  3) Screen-Space Global Illumination (SSGI) — jemné odrazové svetlo v záveroch.
+// Všetko beží na zníženom rozlíšení (podľa kvality LITE/STD/ULTRA) pre výkon.
+//
+// Kvalita (RT_QUALITY) riadi: rozlíšenie RT cieľa, počet krokov lúčov, dosah
+// SSR/contact shadows/SSGI, počet SSGI vzoriek a silu sky fallbacku.
+// G-buffer (normály + metal/rough) sa NEKLONUJE každý snímok — klony materiálov
+// sú cache-ované (Map), inak vznikalo ~stovky alokácií na snímok a GC sekanie.
 
 import * as THREE from 'three';
 import { S } from '../world/shared.js';
+import { dayness } from '../world/daynight.js';
 
 const RT_VERTEX = `
   varying vec2 vUv;
@@ -21,8 +30,8 @@ const RT_FRAGMENT = `
   // GLSL3 zapína three cez glslVersion na ShaderMaterial — verziu tu NEPÍŠeme,
   // inak by sa #version objavil dvakrát a shader by neprešiel kompiláciou.
   precision highp float;
+  precision highp int;
   precision highp sampler2D;
-  precision highp usampler2D;
 
   varying vec2 vUv;
   // GLSL3 nemá gl_FragColor — three ho pri GLSL3 nevytvára, treba vlastný output.
@@ -30,11 +39,12 @@ const RT_FRAGMENT = `
 
   // === UNIFORMS ===
   uniform sampler2D tDiffuse;        // scéna (farba)
-  uniform sampler2D tDepth;          // hĺbka (linear 0..1)
+  uniform sampler2D tDepth;          // hĺbka (raw window depth 0..1)
   uniform sampler2D tNormal;         // normály (view space, RGB = XYZ * 0.5 + 0.5)
   uniform sampler2D tMetalRough;     // metalness (R), roughness (G)
   uniform mat4 projectionMatrix;
   uniform mat4 projectionMatrixInv;
+  uniform mat4 cameraMatrixWorld;    // inverz viewMatrix — smer lúča do sveta
   // viewMatrix už three deklaruje v prefixe fragment shaderu — duplicitná
   // deklarácia je v GLSL3 chyba kompilácie (a rovnako zbytočná viewMatrixInv).
   uniform vec2 resolution;           // rozlíšenie RT cieľa
@@ -47,13 +57,22 @@ const RT_FRAGMENT = `
   uniform float ssgiIntensity;       // intenzita SSGI
   uniform float ssrIntensity;        // intenzita SSR
   uniform float contactShadowIntensity; // intenzita contact shadows
+  uniform float ssrMaxDist;          // max dĺžka SSR lúča (m)
+  uniform float contactShadowMaxDist;// max dĺžka contact shadow lúča (m)
+  uniform float ssgiMaxDist;         // max dĺžka SSGI lúča (m)
+  uniform int ssgiSamples;           // počet SSGI vzoriek (LITE/STD/ULTRA)
   uniform vec3 sunDirection;         // smer slnka (view space)
+  uniform vec3 sunWorld;             // smer slnka (world space, pre sky fallback)
   uniform float sunIntensity;        // intenzita slnka
   uniform bool enableSSR;
   uniform bool enableContactShadows;
   uniform bool enableSSGI;
   uniform float roughnessCutoff;     // SSR len pre roughness < cutoff
   uniform float metalnessBoost;      // posun metalness pre SSR
+  uniform float skyIntensity;        // sila sky fallbacku (LITE/STD/ULTRA)
+  uniform vec3 skyZenith;
+  uniform vec3 skyHorizon;
+  uniform vec3 skySun;
 
   // === KONŠTANTY ===
   #define PI 3.14159265359
@@ -87,114 +106,119 @@ const RT_FRAGMENT = `
   // --- MATERIÁL ---
   vec2 getMaterial(vec2 uv) {
     vec2 mr = texture(tMetalRough, uv).rg;
-    return vec2(mr.r + metalnessBoost, mr.g); // metalness, roughness
+    // metalnessBoost je len jemný posun pre mokré povrchy — nikdy nad 1.
+    return vec2(clamp(mr.r + metalnessBoost, 0.0, 1.0), clamp(mr.g, 0.0, 1.0));
   }
 
-  // --- JITTER PRE TEMPORÁLNE ZRKADLENIE ---
+  // --- STABILNÝ HASH (bez animovaného šumu, aby obraz nekmital) ---
   float rand(vec2 co) {
     return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
   }
-  vec2 jitterUV(vec2 uv, float t) {
-    float j = rand(uv * 17.0 + t * 0.01) * 0.5 + 0.5;
-    return uv + (j - 0.5) * (1.0 / resolution);
+
+  // --- SKY FALLBACK ---
+  // Keď SSR lúč minie, kov odráža oblohu. Bez toho boli odrazy na karosérii
+  // a skle čierne (tDiffuse nemá čo vrátiť mimo obrazovky).
+  vec3 skyColor(vec3 dir) {
+    float y = clamp(dir.y, -0.15, 1.0);
+    float t = smoothstep(-0.06, 0.55, y);
+    vec3 col = mix(skyHorizon, skyZenith, t);
+    float sd = max(dot(normalize(dir), normalize(sunWorld)), 0.0);
+    col += skySun * (pow(sd, 512.0) * 1.4 + pow(sd, 64.0) * 0.28 + pow(sd, 8.0) * 0.08);
+    return col * skyIntensity;
   }
 
   // --- SSR RAYMARCH (view space) ---
-  vec3 traceSSR(vec3 origin, vec3 dir, float roughness) {
-    // Adaptívny krok: hrubší pre hrubšie povrchy, jemnejší pre zrkadlové
-    float stepSize = stepScale * mix(0.5, 2.0, roughness);
-    float dist = 0.0;
-    vec3 pos = origin;
-    vec3 hitPos = vec3(0.0);
-    bool hit = false;
-    float hitDepth = 0.0;
-
-    // Začiatok: posuneme sa z povrchu von (thickness bias)
-    pos += dir * thickness;
+  // Vracia farbu zásahu; confidence (0..1) hovorí, ako veľmi je zásah
+  // dôveryhodný (okraj obrazovky, vzdialenosť, drsnosť).
+  vec3 traceSSR(vec3 origin, vec3 dir, float roughness, out float confidence) {
+    confidence = 0.0;
+    // Adaptívny krok: hrubší pre hrubšie povrchy, jemnejší pre zrkadlové.
+    float stepSize = stepScale * mix(0.7, 2.0, roughness);
+    // Štart až za vlastným povrchom (thickness bias) + stabilný per-pixel
+    // offset, aby sa lúče nerozostupovali v pásoch.
+    float t = max(thickness * 2.0, abs(origin.z) * 0.002);
+    t += rand(vUv * 97.0) * stepSize;
+    vec3 pos = origin + dir * t;
 
     for (int i = 0; i < MAX_STEPS; i++) {
-      if (i >= maxSteps) break;
+      if (i >= maxSteps || t > ssrMaxDist) break;
 
-      dist += stepSize * (1.0 + dist * 0.1); // exponenciálny rast kroku
-      pos = origin + dir * dist;
+      float prevT = t;
+      stepSize *= 1.11; // exponenciálny rast kroku
+      t += stepSize;
+      pos = origin + dir * t;
 
       // View space -> NDC
       vec4 clip = projectionMatrix * vec4(pos, 1.0);
       if (clip.w <= 0.0) break;
       vec2 ndc = clip.xy / clip.w;
       vec2 uv = ndc * 0.5 + 0.5;
-
       if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
 
       float sceneDepth = linearDepth(uv);
       float rayDepth = -pos.z; // view space Z je záporný
+      // Hrúbka rastie so vzdialenosťou — inak ďaleké lúče prepadnú cez steny.
+      float thick = thickness + t * 0.015;
 
       // Hit: ray je za scénou (bližšie k kamere ako scéna)
-      if (rayDepth > sceneDepth - thickness) {
-        hit = true;
-        hitPos = pos;
-        hitDepth = sceneDepth;
-        break;
+      if (rayDepth > sceneDepth - thick) {
+        // Binary search pre presnejší hit (medzi prevT a t).
+        float nearT = prevT;
+        float farT = t;
+        for (int j = 0; j < BINARY_SEARCH_STEPS; j++) {
+          float midT = (nearT + farT) * 0.5;
+          vec3 midPos = origin + dir * midT;
+          vec4 c2 = projectionMatrix * vec4(midPos, 1.0);
+          if (c2.w <= 0.0) { nearT = midT; continue; }
+          vec2 uv2 = (c2.xy / c2.w) * 0.5 + 0.5;
+          if (uv2.x < 0.0 || uv2.x > 1.0 || uv2.y < 0.0 || uv2.y > 1.0) {
+            nearT = midT;
+            continue;
+          }
+          float sd = linearDepth(uv2);
+          float mt = thickness + midT * 0.015;
+          if (-midPos.z > sd - mt) farT = midT;
+          else nearT = midT;
+        }
+
+        vec3 hitPos = origin + dir * farT;
+        vec4 fc = projectionMatrix * vec4(hitPos, 1.0);
+        if (fc.w <= 0.0) return vec3(0.0);
+        vec2 fuv = (fc.xy / fc.w) * 0.5 + 0.5;
+        if (fuv.x < 0.0 || fuv.x > 1.0 || fuv.y < 0.0 || fuv.y > 1.0) return vec3(0.0);
+
+        // Okraj obrazovky = nespoľahlivý zásah; vzdialenosť a drsnosť tiež.
+        float edge =
+          smoothstep(0.0, 0.08, fuv.x) * (1.0 - smoothstep(0.92, 1.0, fuv.x)) *
+          smoothstep(0.0, 0.08, fuv.y) * (1.0 - smoothstep(0.92, 1.0, fuv.y));
+        float distFade = 1.0 - smoothstep(ssrMaxDist * 0.55, ssrMaxDist, farT);
+        confidence = clamp(edge * distFade * (1.0 - roughness * 0.55), 0.0, 1.0);
+        return texture(tDiffuse, fuv).rgb;
       }
     }
-
-    if (!hit) return vec3(0.0);
-
-    // Binary search pre presnejší hit
-    float nearDist = dist - stepSize * (1.0 + (dist - stepSize) * 0.1);
-    float farDist = dist;
-    vec3 nearPos = origin + dir * nearDist;
-    vec3 farPos = hitPos;
-
-    for (int i = 0; i < BINARY_SEARCH_STEPS; i++) {
-      float midDist = (nearDist + farDist) * 0.5;
-      vec3 midPos = origin + dir * midDist;
-      vec4 clip = projectionMatrix * vec4(midPos, 1.0);
-      if (clip.w <= 0.0) { farDist = midDist; farPos = midPos; continue; }
-      vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
-      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { farDist = midDist; farPos = midPos; continue; }
-      float sceneDepth = linearDepth(uv);
-      float rayDepth = -midPos.z;
-      if (rayDepth > sceneDepth - thickness) {
-        farDist = midDist;
-        farPos = midPos;
-      } else {
-        nearDist = midDist;
-        nearPos = midPos;
-      }
-    }
-
-    // Finiálna UV pre farebný vzork
-    vec4 finalClip = projectionMatrix * vec4(farPos, 1.0);
-    vec2 finalUV = (finalClip.xy / finalClip.w) * 0.5 + 0.5;
-
-    if (finalUV.x < 0.0 || finalUV.x > 1.0 || finalUV.y < 0.0 || finalUV.y > 1.0) return vec3(0.0);
-
-    vec3 reflColor = texture(tDiffuse, finalUV).rgb;
-
-    // Fade podľa uhlu (Fresnel-like) a hrubosti
-    float ndotv = max(0.0, dot(normalize(-origin), normalize(dir)));
-    float fade = pow(1.0 - ndotv, 2.0) * (1.0 - roughness * 0.5);
-
-    return reflColor * fade * ssrIntensity;
+    return vec3(0.0);
   }
 
   // --- CONTACT SHADOWS (view space, smer slnka) ---
+  // Len krátky dosah (pár metrov): dlhé tiene rieši tieňová mapa, toto sú
+  // jemné dotykové tiene pod objektmi. Predtým lúč letel ~50 m a dubloval
+  // celú tieňovú mapu.
   float traceContactShadow(vec3 origin, vec3 normal) {
-    // Ray v smere slnka (view space)
     vec3 dir = normalize(sunDirection);
     float ndotl = dot(normal, dir);
-    if (ndotl <= 0.02) return 0.0; // povrch nevidí slnko
+    if (ndotl <= 0.05) return 0.0;
 
-    float stepSize = stepScale * 0.3;
-    float dist = 0.0;
-    vec3 pos = origin + normal * thickness; // posun z povrchu
+    float maxDist = contactShadowMaxDist;
+    float stepSize = maxDist / 12.0;
+    float jitter = rand(vUv * 53.0 + 0.37);
+    vec3 pos;
 
-    for (int i = 0; i < 32; i++) {
-      if (i >= maxSteps / 2) break;
-      dist += stepSize * (1.0 + dist * 0.15);
-      pos = origin + dir * dist;
+    for (int i = 0; i < 24; i++) {
+      if (i >= maxSteps / 3) break;
+      float t = (float(i) + jitter) * stepSize;
+      if (t > maxDist) break;
 
+      pos = origin + dir * t + normal * thickness;
       vec4 clip = projectionMatrix * vec4(pos, 1.0);
       if (clip.w <= 0.0) break;
       vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
@@ -202,42 +226,43 @@ const RT_FRAGMENT = `
 
       float sceneDepth = linearDepth(uv);
       float rayDepth = -pos.z;
-      if (rayDepth > sceneDepth - thickness) {
-        // V tieni
-        return contactShadowIntensity * (1.0 - ndotl * 0.5);
+      float thick = thickness + t * 0.02;
+      if (rayDepth > sceneDepth - thick) {
+        float fade = 1.0 - smoothstep(maxDist * 0.55, maxDist, t);
+        float sunAmt = clamp(sunIntensity * 0.5, 0.0, 1.0);
+        return contactShadowIntensity * fade * smoothstep(0.0, 0.3, ndotl) * sunAmt;
       }
     }
     return 0.0;
   }
 
-  // --- SSGI (jednoduchý cone trace pre indirect lighting) ---
+  // --- SSGI (cosine-weighted hemisphere trace) ---
   vec3 traceSSGI(vec3 origin, vec3 normal, float roughness) {
     vec3 irradiance = vec3(0.0);
-    const int SAMPLES = 4;
-    const int STEPS = 8;
+    float jitter = rand(vUv * 31.7);
+    float stepSize = ssgiMaxDist / 6.0;
 
-    for (int s = 0; s < SAMPLES; s++) {
-      // Generuj smer v hemi-sfére okolo normály
-      float a = rand(vUv + vec2(s * 17.0, time * 0.1)) * PI * 2.0;
-      float r = rand(vUv + vec2(s * 31.0, time * 0.13)) * 0.5 + 0.5;
-      float phi = acos(1.0 - r);
-      vec3 sampleDir = normalize(vec3(
+    for (int s = 0; s < 8; s++) {
+      if (s >= ssgiSamples) break;
+
+      // Cosine-weighted vzorka v hemi-sfére (BRDF cosinus sa vykráti).
+      float a = (float(s) + jitter) * 2.39996323; // zlatý uhol
+      float r = rand(vUv + vec2(float(s) * 13.7, 3.1));
+      float phi = acos(sqrt(r));
+      vec3 sampleDir = vec3(
         sin(phi) * cos(a),
         sin(phi) * sin(a),
         cos(phi)
-      ));
-      // Rotuj do normaly
-      vec3 tangent = normalize(cross(normal, abs(normal.z) < 0.9 ? vec3(0,0,1) : vec3(0,1,0)));
+      );
+      vec3 tangent = normalize(cross(normal, abs(normal.z) < 0.9 ? vec3(0, 0, 1) : vec3(0, 1, 0)));
       vec3 bitangent = cross(normal, tangent);
       vec3 worldDir = tangent * sampleDir.x + bitangent * sampleDir.y + normal * sampleDir.z;
 
-      float dist = 0.0;
-      float stepSize = stepScale * 0.5;
-      vec3 pos = origin + normal * thickness;
-
-      for (int i = 0; i < STEPS; i++) {
-        dist += stepSize * (1.0 + dist * 0.2);
-        pos = origin + worldDir * dist;
+      float t = stepSize * (0.35 + rand(vUv + float(s) * 7.3));
+      for (int i = 0; i < 8; i++) {
+        t += stepSize;
+        if (t > ssgiMaxDist) break;
+        vec3 pos = origin + worldDir * t;
 
         vec4 clip = projectionMatrix * vec4(pos, 1.0);
         if (clip.w <= 0.0) break;
@@ -246,57 +271,65 @@ const RT_FRAGMENT = `
 
         float sceneDepth = linearDepth(uv);
         float rayDepth = -pos.z;
-        if (rayDepth > sceneDepth - thickness) {
-          vec3 hitColor = texture(tDiffuse, uv).rgb;
-          vec3 hitNormal = getNormal(uv);
-          float hitNdotL = max(0.0, dot(hitNormal, -worldDir));
-          irradiance += hitColor * hitNdotL * (1.0 / float(SAMPLES));
+        if (rayDepth > sceneDepth - (thickness + t * 0.03)) {
+          irradiance += texture(tDiffuse, uv).rgb;
           break;
         }
       }
     }
-    return irradiance * ssgiIntensity * (1.0 - roughness * 0.7);
+
+    float inv = 1.0 / float(max(1, ssgiSamples));
+    // Clamp proti fireflies (jasné slnko na vode by inak blikalo).
+    irradiance = min(irradiance * inv, vec3(1.5));
+    return irradiance * ssgiIntensity * (1.0 - roughness * 0.65);
   }
 
   // === MAIN ===
   void main() {
     vec4 sceneColor = texture(tDiffuse, vUv);
-    float depth = linearDepth(vUv);
+    float raw = rawDepth(vUv);
+    float depth = linearDepth(raw);
+    bool isSky = raw >= 0.99999 || depth >= cameraFar * 0.98;
     vec3 normal = getNormal(vUv);
     vec2 material = getMaterial(vUv);
     float metalness = material.x;
     float roughness = material.y;
 
     // Pozícia v view space
-    vec3 pos = reconstructPosition(vUv);
+    vec3 pos = reconstructPosition(vUv, raw);
 
     vec3 result = sceneColor.rgb;
 
     // --- SSR ---
-    if (enableSSR && (metalness > 0.1 || roughness < roughnessCutoff)) {
-      // View vector
+    if (!isSky && enableSSR && (metalness > 0.08 || roughness < roughnessCutoff)) {
       vec3 V = normalize(-pos);
-      // Reflekcia
       vec3 R = reflect(V, normal);
-      // Jitter pre temporálnu stabilitu
-      vec2 jitteredUV = jitterUV(vUv, time);
-      vec3 ssr = traceSSR(pos, R, roughness);
-      // Blend: additívne pre metalické, screen pre dielektrické
-      if (metalness > 0.5) {
-        result = mix(result, result + ssr, metalness);
-      } else {
-        result = result * (1.0 - ssr) + ssr; // screen blend
-      }
+      float hitConf = 0.0;
+      vec3 hitColor = traceSSR(pos, R, roughness, hitConf);
+
+      // Fresnel: dielektrikum odráža málo kolmo a takmer všetko na hrane;
+      // kov odráža vždy. f0 = 0.04 pre sklo/asfalt, 1.0 pre kov.
+      float ndotv = clamp(dot(normal, V), 0.0, 1.0);
+      float fresnel = pow(1.0 - ndotv, 5.0);
+      float f0 = mix(0.04, 1.0, metalness);
+      float reflAmt = (f0 + (1.0 - f0) * fresnel) * ssrIntensity * (1.0 - roughness * 0.65);
+
+      vec3 worldR = normalize(mat3(cameraMatrixWorld) * R);
+      vec3 env = skyColor(worldR);
+      // Miss = obloha (stlmenejšia), hit = farba scény.
+      vec3 reflColor = mix(env, hitColor, hitConf);
+      float amount = clamp(reflAmt * mix(0.55, 1.0, hitConf), 0.0, 1.0);
+      result = mix(result, reflColor, amount);
     }
 
     // --- CONTACT SHADOWS ---
-    if (enableContactShadows) {
+    if (!isSky && enableContactShadows) {
       float shadow = traceContactShadow(pos, normal);
-      result *= (1.0 - shadow);
+      result *= (1.0 - clamp(shadow, 0.0, 0.85));
     }
 
     // --- SSGI ---
-    if (enableSSGI && roughness > 0.1) { // SSGI najviac na matných povrchoch
+    if (!isSky && enableSSGI && roughness > 0.15) { // SSGI najviac na matných povrchoch
       vec3 gi = traceSSGI(pos, normal, roughness);
       result += gi;
     }
@@ -306,47 +339,71 @@ const RT_FRAGMENT = `
   }
 `;
 
-// Default nastavenia kvalít (LITE/STANDARD/ULTRA)
+// Kvality LITE/STANDARD/ULTRA. `resScale` je podiel rozlíšenia composeru
+// (bloom beží na 0.75 DPR, takže ULTRA 0.85 = 0.64 DPR — ostré, ale nie plné).
 const RT_QUALITY = [
-  { // 0 = LITE (2K tieň mapy)
-    maxSteps: 32,
+  { // 0 = LITE (2K tieňová mapa)
+    resScale: 0.5,
+    maxSteps: 28,
     stepScale: 1.5,
-    ssrIntensity: 0.6,
-    contactShadowIntensity: 0.4,
+    ssrIntensity: 0.7,
+    ssrMaxDist: 35,
+    contactShadowIntensity: 0.45,
+    contactShadowMaxDist: 4.0,
     ssgiIntensity: 0.3,
+    ssgiSamples: 2,
+    ssgiMaxDist: 6,
+    skyIntensity: 0.55,
     enableSSR: true,
     enableContactShadows: true,
     enableSSGI: false,
   },
-  { // 1 = STANDARD (4K tieň mapy)
-    maxSteps: 48,
+  { // 1 = STANDARD (4K tieňová mapa)
+    resScale: 0.65,
+    maxSteps: 44,
     stepScale: 1.0,
-    ssrIntensity: 0.8,
+    ssrIntensity: 0.9,
+    ssrMaxDist: 60,
     contactShadowIntensity: 0.6,
-    ssgiIntensity: 0.5,
+    contactShadowMaxDist: 5.0,
+    ssgiIntensity: 0.45,
+    ssgiSamples: 4,
+    ssgiMaxDist: 8,
+    skyIntensity: 0.8,
     enableSSR: true,
     enableContactShadows: true,
     enableSSGI: true,
   },
-  { // 2 = ULTRA (8K tieň mapy)
+  { // 2 = ULTRA (8K tieňová mapa)
+    resScale: 0.85,
     maxSteps: 64,
     stepScale: 0.7,
     ssrIntensity: 1.0,
-    contactShadowIntensity: 0.8,
-    ssgiIntensity: 0.7,
+    ssrMaxDist: 90,
+    contactShadowIntensity: 0.75,
+    contactShadowMaxDist: 6.0,
+    ssgiIntensity: 0.55,
+    ssgiSamples: 6,
+    ssgiMaxDist: 10,
+    skyIntensity: 1.0,
     enableSSR: true,
     enableContactShadows: true,
     enableSSGI: true,
   },
 ];
 
-export function createRayTracer(renderer, scene, camera) {
+// Fallback rozlíšenie, kým bloom nezavolá resize() so skutočnou veľkosťou
+// composeru. 0.75 = BLOOM_RENDER_SCALE v bloom.js (RT je podiel z composeru).
+const RT_BASE_SCALE = 0.75;
+
+export function createRayTracer(renderer, camera) {
   let rtPass = null;
   let currentQuality = 1; // STANDARD
   let enabled = true;
   let thickness = 0.05;
   let roughnessCutoff = 0.4;
   let metalnessBoost = 0.0;
+  let baseW = 2, baseH = 2;
 
   // G-buffer: dva jednoduché passy (normály, metal/rough). Pôvodný pokus o
   // GLSL3 MRT so štyrmi `out` premennými sa nikdy nekompiloval — ShaderMaterial
@@ -378,11 +435,12 @@ export function createRayTracer(renderer, scene, camera) {
     uniform sampler2D map;
     uniform float metalness;
     uniform float roughness;
+    uniform float alphaTest;
     uniform int uMode;
     void main() {
       // Alpha test pre listy/koruny. map je vzdy platna (whitePixel fallback),
       // sample neplatnej textury by inak discardlo cely G-buffer.
-      if (texture2D(map, vUv).a < 0.1) discard;
+      if (texture2D(map, vUv).a < alphaTest) discard;
       if (uMode == 0) gl_FragColor = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);
       else gl_FragColor = vec4(metalness, roughness, 0.0, 1.0);
     }
@@ -396,24 +454,71 @@ export function createRayTracer(renderer, scene, camera) {
       map: { value: whitePixel },
       metalness: { value: 0.0 },
       roughness: { value: 0.5 },
+      alphaTest: { value: 0.1 },
       uMode: { value: 0 },
     },
   });
 
+  // Cache klonov G-buffer materiálov: kľúč = zdrojový materiál. Klon sa
+  // použije pre všetky meshe s tým istým materiálom a medzi snímkami sa len
+  // obnovia uniforms. Predtým sa každý snímok klonoval materiál pre každý
+  // mesh (stovky alokácií + dispose → GC sekanie).
+  const gbufCache = new Map();
+  const usedClones = new Set();
+
+  function gbufFor(src) {
+    let clone = gbufCache.get(src);
+    if (!clone) {
+      clone = gbufMat.clone();
+      gbufCache.set(src, clone);
+    }
+    const u = clone.uniforms;
+    const map = src.map || whitePixel;
+    if (u.map.value !== map) u.map.value = map;
+    const metal = typeof src.metalness === 'number' ? src.metalness : 0;
+    if (u.metalness.value !== metal) u.metalness.value = metal;
+    const rough = typeof src.roughness === 'number' ? src.roughness : 0.5;
+    if (u.roughness.value !== rough) u.roughness.value = rough;
+    const at = typeof src.alphaTest === 'number' ? src.alphaTest : 0.1;
+    if (u.alphaTest.value !== at) u.alphaTest.value = at;
+    if (clone.side !== src.side) clone.side = src.side;
+    usedClones.add(clone);
+    return clone;
+  }
+
   // Hĺbku berieme priamo z DepthTexture hlavného renderu (bloom.js).
   const _sunDir = new THREE.Vector3();
+  const _sunWorld = new THREE.Vector3();
+  const _skyHorizon = new THREE.Color(S.SKY_HORIZON);
+  const _skyZenith = new THREE.Color(S.SKY_ZENITH);
+  const _skySun = new THREE.Color(S.SKY_SUN);
+  const _zenithBase = new THREE.Color(S.SKY_ZENITH);
+
+  function targetSize() {
+    const scale = RT_QUALITY[currentQuality].resScale;
+    return [
+      Math.max(2, Math.round(baseW * scale)),
+      Math.max(2, Math.round(baseH * scale)),
+    ];
+  }
 
   function ensureRT(passW, passH) {
     if (rtPass) return true;
     try {
       const rt = new THREE.WebGLRenderTarget(passW, passH, {
-        type: THREE.HalfFloatType,
+        // Composer (readBuffer) je UnsignedByte (bloom.js), takže RT cieľ
+        // nemá čo stratiť — 8 bitov je presná kópia vstupu a polovičná
+        // priepustnosť oproti HalfFloat. (Predtým tu HalfFloat ostal po
+        // diagnostike čierneho obrazu, ktorého príčinou bol `projectionMatrix`
+        // v material.uniforms — pozri komentár nižšie.)
+        type: THREE.UnsignedByteType,
         format: THREE.RGBAFormat,
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
         generateMipmaps: false,
         depthBuffer: false,
       });
+      const cfg = RT_QUALITY[currentQuality];
       const material = new THREE.ShaderMaterial({
         glslVersion: THREE.GLSL3,
         vertexShader: RT_VERTEX,
@@ -423,25 +528,37 @@ export function createRayTracer(renderer, scene, camera) {
           tDepth: { value: null },
           tNormal: { value: null },
           tMetalRough: { value: null },
-          projectionMatrix: { value: camera.projectionMatrix },
+          // `projectionMatrix` NEPATRÍ do uniforms — three ho nastavuje ako
+          // built-in pre každý program. Keď je aj v material.uniforms, jeho
+          // upload zneplatní celý draw (RT cieľ ostal čierny bez chyby v logu).
           projectionMatrixInv: { value: new THREE.Matrix4().copy(camera.projectionMatrix).invert() },
+          cameraMatrixWorld: { value: camera.matrixWorld },
           resolution: { value: new THREE.Vector2(passW, passH) },
           cameraNear: { value: camera.near },
           cameraFar: { value: camera.far },
           time: { value: 0 },
-          maxSteps: { value: RT_QUALITY[currentQuality].maxSteps },
-          stepScale: { value: RT_QUALITY[currentQuality].stepScale },
+          maxSteps: { value: cfg.maxSteps },
+          stepScale: { value: cfg.stepScale },
           thickness: { value: thickness },
-          ssgiIntensity: { value: RT_QUALITY[currentQuality].ssgiIntensity },
-          ssrIntensity: { value: RT_QUALITY[currentQuality].ssrIntensity },
-          contactShadowIntensity: { value: RT_QUALITY[currentQuality].contactShadowIntensity },
+          ssgiIntensity: { value: cfg.ssgiIntensity },
+          ssrIntensity: { value: cfg.ssrIntensity },
+          contactShadowIntensity: { value: cfg.contactShadowIntensity },
+          ssrMaxDist: { value: cfg.ssrMaxDist },
+          contactShadowMaxDist: { value: cfg.contactShadowMaxDist },
+          ssgiMaxDist: { value: cfg.ssgiMaxDist },
+          ssgiSamples: { value: cfg.ssgiSamples },
           sunDirection: { value: new THREE.Vector3() },
+          sunWorld: { value: new THREE.Vector3() },
           sunIntensity: { value: 1.0 },
-          enableSSR: { value: RT_QUALITY[currentQuality].enableSSR },
-          enableContactShadows: { value: RT_QUALITY[currentQuality].enableContactShadows },
-          enableSSGI: { value: RT_QUALITY[currentQuality].enableSSGI },
+          enableSSR: { value: cfg.enableSSR },
+          enableContactShadows: { value: cfg.enableContactShadows },
+          enableSSGI: { value: cfg.enableSSGI },
           roughnessCutoff: { value: roughnessCutoff },
           metalnessBoost: { value: metalnessBoost },
+          skyIntensity: { value: cfg.skyIntensity },
+          skyZenith: { value: _skyZenith },
+          skyHorizon: { value: _skyHorizon },
+          skySun: { value: _skySun },
         },
         depthWrite: false,
         depthTest: false,
@@ -468,7 +585,7 @@ export function createRayTracer(renderer, scene, camera) {
 
   // Render G-buffer (normály + metal/rough) do separátnych targetov.
   // Materiály sa na dva passy vymenia priamo na mesh-och (nie overrideMaterial),
-  // lebo metalness/roughness sú per-materiál uniforms.
+  // lebo metalness/roughness sú per-materiál uniforms. Klony sú cache-ované.
   let gBufferNormalTarget = null;
   let gBufferMetalRoughTarget = null;
 
@@ -499,49 +616,53 @@ export function createRayTracer(renderer, scene, camera) {
     }
   }
 
+  // Mesh patrí do G-bufferu, len ak je to nepriehľadný povrch. Sklo (nízka
+  // roughness) berieme aj napriek depthWrite=false — odrazy na oknách sú
+  // žiadané; skybox, decaly a časticové plochy (depthWrite=false, matné) nie.
+  function isGBufferSurface(obj) {
+    if (!obj.isMesh || !obj.material) return false;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (let i = 0; i < mats.length; i++) {
+      const m = mats[i];
+      if (!m || m.visible === false) return false;
+      if (m.transparent && m.opacity < 0.2) return false;
+      if (m.depthWrite === false) {
+        const glass = m.transparent && typeof m.roughness === 'number' && m.roughness < 0.3;
+        if (!glass) return false;
+      }
+    }
+    return true;
+  }
+
   function renderGBuffer(renderer, scene, camera, passW, passH) {
     if (!ensureGBuffer(passW, passH)) return null;
 
-    const originals = new Map();
-    const clones = [];
+    usedClones.clear();
+    const originals = [];
     scene.traverse((obj) => {
-      if (!obj.isMesh || !obj.material) return;
-      originals.set(obj, obj.material);
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      // Jeden clone na materiál, medzi passami len prepneme uMode — polovica
-      // alokácií oproti clone-per-pass.
-      const gbufMats = mats.map((mat) => {
-        const clone = gbufMat.clone();
-        clone.uniforms.map.value = mat.map || whitePixel;
-        clone.uniforms.metalness.value = mat.metalness !== undefined ? mat.metalness : 0;
-        clone.uniforms.roughness.value = mat.roughness !== undefined ? mat.roughness : 0.5;
-        clones.push(clone);
-        return clone;
-      });
-      obj.material = gbufMats.length === 1 ? gbufMats[0] : gbufMats;
+      if (!isGBufferSurface(obj)) return;
+      originals.push([obj, obj.material]);
+      const srcMats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const gbufMats = srcMats.map(gbufFor);
+      obj.material = Array.isArray(obj.material) ? gbufMats : gbufMats[0];
     });
-    const restore = () => {
-      for (const [obj, orig] of originals) obj.material = orig;
-    };
     // G-buffer potrebuje len geometriu, nie tieňový priechod — bez toho by
     // renderer spravil dva extra full shadow passes každý snímok.
     const prevShadowAuto = renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate = false;
 
     try {
-      for (const c of clones) c.uniforms.uMode.value = 0; // normály (view space)
+      for (const c of usedClones) c.uniforms.uMode.value = 0; // normály (view space)
       renderer.setRenderTarget(gBufferNormalTarget);
       renderer.render(scene, camera);
 
-      for (const c of clones) c.uniforms.uMode.value = 1; // metalness / roughness
+      for (const c of usedClones) c.uniforms.uMode.value = 1; // metalness / roughness
       renderer.setRenderTarget(gBufferMetalRoughTarget);
       renderer.render(scene, camera);
     } finally {
       renderer.shadowMap.autoUpdate = prevShadowAuto;
-      restore();
+      for (let i = 0; i < originals.length; i++) originals[i][0].material = originals[i][1];
       renderer.setRenderTarget(null);
-      originals.clear();
-      for (const c of clones) c.dispose();
     }
     return {
       normal: gBufferNormalTarget.texture,
@@ -549,23 +670,44 @@ export function createRayTracer(renderer, scene, camera) {
     };
   }
 
+  function applySize() {
+    const [w, h] = targetSize();
+    if (rtPass) {
+      rtPass.renderTarget.setSize(w, h);
+      rtPass.material.uniforms.resolution.value.set(w, h);
+    }
+    if (gBufferNormalTarget) {
+      gBufferNormalTarget.setSize(w, h);
+      gBufferMetalRoughTarget.setSize(w, h);
+    }
+  }
+
+  function applyQuality(q) {
+    currentQuality = Math.max(0, Math.min(RT_QUALITY.length - 1, q | 0));
+    if (rtPass) {
+      const cfg = RT_QUALITY[currentQuality];
+      const u = rtPass.material.uniforms;
+      u.maxSteps.value = cfg.maxSteps;
+      u.stepScale.value = cfg.stepScale;
+      u.ssrIntensity.value = cfg.ssrIntensity;
+      u.ssrMaxDist.value = cfg.ssrMaxDist;
+      u.contactShadowIntensity.value = cfg.contactShadowIntensity;
+      u.contactShadowMaxDist.value = cfg.contactShadowMaxDist;
+      u.ssgiIntensity.value = cfg.ssgiIntensity;
+      u.ssgiSamples.value = cfg.ssgiSamples;
+      u.ssgiMaxDist.value = cfg.ssgiMaxDist;
+      u.skyIntensity.value = cfg.skyIntensity;
+      u.enableSSR.value = cfg.enableSSR;
+      u.enableContactShadows.value = cfg.enableContactShadows;
+      u.enableSSGI.value = cfg.enableSSGI;
+    }
+    applySize();
+  }
+
   return {
     setEnabled(v) { enabled = v; },
     isEnabled() { return enabled; },
-    setQuality(q) {
-      currentQuality = Math.max(0, Math.min(2, q | 0));
-      if (rtPass) {
-        const cfg = RT_QUALITY[currentQuality];
-        rtPass.material.uniforms.maxSteps.value = cfg.maxSteps;
-        rtPass.material.uniforms.stepScale.value = cfg.stepScale;
-        rtPass.material.uniforms.ssrIntensity.value = cfg.ssrIntensity;
-        rtPass.material.uniforms.contactShadowIntensity.value = cfg.contactShadowIntensity;
-        rtPass.material.uniforms.ssgiIntensity.value = cfg.ssgiIntensity;
-        rtPass.material.uniforms.enableSSR.value = cfg.enableSSR;
-        rtPass.material.uniforms.enableContactShadows.value = cfg.enableContactShadows;
-        rtPass.material.uniforms.enableSSGI.value = cfg.enableSSGI;
-      }
-    },
+    setQuality(q) { applyQuality(q); },
     getQuality() { return currentQuality; },
     setThickness(v) { thickness = v; if (rtPass) rtPass.material.uniforms.thickness.value = v; },
     setRoughnessCutoff(v) { roughnessCutoff = v; if (rtPass) rtPass.material.uniforms.roughnessCutoff.value = v; },
@@ -575,40 +717,51 @@ export function createRayTracer(renderer, scene, camera) {
     render(renderer, scene, camera, sunLight, mainColorTarget, mainDepthTexture) {
       if (!enabled) return mainColorTarget;
 
-      const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
-      const passW = Math.max(2, Math.round(innerWidth * pr * 0.5)); // polovičné rozlíšenie
-      const passH = Math.max(2, Math.round(innerHeight * pr * 0.5));
-
+      const [passW, passH] = targetSize();
       if (!ensureRT(passW, passH)) return mainColorTarget;
 
       // 1) Render G-buffer (normály + metal/rough)
       const gbuf = renderGBuffer(renderer, scene, camera, passW, passH);
       if (!gbuf) return mainColorTarget;
 
-      // 2) Smer slnka do view space. DirectionalLight NEMÁ `.direction` —
-      // pôvodný kód tam čítal undefined a každý snímok spadol na TypeError.
-      _sunDir.set(0, 1, 0);
+      // 2) Smer slnka. DirectionalLight NEMÁ `.direction` — pôvodný kód tam
+      // čítal undefined a každý snímok spadol na TypeError.
+      _sunWorld.set(0, 1, 0);
       if (sunLight && sunLight.position) {
-        _sunDir.copy(sunLight.position);
-        if (sunLight.target) _sunDir.sub(sunLight.target.position);
+        _sunWorld.copy(sunLight.position);
+        if (sunLight.target) _sunWorld.sub(sunLight.target.position);
       }
-      _sunDir.transformDirection(camera.matrixWorldInverse).normalize();
-      rtPass.material.uniforms.sunDirection.value.copy(_sunDir);
-      rtPass.material.uniforms.sunIntensity.value = sunLight ? sunLight.intensity : 0;
-      rtPass.material.uniforms.time.value = performance.now() * 0.001;
-      rtPass.material.uniforms.projectionMatrix.value.copy(camera.projectionMatrix);
-      rtPass.material.uniforms.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
-      rtPass.material.uniforms.resolution.value.set(passW, passH);
-      rtPass.material.uniforms.cameraNear.value = camera.near;
-      rtPass.material.uniforms.cameraFar.value = camera.far;
+      _sunWorld.normalize();
+      _sunDir.copy(_sunWorld).transformDirection(camera.matrixWorldInverse).normalize();
 
-      // 3) Bind textúr
-      rtPass.material.uniforms.tDiffuse.value = mainColorTarget.texture;
-      rtPass.material.uniforms.tDepth.value = mainDepthTexture; // depth texture z hlavného renderu
-      rtPass.material.uniforms.tNormal.value = gbuf.normal;
-      rtPass.material.uniforms.tMetalRough.value = gbuf.metalRough;
+      // 3) Sky farby pre fallback: horizont ber zo scene.background (daynight
+      // ho mení deň/noc/búrka), zenit z konštanty stmavenej podľa dňa.
+      const bg = scene.background;
+      if (bg && bg.isColor) _skyHorizon.copy(bg);
+      else _skyHorizon.set(S.SKY_HORIZON);
+      const day = dayness();
+      _skyZenith.copy(_zenithBase).multiplyScalar(0.18 + 0.82 * day);
+      if (sunLight && sunLight.color) _skySun.copy(sunLight.color);
+      else _skySun.set(S.SKY_SUN);
 
-      // 4) Render RT pass
+      const u = rtPass.material.uniforms;
+      u.sunDirection.value.copy(_sunDir);
+      u.sunWorld.value.copy(_sunWorld);
+      u.sunIntensity.value = sunLight ? sunLight.intensity : 0;
+      u.time.value = performance.now() * 0.001;
+      u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
+      u.cameraMatrixWorld.value.copy(camera.matrixWorld);
+      u.resolution.value.set(passW, passH);
+      u.cameraNear.value = camera.near;
+      u.cameraFar.value = camera.far;
+
+      // 4) Bind textúr
+      u.tDiffuse.value = mainColorTarget.texture;
+      u.tDepth.value = mainDepthTexture; // depth texture z hlavného renderu
+      u.tNormal.value = gbuf.normal;
+      u.tMetalRough.value = gbuf.metalRough;
+
+      // 5) Render RT pass
       renderer.setRenderTarget(rtPass.renderTarget);
       renderer.render(rtPass.scene, rtPass.camera);
       renderer.setRenderTarget(null);
@@ -616,21 +769,19 @@ export function createRayTracer(renderer, scene, camera) {
       return rtPass.renderTarget.texture;
     },
 
-    // bloom.js posiela plné rozlíšenie composera, ale RT beží na polovici —
-    // použijeme ten istý výpočet ako ensureRT, inak sa po resize rozchádzala
-    // veľkosť targetu s uniformom `resolution`.
-    resize() {
-      const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
-      const w = Math.max(2, Math.round(innerWidth * pr * 0.5));
-      const h = Math.max(2, Math.round(innerHeight * pr * 0.5));
-      if (rtPass) {
-        rtPass.renderTarget.setSize(w, h);
-        rtPass.material.uniforms.resolution.value.set(w, h);
+    // bloom.js posiela plné rozlíšenie composera (0.75 DPR) — RT si z neho
+    // vezme podiel podľa kvality. Predtým si RT počítal vlastných 0.5 DPR,
+    // takže sa po resize rozchádzala veľkosť targetu s uniformom `resolution`.
+    resize(w, h) {
+      if (w > 1 && h > 1) {
+        baseW = w;
+        baseH = h;
+      } else {
+        const pr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+        baseW = Math.max(2, Math.round(innerWidth * pr * RT_BASE_SCALE));
+        baseH = Math.max(2, Math.round(innerHeight * pr * RT_BASE_SCALE));
       }
-      if (gBufferNormalTarget) {
-        gBufferNormalTarget.setSize(w, h);
-        gBufferMetalRoughTarget.setSize(w, h);
-      }
+      applySize();
     },
 
     dispose() {
@@ -646,6 +797,9 @@ export function createRayTracer(renderer, scene, camera) {
         gBufferNormalTarget = null;
         gBufferMetalRoughTarget = null;
       }
+      for (const m of gbufCache.values()) m.dispose();
+      gbufCache.clear();
+      usedClones.clear();
       gbufMat.dispose();
       whitePixel.dispose();
     },

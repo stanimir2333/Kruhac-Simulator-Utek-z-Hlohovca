@@ -235,6 +235,69 @@ function storedNum(v, lo, hi, dflt) {
   return n;
 }
 
+// ---------- HLAVNÉ MENU: RTX KVALITA ----------
+// Výber v menu musí fungovať EŠTE PRED bootom (ctx/bloom neexistujú), preto
+// zapisuje len do store + localStorage. `applyShadowTier` s ctx=null je
+// bezpečný: preskočí renderer/sun a obnoví len labely; boot potom applyAll
+// prenesie uložený tier do skutočnej tieňovej mapy aj do bloom composera.
+// Mapovanie: 0 = VYP, 1 = LITE (2K), 2 = STD (4K), 3 = ULTRA (8K).
+export function wireMenuRTX() {
+  if (typeof document === 'undefined') return;
+  loadSettings();
+  syncMenuRT();
+  $('menu-rtq')?.addEventListener('click', (e) => {
+    const b = e.target.closest ? e.target.closest('button') : null;
+    if (!b || b.disabled) return;
+    applyRTLevel(parseInt(b.getAttribute('data-q'), 10));
+  });
+}
+
+// Aktuálna úroveň pre menu: VYP = 0, inak shadowTier (1K/2K → LITE).
+function menuRTLevel() {
+  if (!settings.rt) return 0;
+  return Math.max(1, Math.min(3, shadowTier));
+}
+
+function syncMenuRT() {
+  const segs = $('menu-rtq')?.children;
+  if (!segs) return;
+  const q = menuRTLevel();
+  for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i === q);
+  const v = $('menu-rtq-v');
+  if (v) v.textContent = q === 0 ? 'VYP.' : RT_LEVEL_NAMES[q - 1];
+}
+
+// Master RTX vypínač zdieľaný menu aj nastaveniami.
+export function applyRTEnabled(v) {
+  settings.rt = !!v;
+  try {
+    if (_ctx?.renderer) {
+      _ctx.renderer.shadowMap.enabled = settings.rt;
+      _ctx.scene?.traverse?.((o) => {
+        if (!o.material) return;
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        for (let i = 0; i < ms.length; i++) ms[i].needsUpdate = true;
+      });
+    }
+    _ctx?.bloom?.setRTEnabled?.(settings.rt);
+  } catch (_e) { /* noop */ }
+  syncSettingsUI(_ctx);
+  saveSettings();
+}
+
+// 0 = VYP, 1..3 = LITE/STD/ULTRA. Kvalita je odvodená od shadowTieru
+// (jediný zdroj pravdy — pozri RT_TIER_FROM_SHADOW), takže menu aj panel
+// nastavení nikdy nezobrazujú iný stav, než aký beží.
+export function applyRTLevel(q) {
+  q = Math.max(0, Math.min(3, q | 0));
+  if (q === 0) {
+    applyRTEnabled(false);
+    return;
+  }
+  applyShadowTier(_ctx, SHADOW_FROM_RT[q - 1]);
+  applyRTEnabled(true);
+}
+
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('kruhac-set') || 'null');
@@ -364,7 +427,7 @@ export function syncSettingsUI(ctx) {
   const tg = $('set-rt-toggle');
   if (tg) {
     tg.classList.toggle('on', settings.rt);
-    tg.textContent = settings.rt ? 'TIENE ZAPNUTÉ' : 'ZAPNÚŤ TIENE';
+    tg.textContent = settings.rt ? 'RTX ZAPNUTÉ' : 'ZAPNÚŤ RTX';
   }
   const rtV = $('set-rt-v');
   if (rtV) rtV.textContent = settings.rt ? 'ZAP.' : 'VYP.';
@@ -392,6 +455,8 @@ export function syncSettingsUI(ctx) {
   $('set-rtql') && ($('set-rtql').value = settings.rtQl);
   const rtqlV = $('set-rtql-v');
   if (rtqlV) rtqlV.textContent = Math.round(settings.rtQl * 100) + '%';
+  // Hlavné menu má vlastný RTX výber — drž ho v synchronizácii s panelom.
+  syncMenuRT();
 }
 
 // Nové: aplikuj celý store na ctx (FPS limit, pixelRatio, dohľad, tiene,
@@ -565,21 +630,11 @@ export function wireSettingsUI(ctx, toast) {
     saveSettings();
   });
 
-  // RT = dynamické tienen + sunlight + screen-space ray tracing (SSR, contact shadows, SSGI).
-  // Master toggle: RT ZAP / VYP (ovláda tieňovú mapu AJ screen-space RT).
+  // RTX = dynamické tiene + sunlight + screen-space ray tracing (SSR, contact shadows, SSGI).
+  // Master toggle: RTX ZAP / VYP (ovláda tieňovú mapu AJ screen-space RT).
   $('set-rt-toggle')?.addEventListener('click', () => {
-    settings.rt = !settings.rt;
-    try {
-      if (c?.renderer) {
-        c.renderer.shadowMap.enabled = settings.rt;
-        c.scene?.traverse?.((o) => { if (o.material) o.material.needsUpdate = true; });
-      }
-      // Screen-space ray tracing (bloom composer)
-      c?.bloom?.setRTEnabled?.(settings.rt);
-    } catch (_e) { /* noop */ }
-    syncSettingsUI(c);
-    saveSettings();
-    say(settings.rt ? 'Ray Tracing ZAP (SSR + tieňové stopy + SSGI).' : 'Ray Tracing VYP.');
+    applyRTEnabled(!settings.rt);
+    say(settings.rt ? 'RTX ZAP (SSR + tieňové stopy + SSGI).' : 'RTX VYP.');
   });
   // RT Quality: LITE / STANDARD / ULTRA (preset pre SSR steps, contact shadows, SSGI)
   $('set-rtq')?.addEventListener('click', (e) => {

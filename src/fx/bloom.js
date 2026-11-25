@@ -52,6 +52,7 @@ const BLOOM_RENDER_SCALE = 0.75;
 export function createBloom(renderer, scene, camera, sunLight) {
   let composer = null, bloomPass = null, ssaoPass = null, fxaaPass = null, gradePass = null, mode = 1;
   let rayTracer = null;
+  let rtPassRef = null;
   let rtEnabled = true;
   let rtQuality = 1; // STANDARD
   // Jeden full-screen quad pre blity namiesto alokácie Scene/Mesh/Material/
@@ -118,12 +119,13 @@ export function createBloom(renderer, scene, camera, sunLight) {
       };
 
       // 2. Ray Tracing Pass (custom) - SSR, Contact Shadows, SSGI
-      rayTracer = createRayTracer(renderer, scene, camera);
+      rayTracer = createRayTracer(renderer, camera);
       rayTracer.setQuality(rtQuality);
       rayTracer.setEnabled(rtEnabled);
-      // Custom pass pre composer
+      // Custom pass pre composer. Keď je RT vypnutý, pass sa úplne preskočí
+      // (composer ho nevykreslí) — žiadny zbytočný full-screen blit.
       const rtPass = {
-        enabled: true,
+        enabled: rtEnabled && !S.LOW_END,
         renderToScreen: false,
         needsSwap: true,
         setSize: (w, h) => rayTracer.resize(w, h),
@@ -148,6 +150,7 @@ export function createBloom(renderer, scene, camera, sunLight) {
           renderer.setRenderTarget(null);
         },
       };
+      rtPassRef = rtPass;
       composer.addPass(rtPass);
 
       // 3. SSAO (ak nie LOW_END)
@@ -191,6 +194,7 @@ export function createBloom(renderer, scene, camera, sunLight) {
       fxaaPass = null;
       gradePass = null;
       rayTracer = null;
+      rtPassRef = null;
       return false;
     }
   }
@@ -246,6 +250,8 @@ export function createBloom(renderer, scene, camera, sunLight) {
     setRTEnabled(v) {
       rtEnabled = v;
       if (rayTracer) rayTracer.setEnabled(v);
+      // Vypnutý RT nemá čo kopírovať — pass sa preskočí celý.
+      if (rtPassRef) rtPassRef.enabled = v && !S.LOW_END;
     },
     getRTEnabled() { return rtEnabled; },
     setRTQuality(q) {
@@ -270,6 +276,7 @@ export function createBloom(renderer, scene, camera, sunLight) {
     resize,
     dispose() {
       if (rayTracer) rayTracer.dispose();
+      rtPassRef = null;
       if (composer) composer.dispose();
       blitQuad?.geometry.dispose();
       blitMat?.dispose();

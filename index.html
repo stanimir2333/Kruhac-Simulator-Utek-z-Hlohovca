@@ -30,6 +30,15 @@
       <h2>VYBER LOKALITU</h2>
       <p>Si zapichnutý v kolóne a mieriš na juh. Jazdi <b>kam chceš</b> — celé mesto je otvorené.
       Pozor: státie varí motor, ťukance varia motor aj nervy.</p>
+      <!-- RTX výber v hlavnom menu: zapisuje rovnaký store ako nastavenia
+           (settings.rt + shadowTier), takže voľba prežije aj do hry. -->
+      <div class="menu-rtx">
+        <div class="menu-rtx-head"><span>RTX · KVALITA</span><span id="menu-rtq-v">STANDARD</span></div>
+        <div class="segs" id="menu-rtq">
+          <button data-q="0">VYP.</button><button data-q="1">LITE</button><button data-q="2">STD</button><button data-q="3">ULTRA</button>
+        </div>
+        <div class="menu-rtx-note">Odrazy áut, skla a mokrých ciest + tieňové stopy. ULTRA = najostrejšie (náročné na GPU).</div>
+      </div>
       <div class="keys">W / ▲ — plyn &nbsp;·&nbsp; S / ▼ — brzda / spiatočka<br>
       A / D — volant &nbsp;·&nbsp; H — trúbenie (uvoľní stres)<br>
       M — mapa &nbsp;·&nbsp; Q/E — rádio &nbsp;·&nbsp; X — zvuk &nbsp;·&nbsp; C — hudba &nbsp;·&nbsp; G — garáž (auto) &nbsp;·&nbsp; R — reštart &nbsp;·&nbsp; medzera — ručná</div>
@@ -189,9 +198,9 @@
     <div class="srow"><label><span>AUTO · GARÁŽ [G]</span><span id="set-car-v">ŠKODA OCTAVIA I</span></label>
       <button id="set-car-open">OTVORIŤ GARÁŽ</button></div>
     <div class="srow"><label><span>MOTOR (podľa auta)</span><span id="set-engine-v">1.9 TDI</span></label></div>
-    <div class="srow"><label><span>DYNAMICKÉ TIENE + SLNKO</span><span id="set-rt-v">VYP.</span></label>
-      <button id="set-rt-toggle">ZAPNÚŤ TIENE</button></div>
-    <div class="srow rt-only"><label><span>TIENE · MAPA</span><span id="set-rtq-v">STANDARD</span></label>
+    <div class="srow"><label><span>RTX · TIEŇY + ODRAZY</span><span id="set-rt-v">VYP.</span></label>
+      <button id="set-rt-toggle">ZAPNÚŤ RTX</button></div>
+    <div class="srow rt-only"><label><span>RTX · KVALITA</span><span id="set-rtq-v">STANDARD</span></label>
       <div class="segs" id="set-rtq">
         <button data-q="0">LITE</button><button data-q="1">STD</button><button data-q="2">ULTRA</button>
       </div></div>
@@ -201,8 +210,10 @@
       <input id="set-rtli" type="range" min="0" max="2" step="0.05" value="1"></div>
     <div class="srow rt-only"><label><span>RENDER · ŠKÁLA</span><span id="set-rtql-v">100%</span></label>
       <input id="set-rtql" type="range" min="0.3" max="1" step="0.05" value="1"></div>
-    <p style="font-size:11px;line-height:1.6;">TIENE = dosah tieňovej kamery, SVETLO = sila slnka.<br>
-      KVALITA = mapa tieňov + kroky lúčov SSR/SSGI, ŠKÁLA = rozlíšenie renderu.<br>
+    <p style="font-size:11px;line-height:1.6;">RTX = tieňová mapa + screen-space odrazy (SSR) + dotykové tiene + SSGI.
+      Kvalitu RTX vieš prepnúť aj v hlavnom menu pred štartom.<br>
+      TIENE = dosah tieňovej kamery, SVETLO = sila slnka.
+      KVALITA = mapa tieňov + kroky/res. lúčov SSR/SSGI, ŠKÁLA = rozlíšenie renderu.<br>
       BLOOM žiari len svetlomety, lampy, rozsvietené okná a slnko na vode — HUD sa nedotkne.<br>
       VODA riadi odrazy hladiny Váhu; mimo 260 m od rieky sa nekreslia vôbec.<br>
       RASPBERRY režim = jeden prepínač pre slabé stroje (aj Raspberry Pi): render na polovicu, 30 FPS, dohľad 150 m, bez žiarenia a odrazov, 1K tiene. Hustotu sveta (textúry, vegetácia, doprava) zníži po obnovení stránky.<br>
