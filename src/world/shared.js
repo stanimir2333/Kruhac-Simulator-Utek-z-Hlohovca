@@ -32,10 +32,10 @@ export const S = {
   SUN_OFF: { x:170, y:120, z:-95 }, // <- legacy @3637
   IS_MOBILE: (typeof window !== "undefined" && typeof window.matchMedia === "function") && window.matchMedia("(pointer: coarse)").matches, // <- legacy @3762
   LABEL_MAX: 40, // <- legacy @3779 (hodnota sa dopočíta nižšie — S nesmie čítať samo seba v literáli!)
-  SKY_ZENITH: 0x4f8fd6, // GTA V: hlbšia modrá obloha (aktualizované)
-  SKY_HORIZON: 0xe9e2cf, // teplý bledý opar na obzore
-  SKY_FOG: 0xd9dcd0, // mierne teplá hmla
-  SKY_SUN: 0xfff0c8, // teplé slnko
+  SKY_ZENITH: 0x225ea8, // slop-newyork midday skyTop // GTA V: hlbšia modrá obloha (aktualizované)
+  SKY_HORIZON: 0xc8dff5, // slop-newyork midday skyHorizon // teplý bledý opar na obzore
+  SKY_FOG: 0xc6dcf2, // slop-newyork midday fogColor // mierne teplá hmla
+  SKY_SUN: 0xfff5e8, // slop-newyork midday lightColor // teplé slnko
   _v1: new THREE.Vector3(), // <- legacy @3832
   _hWrap: { v: 0 }, // <- legacy @3837
   GEO: {}, // <- legacy @3843

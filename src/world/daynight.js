@@ -27,7 +27,7 @@ const NIGHT_FILL = 0.06;
 const C = {
   dayBg:   new THREE.Color(S.SKY_HORIZON),
   dayFog:  new THREE.Color(S.SKY_FOG),
-  daySun:  new THREE.Color(0xfff0d2),
+  daySun:  new THREE.Color(0xfff5e8),  // slop-newyork midday lightColor
   golden:  new THREE.Color(0xffab5e),  // západ/východ slnka
   nightBg: new THREE.Color(0x0a1226),
   nightFog: new THREE.Color(0x0a1020),
@@ -63,14 +63,14 @@ function apply() {
   const golden = Math.exp(-Math.abs(elev) * 4.5); // bump pri horizonte (východ/západ)
   // Slnko → mesiac: intenzita aj farba sa menia, pozícia ostáva (invariant tieňov).
   if (sun) {
-    const dayInt = lerp(1.8, 3.0, Math.min(1, d * 1.15));
+    const dayInt = lerp(2.5, 4.5, Math.min(1, d * 1.15));  // slop-newyork: silnejsie slnko
     sun.intensity = lerp(NIGHT_SUN, dayInt, d) * (1 - 0.45 * gloom);
     _sunC.copy(C.nightSun).lerp(C.daySun, d);
     if (golden > 0.05) _sunC.lerp(C.golden, Math.min(0.85, golden));
     sun.color.copy(_sunC);
   }
-  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.42, d);
-  if (hemi) hemi.intensity = lerp(0.24, 0.9, d) * (1 - 0.35 * gloom) + flash * 3;
+  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.6, d);
+  if (hemi) hemi.intensity = lerp(0.3, 1.3, d) * (1 - 0.35 * gloom) + flash * 3;
   if (amb) {
     amb.color.copy(C.nightAmb);
     amb.intensity = (NIGHT_AMB + 0.12) * n + flash * 2.5;
@@ -84,7 +84,7 @@ function apply() {
       _fogC.copy(C.nightFog).lerp(C.dayFog, d);
       scene.fog.color.copy(_fogC).multiplyScalar(1 - 0.35 * gloom);
       // Noc = hustejšia hmla (svetlá lamp majú čo žiariť cez), búrka pridáva svoje.
-      scene.fog.density = 0.00055 * (1 + 0.75 * n) * (1 + 0.6 * gloom);
+      scene.fog.density = 0.00022 * (1 + 0.75 * n) * (1 + 0.6 * gloom);  // slop-newyork: redsia hmla
     }
   }
   NIGHT.value = n;

@@ -91,11 +91,12 @@ async function boot(mapId, radioManifest) {
 // rozdiel voči 4x. Desktop ostáva na maxime (až 16x) pre ostré cesty v diaľke.
 S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.getMaxAnisotropy()));
   scene.background = new THREE.Color(S.SKY_HORIZON);
-  scene.fog = new THREE.FogExp2(S.SKY_FOG, 0.00055);
+  scene.fog = new THREE.FogExp2(S.SKY_FOG, 0.00022);
+  scene.environmentIntensity = 0.55;  // slop-newyork: IBL sila
   // near 0.1 (nie 0.5): v prvej osobe je zbraň "viewmodel" 30 cm od očí —
   // pri near 0.5 by sa orezala. 24-bit depth buffer to znesie bez šumenia.
   camera.fov = 68; camera.near = 0.1; camera.far = 5000; camera.updateProjectionMatrix();
-  sun.color.setHex(0xfff0d2); sun.intensity = 2.7;
+  sun.color.setHex(0xfff5e8); sun.intensity = 4.0;  // slop-newyork midday
   sun.position.set(S.SUN_OFF.x, S.SUN_OFF.y, S.SUN_OFF.z);
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -130, right: 130, top: 130, bottom: -130, near: 20, far: 600 });
