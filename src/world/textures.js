@@ -1135,11 +1135,11 @@ export function buildShared(){
   // mipmapám + anizotropii sa v diaľke nerozpadá na šedú plochu.
   const roadPBR = { map: S.TEX.asphalt, normalMap: S.TEX.asphaltN, roughnessMap: S.TEX.asphaltR,
                     roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide,
-                    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 };
+                    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   S.MAT.asphalt = new THREE.MeshStandardMaterial(roadPBR);
   // vozovka trasy misie: rovnak\u00fd asfalt, ale silnej\u0161\u00ed depth bias - mestske cesty
   // v\u00f3dy\u0161aj\u00fa pod \u0161irku trasy a musia pod\u011ba\u0165 (samy o sebe by sa zob\u013eovali)
-  roadPBR.polygonOffsetFactor = -4; roadPBR.polygonOffsetUnits = -8;
+  roadPBR.polygonOffsetFactor = -5; roadPBR.polygonOffsetUnits = -10;
   S.MAT.routeAsphalt = new THREE.MeshStandardMaterial(roadPBR);
   // nespevnené cesty: tá istá hlina ako 2. vrstva terénu, dlažka 6 m (repeat 1/6)
   // + normálová mapa (kamienky vyčnievajú, kaluže po daždi majú čo prelomiť).

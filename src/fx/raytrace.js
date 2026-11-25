@@ -136,7 +136,9 @@ const RT_FRAGMENT = `
     float stepSize = stepScale * mix(0.7, 2.0, roughness);
     // Štart až za vlastným povrchom (thickness bias) + stabilný per-pixel
     // offset, aby sa lúče nerozostupovali v pásoch.
-    float t = max(thickness * 2.0, abs(origin.z) * 0.002);
+    // Väčší počiatočný offset (3× hrúbka) zamedzí samootrazeniu lúča o vlastný
+    // povrch (z-fighting/akné na zrkadlových plochách).
+    float t = max(thickness * 3.0, abs(origin.z) * 0.002);
     t += rand(vUv * 97.0) * stepSize;
     vec3 pos = origin + dir * t;
 
@@ -158,7 +160,7 @@ const RT_FRAGMENT = `
       float sceneDepth = linearDepth(uv);
       float rayDepth = -pos.z; // view space Z je záporný
       // Hrúbka rastie so vzdialenosťou — inak ďaleké lúče prepadnú cez steny.
-      float thick = thickness + t * 0.015;
+      float thick = thickness * 2.0 + t * 0.015;
 
       // Hit: ray je za scénou (bližšie k kamere ako scéna)
       if (rayDepth > sceneDepth - thick) {
@@ -218,7 +220,8 @@ const RT_FRAGMENT = `
       float t = (float(i) + jitter) * stepSize;
       if (t > maxDist) break;
 
-      pos = origin + dir * t + normal * thickness;
+      // Väčší offset od normály (2× hrúbka) zamedzí self-shadow akné.
+      pos = origin + dir * t + normal * (thickness * 2.0);
       vec4 clip = projectionMatrix * vec4(pos, 1.0);
       if (clip.w <= 0.0) break;
       vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
@@ -226,7 +229,7 @@ const RT_FRAGMENT = `
 
       float sceneDepth = linearDepth(uv);
       float rayDepth = -pos.z;
-      float thick = thickness + t * 0.02;
+      float thick = thickness * 2.0 + t * 0.02;
       if (rayDepth > sceneDepth - thick) {
         float fade = 1.0 - smoothstep(maxDist * 0.55, maxDist, t);
         float sunAmt = clamp(sunIntensity * 0.5, 0.0, 1.0);
@@ -271,7 +274,7 @@ const RT_FRAGMENT = `
 
         float sceneDepth = linearDepth(uv);
         float rayDepth = -pos.z;
-        if (rayDepth > sceneDepth - (thickness + t * 0.03)) {
+        if (rayDepth > sceneDepth - (thickness * 2.0 + t * 0.03)) {
           irradiance += texture(tDiffuse, uv).rgb;
           break;
         }

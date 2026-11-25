@@ -88,7 +88,7 @@ export function buildTireMarks(){
   for(let i=0;i<busy.length;i++){
     const b = busy[i];
     E.set(0, -b.h, 0); Q.setFromEuler(E);
-    P.set(b.x, getTerrainHeight(b.x, b.z) + 0.13, b.z);
+    P.set(b.x, getTerrainHeight(b.x, b.z) + 0.18, b.z);
     Sc.set(1, 1, 1);
     M.compose(P, Q, Sc);
     m.setMatrixAt(i, M);
@@ -133,7 +133,7 @@ export function buildCrosswalks(){
   for(let i=0;i<spots.length;i++){
     const b = spots[i];
     E.set(0, -b.h, 0); Q.setFromEuler(E);
-    P.set(b.x, getTerrainHeight(b.x, b.z) + 0.16, b.z);
+    P.set(b.x, getTerrainHeight(b.x, b.z) + 0.22, b.z);
     Sc.set(1, 1, 1);
     M.compose(P, Q, Sc);
     m.setMatrixAt(i, M);

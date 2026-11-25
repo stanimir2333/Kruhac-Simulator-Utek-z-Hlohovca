@@ -529,7 +529,7 @@ export function buildGreens(){
   }
   const wl = S.osm.water;
   const CELL = 16;      // hrana podmriežky: jemnejšie = plynulejší svah
-  const LIFT = 0.06;    // nad terénom, aby neblikalo
+  const LIFT = 0.12;    // nad terénom, aby neblikalo (zvýšené proti z-fighting)
   for(let i=0;i<gs.length;i++){
     const g = gs[i], ring = g[5], flag = g[6]|0;
     if(!ring || ring.length < 6) continue;

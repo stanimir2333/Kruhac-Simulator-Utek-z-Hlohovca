@@ -430,7 +430,7 @@ function pushGlassPane(dst, px, py, pz, ux, uz, nx, nz, width, height, recess) {
   // lícom (aby ju nezakryla), no 2,6 cm za rámom; vizuálne je zapustená a
   // zároveň nevzniká z-fighting s fasádou.
   const hx = width / 2;
-  const lip = Math.min(0.014, recess * 0.12);
+  const lip = Math.min(0.020, recess * 0.18);
   const x = px + nx * lip, z = pz + nz * lip;
   const p0 = [x - ux * hx, py, z - uz * hx];
   const p1 = [x + ux * hx, py, z + uz * hx];
