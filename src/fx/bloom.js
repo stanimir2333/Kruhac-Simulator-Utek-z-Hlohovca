@@ -158,9 +158,9 @@ export function createBloom(renderer, scene, camera, sunLight) {
         const ssaoW = Math.max(64, Math.round(innerWidth * composerPixelRatio() * 0.5));
         const ssaoH = Math.max(64, Math.round(innerHeight * composerPixelRatio() * 0.5));
         ssaoPass = new SSAOPass(scene, camera, ssaoW, ssaoH, 16);
-        ssaoPass.kernelRadius = 14;
-        ssaoPass.minDistance = 0.005;
-        ssaoPass.maxDistance = 0.20;
+        ssaoPass.kernelRadius = 16;
+        ssaoPass.minDistance = 0.004;
+        ssaoPass.maxDistance = 0.22;
         ssaoPass.output = SSAOPass.OUTPUT.Default;
         composer.addPass(ssaoPass);
       }

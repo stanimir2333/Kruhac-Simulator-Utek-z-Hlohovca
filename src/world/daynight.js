@@ -63,17 +63,17 @@ function apply() {
   const golden = Math.exp(-Math.abs(elev) * 4.5); // bump pri horizonte (východ/západ)
   // Slnko → mesiac: intenzita aj farba sa menia, pozícia ostáva (invariant tieňov).
   if (sun) {
-    const dayInt = lerp(1.6, 2.7, Math.min(1, d * 1.15));
+    const dayInt = lerp(1.8, 3.0, Math.min(1, d * 1.15));
     sun.intensity = lerp(NIGHT_SUN, dayInt, d) * (1 - 0.45 * gloom);
     _sunC.copy(C.nightSun).lerp(C.daySun, d);
     if (golden > 0.05) _sunC.lerp(C.golden, Math.min(0.85, golden));
     sun.color.copy(_sunC);
   }
-  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.30, d);
-  if (hemi) hemi.intensity = lerp(0.20, 0.75, d) * (1 - 0.35 * gloom) + flash * 3;
+  if (fill) fill.intensity = lerp(NIGHT_FILL, 0.42, d);
+  if (hemi) hemi.intensity = lerp(0.24, 0.9, d) * (1 - 0.35 * gloom) + flash * 3;
   if (amb) {
     amb.color.copy(C.nightAmb);
-    amb.intensity = NIGHT_AMB * n + flash * 2.5;
+    amb.intensity = (NIGHT_AMB + 0.12) * n + flash * 2.5;
   }
   if (scene) {
     if (scene.background && scene.background.isColor) {

@@ -304,7 +304,7 @@ const RT_FRAGMENT = `
     vec3 result = sceneColor.rgb;
 
     // --- SSR ---
-    if (!isSky && enableSSR && (metalness > 0.08 || roughness < roughnessCutoff)) {
+    if (!isSky && enableSSR && (metalness > 0.02 || roughness < roughnessCutoff)) {
       vec3 V = normalize(-pos);
       vec3 R = reflect(V, normal);
       float hitConf = 0.0;
@@ -349,30 +349,30 @@ const RT_QUALITY = [
     resScale: 0.5,
     maxSteps: 28,
     stepScale: 1.5,
-    ssrIntensity: 0.7,
+    ssrIntensity: 0.8,
     ssrMaxDist: 35,
-    contactShadowIntensity: 0.45,
+    contactShadowIntensity: 0.6,
     contactShadowMaxDist: 4.0,
-    ssgiIntensity: 0.3,
-    ssgiSamples: 2,
+    ssgiIntensity: 0.45,
+    ssgiSamples: 3,
     ssgiMaxDist: 6,
-    skyIntensity: 0.55,
+    skyIntensity: 0.9,
     enableSSR: true,
     enableContactShadows: true,
-    enableSSGI: false,
+    enableSSGI: true,
   },
   { // 1 = STANDARD (4K tieňová mapa)
     resScale: 0.65,
     maxSteps: 44,
     stepScale: 1.0,
-    ssrIntensity: 0.9,
+    ssrIntensity: 0.95,
     ssrMaxDist: 60,
-    contactShadowIntensity: 0.6,
+    contactShadowIntensity: 0.7,
     contactShadowMaxDist: 5.0,
-    ssgiIntensity: 0.45,
+    ssgiIntensity: 0.6,
     ssgiSamples: 4,
     ssgiMaxDist: 8,
-    skyIntensity: 0.8,
+    skyIntensity: 1.0,
     enableSSR: true,
     enableContactShadows: true,
     enableSSGI: true,
@@ -383,9 +383,9 @@ const RT_QUALITY = [
     stepScale: 0.7,
     ssrIntensity: 1.0,
     ssrMaxDist: 90,
-    contactShadowIntensity: 0.75,
+    contactShadowIntensity: 0.85,
     contactShadowMaxDist: 6.0,
-    ssgiIntensity: 0.55,
+    ssgiIntensity: 0.75,
     ssgiSamples: 6,
     ssgiMaxDist: 10,
     skyIntensity: 1.0,
@@ -404,7 +404,9 @@ export function createRayTracer(renderer, camera) {
   let currentQuality = 1; // STANDARD
   let enabled = true;
   let thickness = 0.05;
-  let roughnessCutoff = 0.4;
+  // Nižší prah: aj matnejšie povrchy (suchý asfalt, omietky) dostanú jemný
+  // screen-space odraz okolia/oblohy — inak pôsobila scéna plocho.
+  let roughnessCutoff = 0.55;
   let metalnessBoost = 0.0;
   let baseW = 2, baseH = 2;
 
