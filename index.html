@@ -284,6 +284,57 @@
   </div>
 
 </div>
+<!-- Hra je čistý ESM: z file:// prehliadač moduly nenačíta (CORS) a menu
+     ostane mŕtve bez jedinej chyby na obrazovke. Táto hláška to povie nahlas
+     a dá odkaz na živú verziu; zobrazí ju klasický skript nižšie. -->
+<div id="boot-fail" class="hidden">
+  <div class="boot-fail-card">
+    <h2>HRA SA NENAČÍTALA</h2>
+    <p id="boot-fail-msg">JavaScript hry sa nespustil.</p>
+    <p>Hru treba otvoriť cez server, nie dvojklikom na <code>index.html</code>:</p>
+    <pre>npm run dev
+# alebo
+python3 -m http.server 8811</pre>
+    <p>Alebo hraj priamo online:</p>
+    <a class="btn" href="https://stanimir2333.github.io/Kruhac-Simulator-Utek-z-Hlohovca/" target="_blank" rel="noopener">HRAŤ ONLINE</a>
+    <button class="btn btn-alt" id="boot-fail-close" type="button">ZAVRIEŤ</button>
+  </div>
+</div>
 <script type="module" src="./src/main.js"></script>
+<script>
+// file:// nemá CORS na ES moduly → hra sa vôbec nespustí a menu ostane mŕtve.
+// Toto je klasický skript (beží aj z disku), hra ho nikdy nepotrebuje.
+(function () {
+  var shown = false;
+  function show(msg) {
+    if (shown) return;
+    shown = true;
+    var el = document.getElementById('boot-fail');
+    if (!el) return;
+    if (msg) {
+      var m = document.getElementById('boot-fail-msg');
+      if (m) m.textContent = msg;
+    }
+    el.classList.remove('hidden');
+  }
+  var closeBtn = document.getElementById('boot-fail-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function () {
+      var el = document.getElementById('boot-fail');
+      if (el) el.classList.add('hidden');
+    });
+  }
+  if (location.protocol === 'file:') {
+    show('Hru nespúšťaj dvojklikom na index.html — prehliadač z disku nenačíta JS moduly (CORS).');
+    return;
+  }
+  // modul sa nenačítal (sieť / CDN unpkg) — po 30 s to povedz nahlas
+  setTimeout(function () {
+    if (!window.__kruhacBootStarted) {
+      show('JavaScript hry sa nenačítal — skontroluj pripojenie (three.js ide z unpkg.com).');
+    }
+  }, 30000);
+})();
+</script>
 </body>
 </html>

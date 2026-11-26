@@ -64,6 +64,11 @@ import { wireMenus } from './ui/menus.js';
 import { wireGarage } from './ui/garage.js';
 // Štýly ťahá <link> v index.html (Vite ich zbalí; natívny ESM by import CSS odmietol).
 
+// Príznak pre index.html: modul sa naozaj rozbehol. Klasický skript v HTML
+// podľa neho po 30 s zobrazí hlášku, keď sa hra nenačítala (unpkg/CDN, sieť).
+// Nič v hre ho nečíta — je to len diagnostika pre používateľa.
+globalThis.__kruhacBootStarted = true;
+
 const pre = createPreloader();
 const state = createState();
 // Zvuk vzniká už pred bootom sveta: WebAudio kontext sa musí odomknúť V RÁMEČI
