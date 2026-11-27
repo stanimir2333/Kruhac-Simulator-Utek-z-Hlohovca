@@ -587,7 +587,7 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
       });
       engineViz.update(car.rpm, dt);
       // Chodci žijú aj za volantom (chôdza po chodníkoch okolo áut).
-      onfoot.updateAmbient(dt, car.x, car.z);
+      onfoot.updateAmbient(dt, car.x, car.z, isNoclip() ? null : car);
     }
     updateParticles(dt);
 

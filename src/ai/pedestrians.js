@@ -6,6 +6,7 @@ import { gridQuery, GQ_MAX } from '../world/ground.js';
 const PED_COUNT = S.LOW_END ? 20 : 46;
 const RELOCATE_D2 = 280 * 280;
 const FLEE_RADIUS = 68;
+const VEHICLE_KNOCKDOWN_RADIUS2 = 1.35 * 1.35;
 const PED_GQ = new Int32Array(GQ_MAX);
 
 const SHIRTS = [0x2b4c7e, 0x7e2b2b, 0x3f6b3a, 0x6b5b3a, 0x444444, 0x8a6d3b, 0x294f52, 0x6d3f72, 0xb0b0aa];
@@ -231,21 +232,53 @@ export function createPedestrianSystem(opts = {}) {
     }
   }
 
+  function knockDown(p, awayX, awayZ, respawnMin, respawnRange) {
+    const len = Math.sqrt(awayX * awayX + awayZ * awayZ) || 1;
+    p.x += awayX / len * 0.55;
+    p.z += awayZ / len * 0.55;
+    p.y = getTerrainHeight(p.x, p.z) + 0.03;
+    p.mode = 'down';
+    p.fleeT = 0;
+    p.downT = respawnMin + rnd() * respawnRange;
+    p.speed = 0;
+  }
+
   function damage(index, dmg, sx, sz) {
     const p = peds[index];
     if (!p || p.hidden || p.mode === 'down') return false;
     p.hp -= dmg;
     alert(sx ?? p.x, sz ?? p.z, 80);
     if (p.hp <= 0) {
-      p.mode = 'down';
-      p.fleeT = 0;
-      p.downT = 8 + rnd() * 5;
-      p.speed = 0;
+      knockDown(p, p.x - (sx ?? p.x), p.z - (sz ?? p.z), 8, 5);
       return true;
     }
     p.mode = 'flee';
     p.fleeT = Math.max(p.fleeT, 3.5);
     return false;
+  }
+
+  function reactToVehicle(p, vehicle) {
+    if (!vehicle || vehicle.hidden || p.hidden || p.mode === 'down') return;
+    const sx = Number.isFinite(vehicle.prevX) ? vehicle.prevX : vehicle.x;
+    const sz = Number.isFinite(vehicle.prevZ) ? vehicle.prevZ : vehicle.z;
+    const dx = vehicle.x - sx, dz = vehicle.z - sz;
+    const len2 = dx * dx + dz * dz;
+    const speed = Math.sqrt((vehicle.vx || 0) ** 2 + (vehicle.vz || 0) ** 2);
+    const t = len2 > 1e-6
+      ? Math.max(0, Math.min(1, ((p.x - sx) * dx + (p.z - sz) * dz) / len2)) : 1;
+    const nearX = sx + dx * t, nearZ = sz + dz * t;
+    const awayX = p.x - nearX, awayZ = p.z - nearZ;
+    const d2 = awayX * awayX + awayZ * awayZ;
+    if (d2 <= VEHICLE_KNOCKDOWN_RADIUS2 && speed > 1.5) {
+      knockDown(p, awayX, awayZ, 3.5, 2.5);
+      return;
+    }
+    const alertRadius = 7 + Math.min(14, speed * 0.45);
+    if (d2 < alertRadius * alertRadius && p.mode === 'walk') {
+      p.mode = 'flee';
+      p.fleeT = Math.max(p.fleeT, 2.5 + Math.min(2, speed * 0.12));
+      p.dir = (p.fx * awayX + p.fz * awayZ) >= 0 ? 1 : -1;
+    }
   }
 
   function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
@@ -381,10 +414,11 @@ export function createPedestrianSystem(opts = {}) {
     meshes.shoes.setMatrixAt(i * 2 + 1, dummy.matrix);
   }
 
-  function update(dt, px, pz) {
+  function update(dt, px, pz, vehicle = null) {
     if (!meshes) return;
     for (let i = 0; i < peds.length; i++) {
       const p = peds[i];
+      reactToVehicle(p, vehicle);
       const ddx = p.x - px, ddz = p.z - pz;
       const d2 = ddx * ddx + ddz * ddz;
       if (p.mode === 'down') {

@@ -105,6 +105,33 @@ export function createSfx() {
       return true;
     } catch { return false; }
   }
+  // Procedurálne jednorazové vrstvy z už vytvoreného šumového bufferu.
+  function noiseBurst(frequency, q, peak, dur, rate = 1) {
+    if (!ctx || !noiseBuf || !master) return;
+    const t0 = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf;
+    src.playbackRate.value = rate;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = frequency; bp.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(t0, Math.random() * 1.5, dur + 0.02);
+    src.stop(t0 + dur + 0.03);
+  }
+  function toneSweep(startHz, endHz, peak, dur, type = 'sine') {
+    if (!ctx || !master) return;
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator(); osc.type = type;
+    osc.frequency.setValueAtTime(startHz, t0);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endHz), t0 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(g); g.connect(master);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
   // Krátky výstrel do výfuku (praskot pri ubratí plynu vo vysokých otáčkach).
   // Volá sa len náhodne párkrát za sekundu, takže pár alokácií nevadí.
   function pop(intensity) {
@@ -188,16 +215,9 @@ export function createSfx() {
       if (!ensure() || !noiseBuf || !master) return;
       const P = GUN[id] || GUN['9mm'];
       const t0 = ctx.currentTime;
-      const src = ctx.createBufferSource(); src.buffer = noiseBuf;
-      src.playbackRate.value = P.rate;
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-      bp.frequency.value = P.f; bp.Q.value = P.q;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(P.peak, t0);
-      g.gain.exponentialRampToValueAtTime(0.001, t0 + P.dur);
-      src.connect(bp); bp.connect(g); g.connect(master);
-      src.start(t0, Math.random() * 1.5, P.dur + 0.02);
-      src.stop(t0 + P.dur + 0.03);
+      noiseBurst(P.f, P.q, P.peak, P.dur, P.rate);
+      // Ostrý záver tresku dodá úder na začiatku bez ďalšieho assetu.
+      noiseBurst(Math.min(7200, P.f * 2.7), 0.7, P.peak * 0.22, 0.018, P.rate * 1.25);
       const o = ctx.createOscillator(); o.type = 'sine';
       o.frequency.setValueAtTime(P.thump, t0);
       o.frequency.exponentialRampToValueAtTime(Math.max(40, P.thump * 0.45), t0 + 0.09);
@@ -206,6 +226,35 @@ export function createSfx() {
       og.gain.exponentialRampToValueAtTime(0.001, t0 + 0.11);
       o.connect(og); og.connect(master);
       o.start(t0); o.stop(t0 + 0.13);
+    },
+    // Mechanické cvaknutia prebíjania; zvuk sa skladá len z oscilátora a šumu.
+    reload() {
+      if (!ensure()) return;
+      noiseBurst(1850, 1.8, 0.11, 0.045, 1.15);
+      toneSweep(260, 115, 0.08, 0.075, 'triangle');
+    },
+    reloadDone() {
+      if (!ensure()) return;
+      toneSweep(720, 360, 0.12, 0.055, 'triangle');
+      noiseBurst(2800, 2.4, 0.13, 0.032, 0.9);
+    },
+    dryFire() {
+      if (!ensure()) return;
+      toneSweep(420, 190, 0.09, 0.045, 'triangle');
+      noiseBurst(1250, 2.2, 0.07, 0.025, 0.8);
+    },
+    impact(material = 'ground') {
+      if (!ensure()) return;
+      if (material === 'metal') {
+        noiseBurst(3200, 1.3, 0.15, 0.07, 1.2);
+        toneSweep(1450, 520, 0.11, 0.16, 'sine');
+      } else if (material === 'soft') {
+        noiseBurst(420, 0.9, 0.1, 0.055, 0.75);
+        toneSweep(115, 58, 0.12, 0.095, 'sine');
+      } else {
+        noiseBurst(1050, 0.8, 0.12, 0.07, 0.9);
+        toneSweep(230, 85, 0.09, 0.08, 'triangle');
+      }
     },
     crash(v = 1) {
       if (!ensure()) return;

@@ -31,8 +31,10 @@ function buildModels() {
   const dark = steel(0x3c4249, 0.42, 0.3);
   dark.emissive = new THREE.Color(0x14181d); // kov bez envMapu by bol úplne čierny
   const polymer = steel(0x111214, 0.72, 0.12);
+  const rubber = steel(0x26292c, 0.9, 0.02);
   const wood = steel(0x6d3f1e, 0.72, 0.05);
   const tan = steel(0x8a7a5a, 0.7, 0.08);
+  const brass = steel(0x80633a, 0.38, 0.25);
   const sight = new THREE.MeshBasicMaterial({ color: 0x8cffb0, toneMapped: false });
 
   const add = (g, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
@@ -61,6 +63,10 @@ function buildModels() {
   box(g, 0.05, 0.03, 0.12, polymer, 0, -0.005, 0.08);
   cyl(g, 0.022, 0.13, dark, 0, 0.06, 0.27);
   box(g, 0.012, 0.022, 0.02, sight, 0, 0.112, 0.23);
+  box(g, 0.014, 0.1, 0.105, rubber, -0.036, -0.035, -0.015);
+  box(g, 0.014, 0.1, 0.105, rubber, 0.036, -0.035, -0.015);
+  box(g, 0.035, 0.012, 0.105, dark, 0, 0.01, 0.18);
+  box(g, 0.045, 0.012, 0.018, dark, 0, 0.112, -0.065);
 
   g = weaponGroup();
   box(g, 0.085, 0.115, 0.4, dark, 0, 0.04, 0.05);
@@ -70,6 +76,11 @@ function buildModels() {
   cyl(g, 0.021, 0.22, dark, 0, 0.06, 0.35);
   cyl(g, 0.034, 0.13, polymer, 0, 0.04, 0.26);
   box(g, 0.012, 0.03, 0.025, sight, 0, 0.11, 0.2);
+  box(g, 0.06, 0.012, 0.24, dark, 0, 0.105, 0.02);
+  box(g, 0.035, 0.025, 0.028, brass, 0, 0.123, -0.12);
+  box(g, 0.012, 0.022, 0.018, sight, 0, 0.13, 0.31);
+  box(g, 0.045, 0.012, 0.13, rubber, 0, -0.252, 0.02);
+  box(g, 0.045, 0.012, 0.13, rubber, 0, -0.252, 0.055);
 
   g = weaponGroup();
   box(g, 0.1, 0.12, 0.78, dark, 0, 0.02, 0.08);
@@ -81,6 +92,10 @@ function buildModels() {
   box(g, 0.075, 0.03, 0.08, sight, 0, 0.21, -0.03);
   box(g, 0.012, 0.12, 0.025, dark, -0.07, -0.08, 0.66, 0, 0, 0.24);
   box(g, 0.012, 0.12, 0.025, dark, 0.07, -0.08, 0.66, 0, 0, -0.24);
+  cyl(g, 0.034, 0.24, rubber, 0, 0.135, 0.12);
+  cyl(g, 0.041, 0.018, brass, 0, 0.135, 0.015);
+  cyl(g, 0.041, 0.018, brass, 0, 0.135, 0.225);
+  box(g, 0.012, 0.024, 0.02, sight, 0, 0.205, 0.59);
 
   g = weaponGroup();
   box(g, 0.075, 0.11, 0.34, dark, 0, 0.03, 0.03);
@@ -89,6 +104,9 @@ function buildModels() {
   cyl(g, 0.035, 0.24, polymer, 0, 0.045, 0.3);
   cyl(g, 0.018, 0.12, dark, 0, 0.045, 0.47);
   box(g, 0.012, 0.024, 0.02, sight, 0, 0.105, 0.18);
+  box(g, 0.048, 0.15, 0.055, dark, 0, -0.22, -0.025, -0.08);
+  box(g, 0.014, 0.035, 0.018, brass, 0.039, 0.015, -0.04);
+  box(g, 0.045, 0.012, 0.035, rubber, 0, -0.13, 0.11);
 
   g = weaponGroup();
   box(g, 0.082, 0.11, 0.42, dark, 0, 0.02, 0.05);
@@ -100,6 +118,11 @@ function buildModels() {
   cyl(g, 0.01, 0.16, dark, 0, 0.105, 0.38);
   box(g, 0.012, 0.027, 0.018, sight, 0, 0.105, 0.5);
   box(g, 0.025, 0.06, 0.03, sight, 0, 0.115, 0.22);
+  box(g, 0.07, 0.014, 0.18, dark, 0, 0.09, 0.02);
+  box(g, 0.062, 0.16, 0.07, dark, 0, -0.245, 0.12, -0.12);
+  box(g, 0.07, 0.012, 0.018, rubber, 0, -0.22, 0.08);
+  box(g, 0.07, 0.012, 0.018, rubber, 0, -0.25, 0.12);
+  box(g, 0.012, 0.035, 0.045, brass, 0.045, 0.015, -0.07);
 
   holder.rotation.order = 'YXZ';
   // Viewmodel sa zobrazuje 45 cm od očí — modely sú v "svetej" mierke
@@ -227,6 +250,7 @@ export function createWeapons(opts = {}) {
     const a = ammo[current];
     if (reloadT > 0 || a.mag >= w.mag || a.reserve <= 0) return false;
     reloadT = w.reload;
+    if (sfx?.reload) sfx.reload();
     triggerPressed = false;
     hudDirty = true;
     updateHUD();
@@ -241,6 +265,7 @@ export function createWeapons(opts = {}) {
     a.mag += take;
     a.reserve -= take;
     reloadT = 0;
+    if (sfx?.reloadDone) sfx.reloadDone();
     hudDirty = true;
   }
 
@@ -308,7 +333,11 @@ export function createWeapons(opts = {}) {
     const a = ammo[current];
     if (w === undefined || a.mag <= 0) {
       if (a.reserve > 0) startReload();
-      else if (toast) toast('DOŠLA MUNÍCIA · ' + w.name);
+      else {
+        if (cooldown <= 0 && sfx?.dryFire) sfx.dryFire();
+        cooldown = Math.max(cooldown, 0.22);
+        if (toast) toast('DOŠLA MUNÍCIA · ' + w.name);
+      }
       return;
     }
     a.mag--;
@@ -357,13 +386,18 @@ export function createWeapons(opts = {}) {
     holder.localToWorld(_muzzle);
     addTracer(_muzzle.x, _muzzle.y, _muzzle.z, hitX, hitY, hitZ, w.color);
     psEmit(_muzzle.x, _muzzle.y, _muzzle.z,
-      (Math.random() - 0.5) * 0.7, 0.4 + Math.random() * 0.5, (Math.random() - 0.5) * 0.7,
-      0.22, 0.55, 0.5, 0.42, 0);
+      (Math.random() - 0.5) * 0.22, 0.16 + Math.random() * 0.18, (Math.random() - 0.5) * 0.22,
+      0.28, 0.42, 0.38, 0.3, 0);
+    psEmit(_muzzle.x, _muzzle.y, _muzzle.z,
+      (Math.random() - 0.5) * 1.5, 0.5 + Math.random() * 0.8, (Math.random() - 0.5) * 1.5,
+      0.16, 1, 0.68, 0.24, 1);
     if (kind === 'ped' && peds) {
       const killed = peds.damage(index, w.damage, foot ? foot.x : hitX, foot ? foot.z : hitZ);
+      if (sfx?.impact) sfx.impact('soft');
       if (onHit) onHit(killed, index);
     } else if (kind !== '') {
       emitSparks(hitX, hitY, hitZ, kind === 'car' ? 8 : 5);
+      if (sfx?.impact) sfx.impact(kind === 'car' ? 'metal' : 'ground');
     }
     if (peds) peds.alert(foot ? foot.x : ox, foot ? foot.z : oz, 72);
     if (hudDirty) updateHUD();
@@ -431,12 +465,15 @@ export function createWeapons(opts = {}) {
     holder.visible = true;
     holder.position.copy(camera.position);
     holder.quaternion.copy(camera.quaternion);
-    holder.translateX(0.22);
-    holder.translateY(-0.19);
-    holder.translateZ(-0.46);
+    const walk = Math.min(1, Math.abs(foot.moveSpeed || 0) / 6);
+    const phase = foot.phase || 0;
+    holder.translateX(0.22 + Math.sin(phase) * 0.006 * walk);
+    holder.translateY(-0.19 + Math.sin(phase * 2) * 0.004 * walk - kick * 0.008);
+    holder.translateZ(-0.46 - kick * 0.025);
     // Modely zbraní mieria na +Z, kamera pozerá na -Z → 180° okolo Y.
     holder.rotateY(Math.PI);
-    holder.rotateX(-kick * 0.16);
+    holder.rotateX(-kick * 0.16 + Math.sin(phase) * 0.006 * walk);
+    holder.rotateZ(Math.sin(phase * 0.5) * 0.004 * walk);
   }
 
   showCurrent();

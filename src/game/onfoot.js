@@ -450,13 +450,13 @@ export function createOnFoot(opts = {}) {
     }
   }
 
-  function updateAmbient(dt, x, z) {
+  function updateAmbient(dt, x, z, vehicle = null) {
     if (root.visible) root.visible = false;
     if (blob && blob.visible) blob.visible = false;
     // Neaktívne zbrane musia dobehnúť časovače (stopy striel, prebíjanie),
     // inak by posledné tracery ostali visieť v scéne naveky.
     weapons.update(dt, null);
-    peds.update(dt, x, z);
+    peds.update(dt, x, z, vehicle);
   }
 
   if (canvas) {

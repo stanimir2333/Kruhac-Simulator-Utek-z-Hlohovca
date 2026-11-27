@@ -31,7 +31,7 @@ const SHADOW_MAX_DT = 0.045;
 
 let rangeScale = 1;                  // TIENE RT slider (0–1.5)
 let lastKey = '';
-let lastX = 1e9, lastZ = 1e9, lastAt = -1;
+let lastA = 1e9, lastB = 1e9, lastC = 1e9, lastAt = -1;
 export let shadowUpdates = 0;        // diagnostika: koľkokrát sa mapa obnovila
 export let shadowSkips = 0;          // diagnostika: koľkokrát sa preskočila
 
@@ -92,25 +92,27 @@ export function updateSunShadow(sun, x, y, z, viewDist, tierR, nowSec) {
   const texel = (2 * r) / Math.max(1, res);
   // --- TEXEL SNAP: stred frustumu v báze tieňovej kamery ---
   // Smer pohľadu (LZ) nechávame presný, len priečne osi LX/LY zaokrúhlime na
-  // násobok texelu → mapa sa posúva po celých texeloch a hrany tieňov nekmitujú.
+  // násobok texelu na všetkých osiach → mapa sa posúva po celých krokoch a
+  // jej svetová transformácia sa medzi obnovami nemení.
   const step = texel * SNAP_TEXELS;
   const a0 = x * LX.x + y * LX.y + z * LX.z;
   const b0 = x * LY.x + y * LY.y + z * LY.z;
   const c0 = x * LZ.x + y * LZ.y + z * LZ.z;
   const a = Math.round(a0 / step) * step;
   const b = Math.round(b0 / step) * step;
-  const sx = LX.x * a + LY.x * b + LZ.x * c0;
-  const sy = LX.y * a + LY.y * b + LZ.y * c0;
-  const sz = LX.z * a + LY.z * b + LZ.z * c0;
+  const d = Math.round(c0 / step) * step;
+  const sx = LX.x * a + LY.x * b + LZ.x * d;
+  const sy = LX.y * a + LY.y * b + LZ.y * d;
+  const sz = LX.z * a + LY.z * b + LZ.z * d;
   const now = Number.isFinite(nowSec) ? nowSec : 0;
   const due = (now - lastAt) >= SHADOW_MAX_DT;
-  const sameCell = (sx === lastX && sz === lastZ);
+  const sameCell = (a === lastA && b === lastB && d === lastC);
   if (key === lastKey && sameCell && !due) {
     shadowSkips++;
     return null; // mapa z minulého snímku sedí presne na toto miesto
   }
   lastKey = key;
-  lastX = sx; lastZ = sz; lastAt = now;
+  lastA = a; lastB = b; lastC = d; lastAt = now;
   shadowUpdates++;
   sun.position.set(sx + S.SUN_OFF.x, sy + S.SUN_OFF.y, sz + S.SUN_OFF.z);
   sun.target.position.set(sx, sy, sz);

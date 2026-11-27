@@ -42,7 +42,7 @@ const RT_FRAGMENT = `
   uniform sampler2D tDepth;          // hĺbka (raw window depth 0..1)
   uniform sampler2D tNormal;         // normály (view space, RGB = XYZ * 0.5 + 0.5)
   uniform sampler2D tMetalRough;     // metalness (R), roughness (G)
-  uniform mat4 projectionMatrix;
+  uniform mat4 cameraProjectionMatrix;
   uniform mat4 projectionMatrixInv;
   uniform mat4 cameraMatrixWorld;    // inverz viewMatrix — smer lúča do sveta
   // viewMatrix už three deklaruje v prefixe fragment shaderu — duplicitná
@@ -150,8 +150,8 @@ const RT_FRAGMENT = `
       t += stepSize;
       pos = origin + dir * t;
 
-      // View space -> NDC
-      vec4 clip = projectionMatrix * vec4(pos, 1.0);
+      // View space -> NDC kamery scény (nie projekcia full-screen quadu).
+      vec4 clip = cameraProjectionMatrix * vec4(pos, 1.0);
       if (clip.w <= 0.0) break;
       vec2 ndc = clip.xy / clip.w;
       vec2 uv = ndc * 0.5 + 0.5;
@@ -170,7 +170,7 @@ const RT_FRAGMENT = `
         for (int j = 0; j < BINARY_SEARCH_STEPS; j++) {
           float midT = (nearT + farT) * 0.5;
           vec3 midPos = origin + dir * midT;
-          vec4 c2 = projectionMatrix * vec4(midPos, 1.0);
+          vec4 c2 = cameraProjectionMatrix * vec4(midPos, 1.0);
           if (c2.w <= 0.0) { nearT = midT; continue; }
           vec2 uv2 = (c2.xy / c2.w) * 0.5 + 0.5;
           if (uv2.x < 0.0 || uv2.x > 1.0 || uv2.y < 0.0 || uv2.y > 1.0) {
@@ -184,7 +184,7 @@ const RT_FRAGMENT = `
         }
 
         vec3 hitPos = origin + dir * farT;
-        vec4 fc = projectionMatrix * vec4(hitPos, 1.0);
+        vec4 fc = cameraProjectionMatrix * vec4(hitPos, 1.0);
         if (fc.w <= 0.0) return vec3(0.0);
         vec2 fuv = (fc.xy / fc.w) * 0.5 + 0.5;
         if (fuv.x < 0.0 || fuv.x > 1.0 || fuv.y < 0.0 || fuv.y > 1.0) return vec3(0.0);
@@ -222,7 +222,7 @@ const RT_FRAGMENT = `
 
       // Väčší offset od normály (2× hrúbka) zamedzí self-shadow akné.
       pos = origin + dir * t + normal * (thickness * 2.0);
-      vec4 clip = projectionMatrix * vec4(pos, 1.0);
+      vec4 clip = cameraProjectionMatrix * vec4(pos, 1.0);
       if (clip.w <= 0.0) break;
       vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
       if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
@@ -267,7 +267,7 @@ const RT_FRAGMENT = `
         if (t > ssgiMaxDist) break;
         vec3 pos = origin + worldDir * t;
 
-        vec4 clip = projectionMatrix * vec4(pos, 1.0);
+        vec4 clip = cameraProjectionMatrix * vec4(pos, 1.0);
         if (clip.w <= 0.0) break;
         vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
@@ -306,7 +306,8 @@ const RT_FRAGMENT = `
     // --- SSR ---
     if (!isSky && enableSSR && (metalness > 0.02 || roughness < roughnessCutoff)) {
       vec3 V = normalize(-pos);
-      vec3 R = reflect(V, normal);
+      // V mieri z povrchu ku kamere; dopadový lúč ide opačne.
+      vec3 R = reflect(-V, normal);
       float hitConf = 0.0;
       vec3 hitColor = traceSSR(pos, R, roughness, hitConf);
 
@@ -402,6 +403,7 @@ const RT_BASE_SCALE = 0.75;
 export function createRayTracer(renderer, camera) {
   let rtPass = null;
   let currentQuality = 1; // STANDARD
+  let failed = false;
   let enabled = true;
   let thickness = 0.05;
   // Nižší prah: aj matnejšie povrchy (suchý asfalt, omietky) dostanú jemný
@@ -536,6 +538,8 @@ export function createRayTracer(renderer, camera) {
           // `projectionMatrix` NEPATRÍ do uniforms — three ho nastavuje ako
           // built-in pre každý program. Keď je aj v material.uniforms, jeho
           // upload zneplatní celý draw (RT cieľ ostal čierny bez chyby v logu).
+          // Raymarch projekcia patrí kamere scény, nie ortografickej kamere quadu.
+          cameraProjectionMatrix: { value: camera.projectionMatrix },
           projectionMatrixInv: { value: new THREE.Matrix4().copy(camera.projectionMatrix).invert() },
           cameraMatrixWorld: { value: camera.matrixWorld },
           resolution: { value: new THREE.Vector2(passW, passH) },
@@ -583,6 +587,7 @@ export function createRayTracer(renderer, camera) {
       return true;
     } catch (e) {
       console.warn('[raytrace] RT pass nedostupný:', e?.message);
+      failed = true;
       rtPass = null;
       return false;
     }
@@ -598,7 +603,8 @@ export function createRayTracer(renderer, camera) {
     if (gBufferNormalTarget) return true;
     try {
       const opts = {
-        type: THREE.HalfFloatType,
+        // 8-bit postačuje pre normály a metal/rough; netreba float color-buffer extension.
+        type: THREE.UnsignedByteType,
         format: THREE.RGBAFormat,
         minFilter: THREE.NearestFilter,
         magFilter: THREE.NearestFilter,
@@ -613,6 +619,7 @@ export function createRayTracer(renderer, camera) {
       return true;
     } catch (e) {
       console.warn('[raytrace] G-buffer nedostupný:', e?.message);
+      failed = true;
       gBufferNormalTarget?.dispose();
       gBufferMetalRoughTarget?.dispose();
       gBufferNormalTarget = null;
@@ -720,58 +727,69 @@ export function createRayTracer(renderer, camera) {
 
     // Hlavná render funkcia — volá sa z bloom composeru PO scéne, PRED bloom
     render(renderer, scene, camera, sunLight, mainColorTarget, mainDepthTexture) {
-      if (!enabled) return mainColorTarget;
+      // RT vyžaduje WebGL2/GLSL3 aj platný depth target. Pri nepodpore
+      // alebo chybe necháme bežať pôvodný composer obraz bez opakovaných pokusov.
+      if (!enabled || failed || !mainColorTarget || !mainDepthTexture
+        || renderer.capabilities?.isWebGL2 === false) return mainColorTarget;
 
-      const [passW, passH] = targetSize();
-      if (!ensureRT(passW, passH)) return mainColorTarget;
+      try {
+        const [passW, passH] = targetSize();
+        if (!ensureRT(passW, passH)) return mainColorTarget;
 
-      // 1) Render G-buffer (normály + metal/rough)
-      const gbuf = renderGBuffer(renderer, scene, camera, passW, passH);
-      if (!gbuf) return mainColorTarget;
+        // 1) Render G-buffer (normály + metal/rough)
+        const gbuf = renderGBuffer(renderer, scene, camera, passW, passH);
+        if (!gbuf) return mainColorTarget;
 
-      // 2) Smer slnka. DirectionalLight NEMÁ `.direction` — pôvodný kód tam
-      // čítal undefined a každý snímok spadol na TypeError.
-      _sunWorld.set(0, 1, 0);
-      if (sunLight && sunLight.position) {
-        _sunWorld.copy(sunLight.position);
-        if (sunLight.target) _sunWorld.sub(sunLight.target.position);
+        // 2) Smer slnka. DirectionalLight NEMÁ `.direction` — pôvodný kód tam
+        // čítal undefined a každý snímok spadol na TypeError.
+        _sunWorld.set(0, 1, 0);
+        if (sunLight && sunLight.position) {
+          _sunWorld.copy(sunLight.position);
+          if (sunLight.target) _sunWorld.sub(sunLight.target.position);
+        }
+        _sunWorld.normalize();
+        _sunDir.copy(_sunWorld).transformDirection(camera.matrixWorldInverse).normalize();
+
+        // 3) Sky farby pre fallback: horizont ber zo scene.background (daynight
+        // ho mení deň/noc/búrka), zenit z konštanty stmavenej podľa dňa.
+        const bg = scene.background;
+        if (bg && bg.isColor) _skyHorizon.copy(bg);
+        else _skyHorizon.set(S.SKY_HORIZON);
+        const day = dayness();
+        _skyZenith.copy(_zenithBase).multiplyScalar(0.18 + 0.82 * day);
+        if (sunLight && sunLight.color) _skySun.copy(sunLight.color);
+        else _skySun.set(S.SKY_SUN);
+
+        const u = rtPass.material.uniforms;
+        u.sunDirection.value.copy(_sunDir);
+        u.sunWorld.value.copy(_sunWorld);
+        u.sunIntensity.value = sunLight ? sunLight.intensity : 0;
+        u.time.value = performance.now() * 0.001;
+        u.cameraProjectionMatrix.value.copy(camera.projectionMatrix);
+        u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
+        u.cameraMatrixWorld.value.copy(camera.matrixWorld);
+        u.resolution.value.set(passW, passH);
+        u.cameraNear.value = camera.near;
+        u.cameraFar.value = camera.far;
+
+        // 4) Bind textúr
+        u.tDiffuse.value = mainColorTarget.texture;
+        u.tDepth.value = mainDepthTexture; // depth texture z hlavného renderu
+        u.tNormal.value = gbuf.normal;
+        u.tMetalRough.value = gbuf.metalRough;
+
+        // 5) Render RT pass
+        renderer.setRenderTarget(rtPass.renderTarget);
+        renderer.render(rtPass.scene, rtPass.camera);
+        renderer.setRenderTarget(null);
+
+        return rtPass.renderTarget.texture;
+      } catch (e) {
+        try { renderer.setRenderTarget(null); } catch (_e) { /* kontext môže byť stratený */ }
+        failed = true;
+        console.warn('[raytrace] RT pass vypnutý po chybe:', e?.message);
+        return mainColorTarget;
       }
-      _sunWorld.normalize();
-      _sunDir.copy(_sunWorld).transformDirection(camera.matrixWorldInverse).normalize();
-
-      // 3) Sky farby pre fallback: horizont ber zo scene.background (daynight
-      // ho mení deň/noc/búrka), zenit z konštanty stmavenej podľa dňa.
-      const bg = scene.background;
-      if (bg && bg.isColor) _skyHorizon.copy(bg);
-      else _skyHorizon.set(S.SKY_HORIZON);
-      const day = dayness();
-      _skyZenith.copy(_zenithBase).multiplyScalar(0.18 + 0.82 * day);
-      if (sunLight && sunLight.color) _skySun.copy(sunLight.color);
-      else _skySun.set(S.SKY_SUN);
-
-      const u = rtPass.material.uniforms;
-      u.sunDirection.value.copy(_sunDir);
-      u.sunWorld.value.copy(_sunWorld);
-      u.sunIntensity.value = sunLight ? sunLight.intensity : 0;
-      u.time.value = performance.now() * 0.001;
-      u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
-      u.cameraMatrixWorld.value.copy(camera.matrixWorld);
-      u.resolution.value.set(passW, passH);
-      u.cameraNear.value = camera.near;
-      u.cameraFar.value = camera.far;
-
-      // 4) Bind textúr
-      u.tDiffuse.value = mainColorTarget.texture;
-      u.tDepth.value = mainDepthTexture; // depth texture z hlavného renderu
-      u.tNormal.value = gbuf.normal;
-      u.tMetalRough.value = gbuf.metalRough;
-
-      // 5) Render RT pass
-      renderer.setRenderTarget(rtPass.renderTarget);
-      renderer.render(rtPass.scene, rtPass.camera);
-      renderer.setRenderTarget(null);
-
-      return rtPass.renderTarget.texture;
     },
 
     // bloom.js posiela plné rozlíšenie composera (0.75 DPR) — RT si z neho

@@ -58,6 +58,10 @@ const HIGH_SPEED_YAW_BASE_RAD_S = 0.35;
 const MIN_HIGH_SPEED_YAW_RAD_S = 0.12;
 const HANDBRAKE_YAW_GAIN = 1.35;
 const YAW_RATE_RESPONSE = 6;
+const HANDBRAKE_SLIP_GAIN = 0.38;
+const HANDBRAKE_SLIP_MAX = 8;
+const HANDBRAKE_SLIP_RESPONSE = 2.4;
+const LATERAL_GRIP_RESPONSE = 7;
 const DRIFT_MIN_SPEED_MPS = 8;
 const DRIFT_MIN_STEER = 0.4;
 const STATIONARY_HEAT_PER_SEC = 0.03;
@@ -71,13 +75,13 @@ const COLLISION_SCAN_RADIUS2 = COLLISION_SCAN_RADIUS_M * COLLISION_SCAN_RADIUS_M
 const COLLISION_SOLVER_PASSES = 2;
 const HARD_IMPACT_THRESHOLD = 1.2;
 const SOFT_IMPACT_THRESHOLD = 0.15;
-const HARD_IMPACT_REBOUND = -0.22;
-const SOFT_IMPACT_SPEED_RETAIN = 0.82;
+const HARD_IMPACT_REBOUND = 0.22;
 
 export function createVehicle(opts = {}) {
   return {
     x: opts.x ?? 0, y: opts.y ?? 0, z: opts.z ?? 0, h: 0,
-    vx: 0, vz: 0, speed: 0, gear: 1, rpm: ENG.idle,
+    prevX: opts.x ?? 0, prevZ: opts.z ?? 0,
+    vx: 0, vz: 0, slip: 0, speed: 0, gear: 1, rpm: ENG.idle,
     steer: 0, yawRate: 0, temp: 0.2, stress: 0,
     fuel: 1, trip: 0, odo: 0, oilT: 0, // palivo 0–1, trip/odo v metroch, olejka-timer
     vmax: ENG.vmax, // m/s (profilový strop, main ho prepína aj pre turbo)
@@ -99,6 +103,7 @@ const TEL = { kmh: 0, drifting: false, accel: 0 };
 /** Krok fyziky — volá sa z main loopu s pevným dt (clamp 0.1). Vracia telemetriu pre HUD/police.
  * boost = násobok ťahu počas turba (TURBO_TQ z missions.js, inak 1). */
 export function updateVehicle(v, input, dt, terrainY, boost = 1) {
+  v.prevX = v.x; v.prevZ = v.z;
   const th = input.throttle(), br = input.brake(), steer = input.axis();
   const hand = input.handbrake();
   // Ťah na kolesách s prevodovým stropom z profilu: každý kvalt má vlastné
@@ -120,11 +125,8 @@ export function updateVehicle(v, input, dt, terrainY, boost = 1) {
     kmh < GEAR_SHIFT_KMH[2] ? 3 : kmh < GEAR_SHIFT_KMH[3] ? 4 :
     kmh < GEAR_SHIFT_KMH[4] ? 5 : gears;
   v.rpm = ENG.idle + (kmh % RPM_CYCLE_KMH) / RPM_CYCLE_KMH * ENG.range;
-  // palivo + počítadlá: plná nádrž ≈ 30 min zmiešanej jazdy
+  // Palivo + čas olejky: plná nádrž ≈ 30 min zmiešanej jazdy.
   v.fuel = Math.max(0, v.fuel - (FUEL_IDLE_PER_SEC + th * FUEL_THROTTLE_PER_SEC) * dt);
-  const dist = Math.abs(v.speed) * dt;
-  v.trip += dist;
-  v.odo += dist;
   v.oilT = Math.max(0, (v.oilT || 0) - dt);
   // riadenie (verbatim cit z monolitu): nedotáčavosť s rýchlosťou + cap nad 150 km/h,
   // nech auto pri 200+ nie je myklavé; yawRate sa vyhladzuje
@@ -146,8 +148,21 @@ export function updateVehicle(v, input, dt, terrainY, boost = 1) {
   }
   v.yawRate += (yawT - v.yawRate) * Math.min(1, dt * YAW_RATE_RESPONSE);
   v.h += v.yawRate * dt * grip;
-  v.x += Math.sin(v.h) * v.speed * dt;
-  v.z += Math.cos(v.h) * v.speed * dt;
+  // Ručná brzda pustí zadnú nápravu: bočný sklz sa vyhladí a po pustení
+  // ručnej ho prirodzená priľnavosť rýchlo stiahne späť.
+  const slipTarget = hand && steer !== 0
+    ? steer * (v.speed < 0 ? -1 : 1) * Math.min(HANDBRAKE_SLIP_MAX, aspd * HANDBRAKE_SLIP_GAIN) : 0;
+  const slipResponse = hand ? HANDBRAKE_SLIP_RESPONSE : LATERAL_GRIP_RESPONSE;
+  v.slip += (slipTarget - v.slip) * Math.min(1, dt * slipResponse);
+  const fx = Math.sin(v.h), fz = Math.cos(v.h);
+  const rx = fz, rz = -fx;
+  v.vx = fx * v.speed + rx * v.slip;
+  v.vz = fz * v.speed + rz * v.slip;
+  const dist = Math.sqrt(v.vx * v.vx + v.vz * v.vz) * dt;
+  v.trip += dist;
+  v.odo += dist;
+  v.x += v.vx * dt;
+  v.z += v.vz * dt;
   v.y = terrainY;
   // drift skóre vstup: |steer| × speed pri ručnej
   const drifting = hand && Math.abs(v.speed) > DRIFT_MIN_SPEED_MPS && Math.abs(v.steer) > DRIFT_MIN_STEER;
@@ -239,7 +254,9 @@ export function pushOutOBB(p, cx, cz, ch, hw, hl, result = { hit: false, nx: 0, 
   p.x += bnx * depth;
   p.z += bnz * depth;
   result.hit = true; result.nx = bnx; result.nz = bnz;
-  result.impact = -(f1x * p.speed * bnx + f1z * p.speed * bnz);
+  const vx = Number.isFinite(p.vx) ? p.vx : f1x * p.speed;
+  const vz = Number.isFinite(p.vz) ? p.vz : f1z * p.speed;
+  result.impact = -(vx * bnx + vz * bnz);
   return result;
 }
 
@@ -250,17 +267,61 @@ const COLLISION_RESULT = { hit: false, nx: 0, nz: 0, impact: 0 };
 
 /** Kolízie hráča: budovy (BGRID + exact verify) + autá (pooly). Vracia max impact. */
 export function collideWorld(p, cars = []) {
-  let impact = 0;
+  let impact = 0, impactNx = 0, impactNz = 0;
   const nc = cars.length;
-  for (let pass = 0; pass < COLLISION_SOLVER_PASSES; pass++) {
-    // indexová slučka namiesto for..of: `cars` je ALL_CARS (60+) a for..of
-    // alokuje iterátor pri každom z oboch priechodov (teda 2×/snímok)
+  // Podkrokuj iba dráhu hráča: pri vysokej rýchlosti kontrolný OBB môže
+  // preskočiť úzke auto. Rozostup vzoriek je najviac 1,2 m, bez alokácií.
+  const startX = Number.isFinite(p.prevX) ? p.prevX : p.x;
+  const startZ = Number.isFinite(p.prevZ) ? p.prevZ : p.z;
+  const endX = p.x, endZ = p.z;
+  const pathX = endX - startX, pathZ = endZ - startZ;
+  const pathLen = Math.sqrt(pathX * pathX + pathZ * pathZ);
+  // Preskoč teleporta/warp, no skutočný krok pri rýchlosti auta nepresiahne ~12 m.
+  const teleport = pathLen > 20;
+  const steps = !teleport && pathLen > 1.2 ? Math.min(16, Math.ceil(pathLen / 1.2)) : 0;
+  let sweepHit = false, sweepX = endX, sweepZ = endZ;
+  for (let step = 1; step <= steps; step++) {
+    p.x = startX + pathX * (step / steps);
+    p.z = startZ + pathZ * (step / steps);
+    let sampleHit = false;
     for (let ci = 0; ci < nc; ci++) {
       const c = cars[ci];
+      if (c.hidden) continue;
       const dx = c.x - p.x, dz = c.z - p.z;
       if (dx * dx + dz * dz > COLLISION_SCAN_RADIUS2) continue;
       const r = pushOutOBB(p, c.x, c.z, c.h, CAR_HW, CAR_HL, COLLISION_RESULT);
-      if (r.hit && r.impact > impact) impact = r.impact;
+      if (r.hit) {
+        sampleHit = true;
+        if (r.impact > impact) { impact = r.impact; impactNx = r.nx; impactNz = r.nz; }
+      }
+    }
+    const bn = gridQuery(S.BGRID, p.x, p.z, 1, BLD_GQ);
+    for (let i = 0; i < bn; i++) {
+      const b = BLD_GQ[i];
+      const dx = S.BX.x[b] - p.x, dz = S.BX.z[b] - p.z;
+      if (dx * dx + dz * dz > COLLISION_SCAN_RADIUS2) continue;
+      const beforeX = p.x, beforeZ = p.z;
+      const r = pushOutOBB(p, S.BX.x[b], S.BX.z[b], S.BX.rot[b], S.BX.hw[b], S.BX.hl[b], COLLISION_RESULT);
+      if (!r.hit) continue;
+      if (!exactBldAt(b, beforeX, beforeZ, p.h)) { p.x = beforeX; p.z = beforeZ; continue; }
+      sampleHit = true;
+      if (r.impact > impact) { impact = r.impact; impactNx = r.nx; impactNz = r.nz; }
+    }
+    if (sampleHit) {
+      sweepHit = true; sweepX = p.x; sweepZ = p.z;
+      break;
+    }
+  }
+  if (sweepHit) { p.x = sweepX; p.z = sweepZ; }
+  else { p.x = endX; p.z = endZ; }
+  for (let pass = 0; pass < COLLISION_SOLVER_PASSES; pass++) {
+    for (let ci = 0; ci < nc; ci++) {
+      const c = cars[ci];
+      if (c.hidden) continue;
+      const dx = c.x - p.x, dz = c.z - p.z;
+      if (dx * dx + dz * dz > COLLISION_SCAN_RADIUS2) continue;
+      const r = pushOutOBB(p, c.x, c.z, c.h, CAR_HW, CAR_HL, COLLISION_RESULT);
+      if (r.hit && r.impact > impact) { impact = r.impact; impactNx = r.nx; impactNz = r.nz; }
     }
     const bn = gridQuery(S.BGRID, p.x, p.z, 1, BLD_GQ);
     for (let i = 0; i < bn; i++) {
@@ -271,11 +332,26 @@ export function collideWorld(p, cars = []) {
       const r = pushOutOBB(p, S.BX.x[b], S.BX.z[b], S.BX.rot[b], S.BX.hw[b], S.BX.hl[b], COLLISION_RESULT);
       if (r.hit) {
         if (!exactBldAt(b, svx, svz, p.h)) { p.x = svx; p.z = svz; }
-        else if (r.impact > impact) impact = r.impact;
+        else if (r.impact > impact) { impact = r.impact; impactNx = r.nx; impactNz = r.nz; }
       }
     }
   }
-  if (impact > HARD_IMPACT_THRESHOLD) p.speed *= HARD_IMPACT_REBOUND;      // tvrdý náraz
-  else if (impact > SOFT_IMPACT_THRESHOLD) p.speed *= SOFT_IMPACT_SPEED_RETAIN; // ošúchanie
+  if (impact > SOFT_IMPACT_THRESHOLD) {
+    const vx = Number.isFinite(p.vx) ? p.vx : Math.sin(p.h) * p.speed;
+    const vz = Number.isFinite(p.vz) ? p.vz : Math.cos(p.h) * p.speed;
+    const normalSpeed = vx * impactNx + vz * impactNz;
+    const tangentX = vx - impactNx * normalSpeed;
+    const tangentZ = vz - impactNz * normalSpeed;
+    const hard = impact > HARD_IMPACT_THRESHOLD;
+    const normalOut = normalSpeed < 0
+      ? -normalSpeed * (hard ? HARD_IMPACT_REBOUND : 0.45)
+      : normalSpeed * (hard ? 0.2 : 0.55);
+    p.vx = tangentX * (hard ? 0.82 : 0.94) + impactNx * normalOut;
+    p.vz = tangentZ * (hard ? 0.82 : 0.94) + impactNz * normalOut;
+    const fx = Math.sin(p.h), fz = Math.cos(p.h);
+    const rx = fz, rz = -fx;
+    p.speed = p.vx * fx + p.vz * fz;
+    p.slip = p.vx * rx + p.vz * rz;
+  }
   return impact;
 }
