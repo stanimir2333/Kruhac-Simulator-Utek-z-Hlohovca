@@ -233,6 +233,15 @@ and the duplicate deck-height formula (`routeDeckY` delegates to
 - **Touch controls**: `main.js` adds `body.touch` + `#touch.on` when
   `S.IS_MOBILE`. Without it the pedals stay `display:none` and mobile is
   unplayable.
+- **RT pass vracia EFEKT, nie obraz.** `src/fx/raytrace.js` počíta SSR /
+  contact shadows / SSGI do svojho zníženého cieľa a píše `RGB = príspevok`
+  (odrazy + GI) a `A = násobok scény` (`(1-amount)*(1-shadow)`). Finálny obraz
+  zloží full-res kompozit `rtCompositeMat` v `src/fx/bloom.js`
+  (`out = scene * A + RGB`). NEVRACAJ sa k blitovaniu nízkores obrazu do
+  composera — predtým to nahradilo ostrú scénu rozmazaným upscale-om a celý
+  obraz skončil na rozlíšení RT cieľa. Efekt je 8-bit a bez záporných
+  hodnôt (nepoužívaj rozdiel `result - scene`: v UnsignedByte RT targeti by
+  sa negatívne hodnoty odrezali).
 - **`state.paused` is shared** by the big map (`menus.js`) and the hidden-tab
   handler (`main.js`, guarded by `pausedByTab`). The tab handler must not unpause
   a game paused by the map.

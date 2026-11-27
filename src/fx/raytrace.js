@@ -9,6 +9,14 @@
 //  3) Screen-Space Global Illumination (SSGI) — jemné odrazové svetlo v záveroch.
 // Všetko beží na zníženom rozlíšení (podľa kvality LITE/STD/ULTRA) pre výkon.
 //
+// ! VÝSTUP NIE JE FINÁLNY OBRAZ — je to EFEKT (RGB = čo sa pripočíta k scéne,
+// A = násobok scény). Zloženie robí full-res kompozit v src/fx/bloom.js.
+// PREčO: RT pass si predtým vykreslil vlastný nízkores obraz a ten BLITOL do
+// composera — tým nahradil ostrú scénu rozmazaným upscale-om a celý obraz
+// skončil na rozlíšení RT cieľa (0.37× canvasu pri STANDARD). Teraz ostáva
+// base obraz v plnom rozlíšení composera a rozmazaný je iba samotný efekt
+// (odrazy/tiene/GI) — to je jediný spôsob, ako mať lacné lúče A ostrú scénu.
+//
 // Kvalita (RT_QUALITY) riadi: rozlíšenie RT cieľa, počet krokov lúčov, dosah
 // SSR/contact shadows/SSGI, počet SSGI vzoriek a silu sky fallbacku.
 // G-buffer (normály + metal/rough) sa NEKLONUJE každý snímok — klony materiálov
@@ -289,7 +297,6 @@ const RT_FRAGMENT = `
 
   // === MAIN ===
   void main() {
-    vec4 sceneColor = texture(tDiffuse, vUv);
     float raw = rawDepth(vUv);
     float depth = linearDepth(raw);
     bool isSky = raw >= 0.99999 || depth >= cameraFar * 0.98;
@@ -301,7 +308,10 @@ const RT_FRAGMENT = `
     // Pozícia v view space
     vec3 pos = reconstructPosition(vUv, raw);
 
-    vec3 result = sceneColor.rgb;
+    // VÝSTUP = EFEKT, nie obraz: RGB sa pripočíta, A násobí base scénu.
+    // (Pôvodne tu bola výsledná farba a pass ju blitol do composera.)
+    vec3 sceneAdd = vec3(0.0);
+    float sceneMul = 1.0;
 
     // --- SSR ---
     if (!isSky && enableSSR && (metalness > 0.02 || roughness < roughnessCutoff)) {
@@ -323,31 +333,44 @@ const RT_FRAGMENT = `
       // Miss = obloha (stlmenejšia), hit = farba scény.
       vec3 reflColor = mix(env, hitColor, hitConf);
       float amount = clamp(reflAmt * mix(0.55, 1.0, hitConf), 0.0, 1.0);
-      result = mix(result, reflColor, amount);
+      // mix(scene, reflColor, amount) == scene*(1-amount) + reflColor*amount
+      sceneMul *= (1.0 - amount);
+      sceneAdd += reflColor * amount;
     }
 
     // --- CONTACT SHADOWS ---
+    float shadow = 0.0;
     if (!isSky && enableContactShadows) {
-      float shadow = traceContactShadow(pos, normal);
-      result *= (1.0 - clamp(shadow, 0.0, 0.85));
+      shadow = clamp(traceContactShadow(pos, normal), 0.0, 0.85);
     }
 
     // --- SSGI ---
+    vec3 gi = vec3(0.0);
     if (!isSky && enableSSGI && roughness > 0.15) { // SSGI najviac na matných povrchoch
-      vec3 gi = traceSSGI(pos, normal, roughness);
-      result += gi;
+      gi = traceSSGI(pos, normal, roughness);
     }
 
+    // Pôvodné poradie bolo: mix → násobenie tieňom → pričítanie GI, čiže
+    // (scena*(1-a) + odraz*a) * (1-shadow) + gi. Tu to rozkladáme na
+    // násobič scény a aditívny príspevok, aby base farba mohla zostať
+    // v plnom rozlíšení (pozri hlavičku súboru).
+    sceneMul *= (1.0 - shadow);
+    sceneAdd = sceneAdd * (1.0 - shadow) + gi;
+
     // Tonemapping sa robí v OutputPass (bloom), tu len lineárna farba
-    fragColor = vec4(result, sceneColor.a);
+    fragColor = vec4(sceneAdd, sceneMul);
   }
 `;
 
-// Kvality LITE/STANDARD/ULTRA. `resScale` je podiel rozlíšenia composeru
-// (bloom beží na 0.75 DPR, takže ULTRA 0.85 = 0.64 DPR — ostré, ale nie plné).
+// Kvality LITE/STANDARD/ULTRA. `resScale` je podiel rozlíšenia composeru, na
+// ktorom sa počítajú lúče (1.0 = plné rozlíšenie composera, 1.25 = supersampling
+// lúčov). `maxPixels` je tvrdý strop na počet pixelov RT cieľa — na HiDPI
+// (DPR 2) by composer mal 4× pixely a RT by bol nerovnako drahý; škála sa
+// preto zníži, aby RT zostal v rozumnom budgete.
 const RT_QUALITY = [
   { // 0 = LITE (2K tieňová mapa)
-    resScale: 0.5,
+    resScale: 0.75,
+    maxPixels: 1600000,
     maxSteps: 28,
     stepScale: 1.5,
     ssrIntensity: 0.8,
@@ -363,7 +386,8 @@ const RT_QUALITY = [
     enableSSGI: true,
   },
   { // 1 = STANDARD (4K tieňová mapa)
-    resScale: 0.65,
+    resScale: 1.0,
+    maxPixels: 3200000,
     maxSteps: 44,
     stepScale: 1.0,
     ssrIntensity: 0.95,
@@ -379,7 +403,8 @@ const RT_QUALITY = [
     enableSSGI: true,
   },
   { // 2 = ULTRA (8K tieňová mapa)
-    resScale: 0.85,
+    resScale: 1.25,
+    maxPixels: 5000000,
     maxSteps: 64,
     stepScale: 0.7,
     ssrIntensity: 1.0,
@@ -502,7 +527,14 @@ export function createRayTracer(renderer, camera) {
   const _zenithBase = new THREE.Color(S.SKY_ZENITH);
 
   function targetSize() {
-    const scale = RT_QUALITY[currentQuality].resScale;
+    const cfg = RT_QUALITY[currentQuality];
+    let scale = cfg.resScale;
+    // TvrDÝ strop na pixelácie: na HiDPI je composer 4× väčší a RT lúče by
+    // stáli 4× viac. Škála sa zníži úmernie (plocha rastie so švorcom).
+    const px = baseW * baseH;
+    if (px > 0 && px * scale * scale > cfg.maxPixels) {
+      scale = Math.sqrt(cfg.maxPixels / px);
+    }
     return [
       Math.max(2, Math.round(baseW * scale)),
       Math.max(2, Math.round(baseH * scale)),
@@ -725,20 +757,26 @@ export function createRayTracer(renderer, camera) {
     setRoughnessCutoff(v) { roughnessCutoff = v; if (rtPass) rtPass.material.uniforms.roughnessCutoff.value = v; },
     setMetalnessBoost(v) { metalnessBoost = v; if (rtPass) rtPass.material.uniforms.metalnessBoost.value = v; },
 
-    // Hlavná render funkcia — volá sa z bloom composeru PO scéne, PRED bloom
+    // Hlavná render funkcia — volá sa z bloom composeru PO scéne, PRED bloom.
+    // Vracia { texture, effect }: effect=true znamená, že textúra je EFECTOVÁ
+    // vrstva (RGB = príspevok, A = násobok scény) a composit ju musí zložiť
+    // s plným rozlíšením scény. effect=false = nič sa netrackovalo, vracia
+    // sa pôvodná scéna (bloom ju len skopíruje).
     render(renderer, scene, camera, sunLight, mainColorTarget, mainDepthTexture) {
       // RT vyžaduje WebGL2/GLSL3 aj platný depth target. Pri nepodpore
       // alebo chybe necháme bežať pôvodný composer obraz bez opakovaných pokusov.
       if (!enabled || failed || !mainColorTarget || !mainDepthTexture
-        || renderer.capabilities?.isWebGL2 === false) return mainColorTarget;
+        || renderer.capabilities?.isWebGL2 === false) {
+        return { texture: mainColorTarget?.texture || null, effect: false };
+      }
 
       try {
         const [passW, passH] = targetSize();
-        if (!ensureRT(passW, passH)) return mainColorTarget;
+        if (!ensureRT(passW, passH)) return { texture: mainColorTarget.texture, effect: false };
 
         // 1) Render G-buffer (normály + metal/rough)
         const gbuf = renderGBuffer(renderer, scene, camera, passW, passH);
-        if (!gbuf) return mainColorTarget;
+        if (!gbuf) return { texture: mainColorTarget.texture, effect: false };
 
         // 2) Smer slnka. DirectionalLight NEMÁ `.direction` — pôvodný kód tam
         // čítal undefined a každý snímok spadol na TypeError.
@@ -778,18 +816,28 @@ export function createRayTracer(renderer, camera) {
         u.tNormal.value = gbuf.normal;
         u.tMetalRough.value = gbuf.metalRough;
 
-        // 5) Render RT pass
+        // 5) Render RT pass — do svojho cieľa, NESÚSA j so scénou.
         renderer.setRenderTarget(rtPass.renderTarget);
         renderer.render(rtPass.scene, rtPass.camera);
         renderer.setRenderTarget(null);
 
-        return rtPass.renderTarget.texture;
+        return { texture: rtPass.renderTarget.texture, effect: true };
       } catch (e) {
         try { renderer.setRenderTarget(null); } catch (_e) { /* kontext môže byť stratený */ }
         failed = true;
         console.warn('[raytrace] RT pass vypnutý po chybe:', e?.message);
-        return mainColorTarget;
+        return { texture: mainColorTarget.texture, effect: false };
       }
+    },
+
+    // Odhad pamäte RT bufferov (G-buffery + RT cieľ) v bajtoch — vramGuard
+    // v src/ui/settings.js to používa ako podnet na zníženie tieňovej mapy.
+    estimateVRAM() {
+      if (!enabled || failed) return 0;
+      const [w, h] = targetSize();
+      const px = w * h;
+      // 2× G-buffer (farba 4 B + hĺbka 4 B) + RT cieľ (4 B)
+      return px * 24;
     },
 
     // bloom.js posiela plné rozlíšenie composera (0.75 DPR) — RT si z neho

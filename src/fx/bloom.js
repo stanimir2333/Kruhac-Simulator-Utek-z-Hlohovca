@@ -21,6 +21,12 @@
 //  fillrate-náročné za minimálny zisk na vysoko-DPI displejoch.
 // B34 (Ray Tracing): pridaný screen-space ray tracing pass (SSR, contact shadows, SSGI)
 //    beží ako custom pass v composer pipeline PO RenderPass, PRED SSAO/Bloom.
+// B35 (ostrosť RT): RT pass NEKOPÍRUJE svoj nízkores obraz do composera —
+//    blitol tam vlastný výsledok a tým nahradil ostrú scénu rozmazaným
+//    upscale-om (celý obraz skončil na rozlíšení RT cieľa). Teraz RT vracia
+//    EFEKTOVÚ vrstvu (RGB = príspevok, A = násobok scény) a full-res kompozit
+//    ju zloží s scénou: out = scene * A + RGB. Base obraz ostáva ostrý na
+//    rozlíšení composera, lacné lúče sa kreslia len na zníženom rozlíšení.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -58,6 +64,32 @@ export function createBloom(renderer, scene, camera, sunLight) {
   // Jeden full-screen quad pre blity namiesto alokácie Scene/Mesh/Material/
   // Geometry dvakrát za snímok (bola to najväčšia GC záťaž v composer-e).
   let blitScene = null, blitCam = null, blitMat = null, blitQuad = null;
+  // Kompozitný materiál: efekt RT (nízkores) + scéna (plné rozlíšenie).
+  // out = scene * A + RGB — A je násobok scény, RGB príspevok (odrazy/GI).
+  const rtCompositeMat = new THREE.ShaderMaterial({
+    uniforms: {
+      tScene: { value: null },
+      tRT: { value: null },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform sampler2D tScene;
+      uniform sampler2D tRT;
+      void main() {
+        vec4 e = texture2D(tRT, vUv);
+        vec3 s = texture2D(tScene, vUv).rgb;
+        gl_FragColor = vec4(s * e.a + e.rgb, 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
 
   // Efektívne pixel ratio bloom cesty (cap na BLOOM_RENDER_SCALE oproti DPR).
   // Používa sa pre RT, composer aj FXAA uniformu, aby boli všetky tri zosúladené.
@@ -108,6 +140,10 @@ export function createBloom(renderer, scene, camera, sunLight) {
       blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMat);
       blitQuad.frustumCulled = false;
       blitScene.add(blitQuad);
+      const drawQuad = (mat) => {
+        blitQuad.material = mat;
+        renderer.render(blitScene, blitCam);
+      };
       const blit = (srcTexture) => {
         if (blitMat.map !== srcTexture) {
           const hadMap = !!blitMat.map;
@@ -115,7 +151,16 @@ export function createBloom(renderer, scene, camera, sunLight) {
           // Prvé priradenie textúry mení USE_MAP define → treba nový program.
           if (!hadMap) blitMat.needsUpdate = true;
         }
-        renderer.render(blitScene, blitCam);
+        drawQuad(blitMat);
+      };
+      // Kompozit RT efektu na scénu v PLNOM rozlíšení composera.
+      // Efekt (A = násobok scény, RGB = príspevok) pochádza z RT cieľa
+      // na zníženom rozlíšení a bilinearne sa roztiahne — odrazy a tiene
+      // sú mäkké, takže to nemačkí hrany (tie ostávajú z base scény).
+      const composite = (rtTexture, sceneTexture) => {
+        rtCompositeMat.uniforms.tScene.value = sceneTexture;
+        rtCompositeMat.uniforms.tRT.value = rtTexture;
+        drawQuad(rtCompositeMat);
       };
 
       // 2. Ray Tracing Pass (custom) - SSR, Contact Shadows, SSGI
@@ -143,10 +188,11 @@ export function createBloom(renderer, scene, camera, sunLight) {
           // Ray tracing potrebuje depth texture z readBuffer (výstup RenderPass)
           // readBuffer je WebGLRenderTarget s depthTexture
           const rtResult = rayTracer.render(renderer, scene, camera, sunLight, readBuffer, readBuffer.depthTexture);
-          // Výsledok do writeBuffer
+          // Výsledok do writeBuffer: scéna v plnom rozlíšení + efekt z RT.
           renderer.setRenderTarget(writeBuffer);
           renderer.clear();
-          blit(rtResult);
+          if (rtResult.effect && rtResult.texture) composite(rtResult.texture, readBuffer.texture);
+          else if (rtResult.texture) blit(rtResult.texture);
           renderer.setRenderTarget(null);
         },
       };
@@ -274,12 +320,30 @@ export function createBloom(renderer, scene, camera, sunLight) {
       }
     },
     resize,
+    // Odhad pamäte post-processing bufferov (composer + SSAO + bloom mipy)
+    // a RT/G-bufferov (raytrace.js). vramGuard v src/ui/settings.js to používa
+    // ako podnet na ústup tieňovej mapy.
+    estimateVRAM() {
+      if (!composer) return 0;
+      const pr = composerPixelRatio();
+      const w = Math.max(2, Math.round(innerWidth * pr));
+      const h = Math.max(2, Math.round(innerHeight * pr));
+      const px = w * h;
+      let b = px * 16; // composer: 2× farba (4 B) + 2× hĺbková textúra (4 B)
+      b += Math.round(px * 0.25) * 3 * 4; // SSAO: polovičné rozlíšenie, ~3 cieľe
+      b += Math.round(px * BLOOM_SCALE * BLOOM_SCALE) * 4; // bloom mipy
+      // RT/G-buffery — na LOW_END RT pass beží vôbec (je preskočený), takže
+      // sa do rozpočtu nezahŕňajú.
+      if (!S.LOW_END) b += rayTracer?.estimateVRAM?.() || 0;
+      return b;
+    },
     dispose() {
       if (rayTracer) rayTracer.dispose();
       rtPassRef = null;
       if (composer) composer.dispose();
       blitQuad?.geometry.dispose();
       blitMat?.dispose();
+      rtCompositeMat.dispose();
     },
   };
 }

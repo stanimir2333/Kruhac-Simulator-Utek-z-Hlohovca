@@ -177,6 +177,10 @@ S.TEX_ANISO = Math.max(1, Math.min(S.LOW_END ? 2 : 16, renderer.capabilities.get
       getRTEnabled: () => bloom.getRTEnabled(),
       setRTQuality: (q) => bloom.setRTQuality(q),
       getRTQuality: () => bloom.getRTQuality(),
+      // Zmena rozlíšenia (applyPR) musí prejsť aj do composera — inak zostane
+      // na starom rozlíšení, kým sa nezmení veľkosť okna.
+      resize: () => bloom.resize(),
+      estimateVRAM: () => bloom.estimateVRAM(),
     },
     water: { setQuality: (q) => setWaterQuality(q) },
     audio: {

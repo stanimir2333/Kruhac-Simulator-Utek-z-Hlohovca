@@ -78,7 +78,10 @@ const RT_TIER_FROM_SHADOW = [0, 0, 1, 2];
 // Monolit potom ustupoval aj RT škálou a bloom lowRes — tie kroky sú
 // VYNECHANÉ (legacy stage-3 logika); RT už beží v src/fx/bloom.js.
 // Vždy s toastom, nikdy potichu.
-const VRAM_BUDGET = (S.LOW_END ? 350 : 900) * 1048576;
+// Rozpočet je vyšší, lebo vramEstimate() dnes POČÍTA aj composer/SSAO/bloom
+// a RT/G-buffery (predtým počítal len canvas + tieňovú mapu, takže bol
+// odhad 2–4× podhodnotený a strážca nikdy nezasiahol).
+const VRAM_BUDGET = (S.LOW_END ? 350 : 1500) * 1048576;
 let vramT = 0;
 let setOpen = false;
 let _ctx = null;
@@ -97,6 +100,7 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- NASTAVENIA (rozlíšenie / FPS limit / dohľadnosť, perzistencia) ----------
 // <- legacy @9367
+let _lastPR = 0; // posledný nastavený pixelRatio — composer sa preostane, iba keď sa zmení
 export function applyPR(ctx) {
   const c = ctx || _ctx;
   const dpr = typeof devicePixelRatio !== 'undefined' ? devicePixelRatio : 1;
@@ -104,6 +108,16 @@ export function applyPR(ctx) {
   if (v < 0.1) v = 0.1;
   else if (v > 2) v = 2; // strop 2x: 3x + RT ULTRA + 8K tieň = GB VRAM navyše na iGPU so zdieľanou RAM
   if (c?.renderer?.setPixelRatio) c.renderer.setPixelRatio(v);
+  // Composer (a s ním SSAO, RT cieľ, G-buffery, FXAA/grade uniforms) musí
+  // vedieť o novej veľkosti hneď — predtým to zvedz vedie až resize okna,
+  // takže slider rozlíšenia zostal pol roka na starom rozlíšení a obraz
+  // sa natiahol (vizuálne rozmazaný obraz, „nie je to ono“).
+  // Preostane sa IBA pri zmene pomeru — inak by každý ťah slidera
+  // (aj „SLNKO · SILA“) znovu alokoval composer targety.
+  if (v !== _lastPR) {
+    _lastPR = v;
+    try { c?.bloom?.resize?.(); } catch (_e) { /* noop */ }
+  }
   // VYNECHANÉ: pôvodné rtResize()/bloomResize() z monolitu — composer
   // si rozlíšenie rieši sám cez bloom.resize(). Auto-rozlíšenie neportované.
   vramGuard(c, _say); // rozpočet VRAM: prípadný ústup o schod skôr než pád kontextu
@@ -133,7 +147,11 @@ export function vramEstimate(ctx) {
     const W = Math.max(2, _vb.x | 0), H = Math.max(2, _vb.y | 0);
     b += W * H * 4 * 2; // canvas (s MSAA rezervou)
   }
-  // VYNECHANÉ: RT/composer/bloom buffery (bloom.js) a odraz hladiny (Váh modul).
+  // Post-processing buffery (composer + SSAO + bloom mipy + RT/G-buffery) sa
+  // predtým vôbec nepočítali — strážca nevedel, že rastúce rozlíšenie renderu
+  // žerie aj VRAM. Odhad má bloom.js (pozná svoje targety).
+  b += c?.bloom?.estimateVRAM?.() || 0;
+  // VYNECHANÉ: odraz hladiny (Váh modul).
   return b;
 }
 
@@ -321,7 +339,7 @@ export function loadSettings() {
     // s.rtq sa už NEČÍTA — pozri komentár vyššie.
     settings.rtSh = storedNum(s.rtsh, 0, 1.5, settings.rtSh);
     settings.rtLi = storedNum(s.rtli, 0, 2, settings.rtLi);
-    settings.rtQl = storedNum(s.rtql, 0.3, 1, settings.rtQl);
+    settings.rtQl = storedNum(s.rtql, 0.3, 2, settings.rtQl);
     if (s.mus === 0 || s.mus === 1) settings.music = s.mus;
     // AUTO: nové uložisko má `car` (id z CARS). Motor je zviazaný s typom auta
     // — po zvolení auta je engine odvodený (B29). Starý zápis bez `car` premigruje
