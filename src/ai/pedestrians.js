@@ -64,12 +64,19 @@ export function createPedestrianSystem(opts = {}) {
   const _pt = { seg: 0, cx: 0, cz: 0, dx: 0, dz: 0, h: 0 };
   const _ray = { hit: false, index: -1, dist: 0, x: 0, y: 0, z: 0 };
 
-  // GTA IV štýl: humanoidné siluety — zaoblené tvary namiesto krabičiek.
-  const torsoGeo = new THREE.CylinderGeometry(0.20, 0.24, 0.62, 12);
-  const headGeo = new THREE.SphereGeometry(0.15, 12, 10);
-  const hairGeo = new THREE.SphereGeometry(0.16, 10, 8);
-  const legGeo = new THREE.CylinderGeometry(0.085, 0.10, 0.82, 10);
-  const armGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.62, 10);
+  // Zaoblená, členitá silueta; stále ide o pár zdieľaných instancovaných geometrií.
+  const torsoGeo = new THREE.LatheGeometry([
+    new THREE.Vector2(0.16, -0.34), new THREE.Vector2(0.20, -0.27),
+    new THREE.Vector2(0.18, -0.12), new THREE.Vector2(0.22, 0.08),
+    new THREE.Vector2(0.25, 0.25), new THREE.Vector2(0.18, 0.34),
+  ], 12);
+  const headGeo = new THREE.SphereGeometry(0.15, 14, 12);
+  const hairGeo = new THREE.SphereGeometry(0.157, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.48);
+  const hipGeo = new THREE.CylinderGeometry(0.19, 0.17, 0.25, 10);
+  const neckGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.16, 10);
+  const legGeo = new THREE.CapsuleGeometry(0.085, 0.65, 3, 10);
+  const armGeo = new THREE.CapsuleGeometry(0.065, 0.49, 3, 10);
+  const shoeGeo = new THREE.SphereGeometry(0.12, 10, 8);
   legGeo.translate(0, -0.41, 0);
   armGeo.translate(0, -0.31, 0);
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 });
@@ -77,11 +84,14 @@ export function createPedestrianSystem(opts = {}) {
   function buildMeshes() {
     if (!scene) return;
     const torso = new THREE.InstancedMesh(torsoGeo, mat, count);
+    const hips = new THREE.InstancedMesh(hipGeo, mat, count);
+    const neck = new THREE.InstancedMesh(neckGeo, mat, count);
     const head = new THREE.InstancedMesh(headGeo, mat, count);
     const hair = new THREE.InstancedMesh(hairGeo, mat, count);
     const legs = new THREE.InstancedMesh(legGeo, mat, count * 2);
     const arms = new THREE.InstancedMesh(armGeo, mat, count * 2);
-    meshes = { torso, head, hair, legs, arms };
+    const shoes = new THREE.InstancedMesh(shoeGeo, mat, count * 2);
+    meshes = { torso, hips, neck, head, hair, legs, arms, shoes };
     for (const key in meshes) {
       const m = meshes[key];
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -106,9 +116,14 @@ export function createPedestrianSystem(opts = {}) {
     meshes.arms.setColorAt(i * 2, _col);
     meshes.arms.setColorAt(i * 2 + 1, _col);
     _col.setHex(PANTS[p.pants % PANTS.length]);
+    meshes.hips.setColorAt(i, _col);
     meshes.legs.setColorAt(i * 2, _col);
     meshes.legs.setColorAt(i * 2 + 1, _col);
+    _col.setHex(0x28272a);
+    meshes.shoes.setColorAt(i * 2, _col);
+    meshes.shoes.setColorAt(i * 2 + 1, _col);
     _col.setHex(SKINS[p.skin % SKINS.length]);
+    meshes.neck.setColorAt(i, _col);
     meshes.head.setColorAt(i, _col);
     _col.setHex(HAIRS[p.hair % HAIRS.length]);
     meshes.hair.setColorAt(i, _col);
@@ -276,30 +291,51 @@ export function createPedestrianSystem(opts = {}) {
     const rx = Math.cos(h), rz = -Math.sin(h);
     dummy.scale.set(1, 1, 1);
     if (down) {
+      dummy.scale.set(1, 1, 1);
       dummy.position.set(bx, p.y + 0.2, bz);
       dummy.rotation.set(Math.PI / 2, h, 0);
       dummy.updateMatrix();
       meshes.torso.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(bx - fx * 0.22, p.y + 0.2, bz - fz * 0.22);
+      dummy.updateMatrix();
+      meshes.hips.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(bx + fx * 0.34, p.y + 0.2, bz + fz * 0.34);
+      dummy.updateMatrix();
+      meshes.neck.setMatrixAt(i, dummy.matrix);
       dummy.position.set(bx + fx * 0.52, p.y + 0.21, bz + fz * 0.52);
+      dummy.rotation.set(0, h, 0);
       dummy.updateMatrix();
       meshes.head.setMatrixAt(i, dummy.matrix);
-      dummy.scale.set(0, 0, 0);
+      dummy.position.set(bx + fx * 0.52, p.y + 0.24, bz + fz * 0.52);
       dummy.updateMatrix();
       meshes.hair.setMatrixAt(i, dummy.matrix);
+      dummy.scale.set(0, 0, 0);
+      dummy.updateMatrix();
       meshes.legs.setMatrixAt(i * 2, dummy.matrix);
       meshes.legs.setMatrixAt(i * 2 + 1, dummy.matrix);
       meshes.arms.setMatrixAt(i * 2, dummy.matrix);
       meshes.arms.setMatrixAt(i * 2 + 1, dummy.matrix);
+      meshes.shoes.setMatrixAt(i * 2, dummy.matrix);
+      meshes.shoes.setMatrixAt(i * 2 + 1, dummy.matrix);
       return;
     }
-    dummy.position.set(bx, by + 1.18, bz);
     dummy.rotation.set(0, h, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.position.set(bx, by + 1.18, bz);
     dummy.updateMatrix();
     meshes.torso.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(bx, by + 0.77, bz);
+    dummy.updateMatrix();
+    meshes.hips.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(bx, by + 1.52, bz);
+    dummy.updateMatrix();
+    meshes.neck.setMatrixAt(i, dummy.matrix);
     dummy.position.set(bx, by + 1.66, bz);
+    dummy.scale.set(0.92, 1.05, 0.94);
     dummy.updateMatrix();
     meshes.head.setMatrixAt(i, dummy.matrix);
-    dummy.position.set(bx, by + 1.845, bz);
+    dummy.position.set(bx, by + 1.69, bz);
+    dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     meshes.hair.setMatrixAt(i, dummy.matrix);
     const swing = Math.sin(p.gait) * (p.mode === 'flee' ? 0.8 : 0.55);
@@ -308,12 +344,22 @@ export function createPedestrianSystem(opts = {}) {
       const legSwing = k === 0 ? swing : -swing;
       dummy.position.set(bx + rx * s * 0.105, by + 0.88, bz + rz * s * 0.105);
       dummy.rotation.set(legSwing, h, 0);
+      dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       meshes.legs.setMatrixAt(i * 2 + k, dummy.matrix);
       dummy.position.set(bx + rx * s * 0.275, by + 1.4, bz + rz * s * 0.275);
       dummy.rotation.set(-legSwing * 0.7, h, 0);
       dummy.updateMatrix();
       meshes.arms.setMatrixAt(i * 2 + k, dummy.matrix);
+      dummy.position.set(
+        bx + rx * s * 0.105 + fx * (0.045 - legSwing * 0.34),
+        by + 0.075,
+        bz + rz * s * 0.105 + fz * (0.045 - legSwing * 0.34),
+      );
+      dummy.rotation.set(legSwing * 0.25, h, 0);
+      dummy.scale.set(0.58, 0.30, 1.05);
+      dummy.updateMatrix();
+      meshes.shoes.setMatrixAt(i * 2 + k, dummy.matrix);
     }
   }
 
@@ -323,12 +369,16 @@ export function createPedestrianSystem(opts = {}) {
     dummy.scale.set(0, 0, 0);
     dummy.updateMatrix();
     meshes.torso.setMatrixAt(i, dummy.matrix);
+    meshes.hips.setMatrixAt(i, dummy.matrix);
+    meshes.neck.setMatrixAt(i, dummy.matrix);
     meshes.head.setMatrixAt(i, dummy.matrix);
     meshes.hair.setMatrixAt(i, dummy.matrix);
     meshes.legs.setMatrixAt(i * 2, dummy.matrix);
     meshes.legs.setMatrixAt(i * 2 + 1, dummy.matrix);
     meshes.arms.setMatrixAt(i * 2, dummy.matrix);
     meshes.arms.setMatrixAt(i * 2 + 1, dummy.matrix);
+    meshes.shoes.setMatrixAt(i * 2, dummy.matrix);
+    meshes.shoes.setMatrixAt(i * 2 + 1, dummy.matrix);
   }
 
   function update(dt, px, pz) {
@@ -368,10 +418,13 @@ export function createPedestrianSystem(opts = {}) {
       drawPed(p);
     }
     meshes.torso.instanceMatrix.needsUpdate = true;
+    meshes.hips.instanceMatrix.needsUpdate = true;
+    meshes.neck.instanceMatrix.needsUpdate = true;
     meshes.head.instanceMatrix.needsUpdate = true;
     meshes.hair.instanceMatrix.needsUpdate = true;
     meshes.legs.instanceMatrix.needsUpdate = true;
     meshes.arms.instanceMatrix.needsUpdate = true;
+    meshes.shoes.instanceMatrix.needsUpdate = true;
   }
 
   buildMeshes();
@@ -380,10 +433,13 @@ export function createPedestrianSystem(opts = {}) {
   for (let i = 0; i < count; i++) newPed(i, sx, sz);
   if (meshes) {
     meshes.torso.instanceColor.needsUpdate = true;
+    meshes.hips.instanceColor.needsUpdate = true;
+    meshes.neck.instanceColor.needsUpdate = true;
     meshes.head.instanceColor.needsUpdate = true;
     meshes.hair.instanceColor.needsUpdate = true;
     meshes.legs.instanceColor.needsUpdate = true;
     meshes.arms.instanceColor.needsUpdate = true;
+    meshes.shoes.instanceColor.needsUpdate = true;
   }
   update(0.016, sx, sz);
 
