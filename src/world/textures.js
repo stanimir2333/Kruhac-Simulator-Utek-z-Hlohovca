@@ -1091,14 +1091,15 @@ export function makeLabel(text, scale){
   const c = document.createElement("canvas");
   c.width = 512; c.height = 128;
   const g = c.getContext("2d");
-  g.fillStyle = "rgba(8,6,2,0.85)"; g.fillRect(0,0,512,128);
-  g.strokeStyle = "#ffb000"; g.lineWidth = 6; g.strokeRect(4,4,504,120);
-  g.fillStyle = "#ffb000";
+  // Prázdne pixely sú priesvitné; výplň ani rámik neprekrývajú scénu.
+  // Jemný tmavý obrys drží text čitateľný aj na svetlom pozadí.
   const fs = text.length > 10 ? Math.max(30, Math.floor(620/text.length)) : 52;
   g.font = "bold " + fs + "px Courier"; g.textAlign = "center";
+  g.lineWidth = 5; g.strokeStyle = "rgba(8,6,2,0.72)"; g.strokeText(text, 256, 84);
+  g.fillStyle = "#ffb000";
   g.fillText(text, 256, 84);
   const t = new THREE.CanvasTexture(c);
-  const m = new THREE.SpriteMaterial({ map: t, fog: false });
+  const m = new THREE.SpriteMaterial({ map: t, fog: false, transparent: true, depthTest: true, depthWrite: false });
   const sp = new THREE.Sprite(m);
   const wf = text.length > 8 ? text.length/8 : 1;
   sp.scale.set(24*scale*wf, 6*scale, 1);
