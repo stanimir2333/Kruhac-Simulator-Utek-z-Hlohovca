@@ -133,26 +133,57 @@ function lumpyCrown(src, amt){
   g.computeVertexNormals();
   return g;
 }
+function clusteredCrown(lobes, detail, amt){
+  const parts = [];
+  for(let i=0;i<lobes.length;i++){
+    const l = lobes[i];
+    const g = lumpyCrown(new THREE.IcosahedronGeometry(l[0], detail), amt);
+    g.translate(l[1], l[2], l[3]);
+    parts.push(g);
+  }
+  const merged = mergeGeometries(parts);
+  for(let i=0;i<parts.length;i++) parts[i].dispose();
+  return merged;
+}
 
 export function ensureVegShapes(){
   if(S.GEO.trunkV) return;   // idempotentné: geometrie sa vytvoria len raz
   const crownDetail = S.LOW_END ? 1 : 2;
+  const canopyDetail = S.LOW_END ? 0 : 1;
   S.GEO.trunkV = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 16);
   S.GEO.trunkV.translate(0, 1.3, 0);
-  S.GEO.crownV = lumpyCrown(new THREE.IcosahedronGeometry(1.9, crownDetail), 0.28);
-  S.GEO.crownV.translate(0, 3.7, 0);
-  // Ihličnan = 3 nad sebou posunuté kužeľové patra (vyšší, organický strom
-  // namiesto jedného kužeľa). Patrá sa prekrývajú, takže nie sú viditeľné škáry.
+  // Tri zlúčené, mierne odlišné laloky dávajú listnáču čitateľnejší obrys
+  // bez ďalšieho draw callu; nižší detail drží počet trojuholníkov na uzde.
+  S.GEO.crownV = clusteredCrown([
+    [1.45, 0, 3.65, 0], [0.88, -0.78, 3.42, 0.12], [0.90, 0.78, 3.48, -0.12],
+  ], canopyDetail, 0.28);
+  // Ihličnan = 3 nad sebou posunuté kužeľové patra. Jemné zvlnenie obvodu
+  // naznačí konáre bez pridávania vrcholov, materiálov alebo draw callov.
   const tiers = [[1.7, 2.2, 1.6], [1.3, 1.8, 3.4], [0.9, 1.4, 4.8]];
   const coneParts = [];
   for(let t=0;t<3;t++){
     const tg = new THREE.ConeGeometry(tiers[t][0], tiers[t][1], S.LOW_END ? 9 : 16);
+    const pos = tg.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const radius = Math.hypot(x, z);
+      if(radius < 1e-5) continue;
+      const angle = Math.atan2(z, x);
+      const lower = 1 - (y + tiers[t][1]/2) / tiers[t][1];
+      const ripple = 1 + Math.sin(angle*5 + t*1.7)*0.055*lower;
+      pos.setXYZ(i, x*ripple, y, z*ripple);
+    }
+    pos.needsUpdate = true;
+    tg.computeVertexNormals();
     tg.translate(0, tiers[t][2] + tiers[t][1]/2, 0);
     coneParts.push(tg);
   }
   S.GEO.coniferV = mergeGeometries(coneParts);
-  S.GEO.bushV = lumpyCrown(new THREE.IcosahedronGeometry(1.0, crownDetail), 0.34);
-  S.GEO.bushV.translate(0, 0.55, 0);
+  const bushDetail = S.LOW_END ? 0 : 1;
+  S.GEO.bushV = clusteredCrown([
+    [0.62, 0, 0.72, 0], [0.48, 0.46, 0.55, 0.05],
+    [0.49, -0.40, 0.53, 0.34], [0.45, -0.08, 0.50, -0.50],
+  ], bushDetail, 0.34);
   // crownC pre lampové stromy: guľa r=1 (bez posunutia), spodok sploštený,
   // náklon vrcholov + 2 oktávy šumu. mergedBoxes vyžaduje uv (aj keď materiál
   // bez mapy ho nepoužíva): po zváraní bez uv (dokonalé zvar) doplním triviálny
@@ -299,10 +330,16 @@ function buildGrassTufts(rndSource){
   const cnt = S.LOW_END ? 900 : 2600;         // cieľový počet kariet
   const attempts = S.LOW_END ? 8000 : 24000;  // strop pokusov (rozptyl po mape)
   if(!S.GEO.tuftV){
-    const tpl = new THREE.PlaneGeometry(0.9, 0.55);
-    tpl.translate(0, 0.275, 0);   // päta karty sedí na teréne
-    S.GEO.tuftV = tpl;
-    S.DYN_GEO.push(tpl);
+    const cards = [];
+    for(let i=0;i<2;i++){
+      const card = new THREE.PlaneGeometry(0.9, 0.55);
+      card.translate(0, 0.275, 0); // päta karty sedí na teréne
+      card.rotateY(i*Math.PI/2);    // krížené karty vyplnia trávu z viacerých uhlov
+      cards.push(card);
+    }
+    S.GEO.tuftV = mergeGeometries(cards);
+    for(let i=0;i<cards.length;i++) cards[i].dispose();
+    S.DYN_GEO.push(S.GEO.tuftV);
   }
   const rows = [];
   for(let a=0;a<attempts && rows.length < cnt;a++){

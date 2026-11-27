@@ -31,9 +31,13 @@ const lowerBodyGeo = rbox(1.8, 0.42, 4.16, 0.12);
 const hoodGeo = rbox(1.72, 0.19, 1.16, 0.06);
 const hatchGeo = rbox(1.72, 0.22, 0.94, 0.07);
 const roofGeo = rbox(1.62, 0.13, 1.5, 0.05);
-const sideGlassGeo = new THREE.BoxGeometry(0.035, 0.63, 1.42);
-const screenGeo = new THREE.BoxGeometry(1.5, 0.055, 0.7);
-const rearScreenGeo = new THREE.BoxGeometry(1.45, 0.055, 0.8);
+const sideGlassGeo = rbox(0.035, 0.63, 1.42, 0.016, 2);
+const screenGeo = rbox(1.5, 0.055, 0.7, 0.024, 2);
+const rearScreenGeo = rbox(1.45, 0.055, 0.8, 0.024, 2);
+const windowPillarGeo = rbox(0.05, 0.57, 0.07, 0.018, 2);
+const doorSeamGeo = new THREE.BoxGeometry(0.012, 0.22, 0.012);
+const sideSillGeo = rbox(0.04, 0.08, 1.68, 0.015, 2);
+const grilleBarGeo = rbox(0.40, 0.018, 0.02, 0.007, 2);
 const cowlFGeo = rbox(1.6, 0.08, 0.3, 0.03, 2);
 const cowlRGeo = rbox(1.5, 0.07, 0.44, 0.03, 2);
 const bumperGeo = rbox(1.84, 0.14, 0.12, 0.045, 2);
@@ -77,17 +81,20 @@ const rxBodGeo = rbox(1.84, 0.40, 4.02, 0.12);
 const rxHoodGeo = rbox(1.72, 0.16, 1.60, 0.05);
 const rxNoseGeo = rbox(1.80, 0.14, 0.34, 0.045, 2);
 const rxRoofGeo = rbox(1.42, 0.09, 1.05, 0.03, 2);
-const rxGlassGeo = new THREE.BoxGeometry(1.40, 0.05, 0.78);
-const rxHatchGlassGeo = new THREE.BoxGeometry(1.36, 0.05, 0.85);
-const rxSideGlassGeo = new THREE.BoxGeometry(0.035, 0.36, 1.05);
+const rxGlassGeo = rbox(1.40, 0.05, 0.78, 0.022, 2);
+const rxHatchGlassGeo = rbox(1.36, 0.05, 0.85, 0.022, 2);
+const rxSideGlassGeo = rbox(0.035, 0.36, 1.05, 0.016, 2);
+const rxWindowPillarGeo = rbox(0.05, 0.32, 0.06, 0.016, 2);
+const rxDoorSeamGeo = new THREE.BoxGeometry(0.012, 0.18, 0.012);
+const rxSillGeo = rbox(0.04, 0.08, 1.68, 0.015, 2);
 const rxDeckGeo = rbox(1.70, 0.18, 0.55, 0.05);
 const rxFenderGeo = rbox(0.14, 0.14, 1.10, 0.04, 2);
 const rxRearPanelGeo = rbox(1.80, 0.20, 0.16, 0.05, 2);
 const rxWingGeo = rbox(1.58, 0.05, 0.34, 0.02, 2);
 const rxStalkGeo = new THREE.BoxGeometry(0.06, 0.18, 0.10);
-const rxPopGeo = new THREE.BoxGeometry(0.40, 0.06, 0.26);
-const rxHeadGeo = new THREE.BoxGeometry(0.24, 0.05, 0.18);
-const rxTailGeo = new THREE.BoxGeometry(0.40, 0.14, 0.08);
+const rxPopGeo = rbox(0.40, 0.06, 0.26, 0.018, 2);
+const rxHeadGeo = rbox(0.24, 0.05, 0.18, 0.016, 2);
+const rxTailGeo = rbox(0.40, 0.14, 0.08, 0.022, 2);
 const rxExhaustGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.14, 14);
 const rxMirrorStGeo = new THREE.BoxGeometry(0.10, 0.035, 0.08);
 const rxMirrorHGeo = new THREE.BoxGeometry(0.065, 0.10, 0.13);
@@ -199,6 +206,14 @@ function octaviaDetails(parent, bodyMat) {
   // Vrch je schovaný v streche (strecha je širšia než sklá: 1,62 > 2×0,8045).
   for (const sx of [-1, 1]) {
     box(parent, sideGlassGeo, glass, sx * 0.787, 1.175, -0.22);
+    // Tri úzke stĺpiky rozdelia bočné sklo; všetky zostávajú v kabíne.
+    for (const z of [-0.70, -0.20, 0.30]) {
+      box(parent, windowPillarGeo, dark, sx * 0.815, 1.175, z);
+    }
+    // Jemné škáry dverí na boku, pod existujúcou ozdobnou lištou.
+    box(parent, doorSeamGeo, dark, sx * 0.906, 0.69, 0.38);
+    box(parent, doorSeamGeo, dark, sx * 0.906, 0.69, -0.82);
+    box(parent, sideSillGeo, bumper, sx * 0.88, 0.49, 0);
     // Lišta sedí na boku karosérie (0,885–0,925 vs líce 0,90), nie v nej.
     box(parent, trimGeo, dark, sx * 0.905, 0.83, -0.04);
     // Späťák: stopka siaha do skla, hlava na jej koniec. Kľučky pod lištou.
@@ -224,6 +239,12 @@ function octaviaDetails(parent, bodyMat) {
   box(parent, bumperGeo, bumper, 0, 0.51, -2.08);
   box(parent, grilleGeo, dark, -0.28, 0.71, 2.105);
   box(parent, grilleGeo, dark, 0.28, 0.71, 2.105);
+  const grilleTrim = std(0x596168, 0.42, 0.48);
+  for (const sx of [-0.28, 0.28]) {
+    for (const y of [0.65, 0.71, 0.77]) {
+      box(parent, grilleBarGeo, grilleTrim, sx, y, 2.15);
+    }
+  }
   box(parent, badgeGeo, std(0x8cb9a3, 0.3, 0.4), 0, 0.94, 2.09);
   box(parent, plateGeo, plate, 0, 0.51, 2.15);
   box(parent, plateGeo, plate, 0, 0.51, -2.15);
@@ -400,6 +421,12 @@ function rx7Details(parent, bodyMat) {
   // Sklá: čelné veľmi šikmé (0,82 rad), zadný fastback sa klope k chvostu.
   for (const sx of [-1, 1]) {
     box(parent, rxSideGlassGeo, glass, sx * 0.72, 1.04, -0.12);
+    for (const z of [-0.44, -0.10, 0.24]) {
+      box(parent, rxWindowPillarGeo, dark, sx * 0.74, 1.04, z);
+    }
+    box(parent, rxDoorSeamGeo, dark, sx * 0.926, 0.57, 0.24);
+    box(parent, rxDoorSeamGeo, dark, sx * 0.926, 0.57, -0.48);
+    box(parent, rxSillGeo, bumper, sx * 0.90, 0.45, 0);
     // Spätné zrkadlá nižšie a kompaktnejšie ako na Octavii (nízka kabína).
     box(parent, rxMirrorStGeo, dark, sx * 0.90, 1.00, 0.42);
     box(parent, rxMirrorHGeo, dark, sx * 0.97, 1.03, 0.42);
